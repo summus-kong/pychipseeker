@@ -709,7 +709,7 @@ def plot_avg_prof(
         x,
         mean,
         color=color or "#E45756",
-        linewidth=1.5,
+        linewidth=2.0,
         label=label,
         **kwargs,
     )[0]
@@ -725,16 +725,20 @@ def plot_avg_prof(
                 mean - z * sem,
                 mean + z * sem,
                 color=line.get_color(),
-                alpha=0.2,
+                alpha=0.22,
                 linewidth=0,
             )
 
-    ax.axvline(0, color="#555555", linewidth=0.8, linestyle="--")
+    ax.axvline(0, color="#555555", linewidth=0.9, linestyle="--")
+    # ChIPseeker draws a dashed baseline at zero signal.
+    ax.axhline(0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=0)
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     if label:
-        ax.legend(frameon=False)
+        ax.legend(frameon=False, fontsize=9)
     ax.set_title(title)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=3, width=0.8, labelsize=9)
     fig.tight_layout()
     return fig, ax
 
@@ -945,19 +949,26 @@ def tag_heatmap(
         data.shape[0],
         0,
     )
+    from matplotlib import colormaps
+
+    cmap_obj = colormaps[(kwargs.pop("cmap", None) or palette or "Reds")].with_extremes(
+        bad="#f5f5f5"
+    )
     im = ax.imshow(
-        data,
+        np.ma.masked_invalid(data),
         aspect="auto",
         interpolation="nearest",
-        cmap=palette or "Reds",
+        cmap=cmap_obj,
         extent=extent,
         **kwargs,
     )
-    ax.axvline(0, color="black", linewidth=0.6, linestyle="--")
+    ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.7)
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab or "Peaks")
     ax.set_title(title or "Tag heatmap")
-    fig.colorbar(im, ax=ax, shrink=0.8)
+    fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=3, width=0.8, labelsize=9)
     fig.tight_layout()
     return fig, ax
 

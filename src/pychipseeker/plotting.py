@@ -123,6 +123,13 @@ def _colors(n: int) -> list[str]:
     return ["#%02x%02x%02x" % tuple(v) for v in rgb]
 
 
+def _style_axes(ax) -> None:
+    """Clean up spines/ticks for the ChIPseeker matplotlib look."""
+
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=3, width=0.8, labelsize=9)
+
+
 def plot_anno_pie(
     annotation,
     ax=None,
@@ -160,14 +167,25 @@ def plot_anno_pie(
     else:
         fig = ax.figure
 
-    wedges, _ = ax.pie(
+    autopct = kwargs.pop("autopct", lambda pct: f"{pct:.{ndigit}f}%" if pct >= 3.0 else "")
+    pctdistance = kwargs.pop("pctdistance", 0.80)
+    wedges, texts, autotexts = ax.pie(
         values,
         labels=None,
         colors=colors,
         startangle=90,
         counterclock=False,
+        autopct=autopct,
+        pctdistance=pctdistance,
+        wedgeprops=dict(width=0.42, edgecolor="white", linewidth=1.5),
         **kwargs,
     )
+    # Percentage labels: white when drawn on top of a dark wedge.
+    for autotext, wedge in zip(autotexts, wedges):
+        autotext.set_fontsize(8.5)
+        rgb = wedge.get_facecolor()
+        luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+        autotext.set_color("white" if luminance < 0.6 else "#333333")
     if legend:
         ax.legend(
             wedges,
@@ -272,6 +290,25 @@ def plot_anno_bar(
         )
         left += vals
 
+    # Percentage labels centered in each segment wide enough to hold them.
+    for yy in y:
+        acc = 0.0
+        for color, feature in zip(colors, features):
+            val = float(data[feature].iloc[yy])
+            if val >= 4.0:
+                rgb = tuple(int(color[j : j + 2], 16) / 255 for j in (1, 3, 5))
+                luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+                ax.text(
+                    acc + val / 2.0,
+                    yy,
+                    f"{val:.1f}%",
+                    ha="center",
+                    va="center",
+                    fontsize=8.0,
+                    color="white" if luminance < 0.62 else "#333333",
+                )
+            acc += val
+
     ax.set_xlabel(ylab)
     ax.set_ylabel(xlab)
     ax.set_title(title)
@@ -287,6 +324,7 @@ def plot_anno_bar(
         reverse=True,
     )
     ax.set_xlim(0, max(100.0, float(np.nanmax(left)) if len(left) else 100.0))
+    _style_axes(ax)
     fig.tight_layout()
     return fig, ax
 
@@ -440,6 +478,9 @@ def plot_dist_to_tss(
     ax.set_title(title)
     ax.grid(axis="x", color="#dddddd", linewidth=0.6)
     ax.set_axisbelow(True)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.spines["bottom"].set_color("#888888")
+    ax.tick_params(length=3, width=0.8, labelsize=9)
 
     # Symmetric-ish limits and absolute tick labels with TSS at zero.
     max_neg = max(left_neg.values(), default=0.0)
@@ -736,21 +777,26 @@ def plot_tss_profile(
     else:
         fig = ax.figure
 
-    ax.plot(x, mean, color=color, linewidth=1.5, label="mean", **kwargs)
+    ax.plot(x, mean, color=color, linewidth=2.0, label="mean", **kwargs)
     if show_sem:
         ax.fill_between(
             x,
             mean - sem,
             mean + sem,
             color=color,
-            alpha=0.2,
+            alpha=0.22,
             linewidth=0,
-            label="SEM",
+            label="±SEM",
         )
-    ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
+    ax.axvline(0, color="#555555", linewidth=0.9, linestyle="--")
+    ax.axhline(0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=0)
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Mean signal")
     ax.set_title(title)
+    if show_sem:
+        ax.legend(frameon=False, fontsize=9)
+    ax.margins(x=0.01)
+    _style_axes(ax)
     fig.tight_layout()
     return fig, ax
 
@@ -778,19 +824,24 @@ def plot_tss_heatmap(
     else:
         fig = ax.figure
 
+    masked = np.ma.masked_invalid(matrix)
+    from matplotlib import colormaps
+
+    cmap_obj = colormaps[(kwargs.pop("cmap", None) or cmap)].with_extremes(bad="#f5f5f5")
     im = ax.imshow(
-        matrix,
+        masked,
         aspect="auto",
-        cmap=cmap,
+        cmap=cmap_obj,
         interpolation="nearest",
         extent=(-int(window), int(window), matrix.shape[0], 0),
         **kwargs,
     )
-    ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
+    ax.axvline(0, color="black", linewidth=1.0, linestyle="--", alpha=0.7)
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Features")
     ax.set_title(title)
-    fig.colorbar(im, ax=ax, label="Signal")
+    fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
+    _style_axes(ax)
     fig.tight_layout()
     return fig, ax
 

@@ -670,6 +670,8 @@ def covplot(
             color = palette[fi % len(palette)]
             ax.fill_between(xs, 0, ys, step="post", color=color, alpha=0.65, linewidth=0)
             ax.plot(xs, ys, drawstyle="steps-post", color=color, linewidth=0.8)
+            ax.grid(axis="x", color="#e6e6e6", linewidth=0.5)
+            ax.set_axisbelow(True)
         ax.set_xlim(*(xlim if xlim is not None else (
             int(min(df["start"].min() for df in frames if len(df))),
             int(max(df["end"].max() for df in frames if len(df))),
@@ -684,7 +686,8 @@ def covplot(
             for i in range(len(frames))
         ]
         axes_flat[0].legend(handles, [f"Set{i + 1}" for i in range(len(frames))], frameon=False)
-    fig.suptitle(title)
+    if title:
+        fig.suptitle(title)
     fig.tight_layout()
     return fig, axes_flat if n > 1 else axes_flat[0]
 
