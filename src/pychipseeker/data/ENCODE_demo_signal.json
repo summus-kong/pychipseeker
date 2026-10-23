@@ -1,0 +1,31 @@
+{
+  "source_file": "ENCFF893ZGR",
+  "source_url": "https://www.encodeproject.org/files/ENCFF893ZGR/@@download/ENCFF893ZGR.bigWig",
+  "source_md5": "f07c99ceead499e3e9d5c4befe92d6e1",
+  "source_size_bytes": 41747495,
+  "experiment": "ENCSR000CDQ",
+  "experiment_description": "H3K4me3 ChIP-seq on 8-week mouse placenta",
+  "target": "H3K4me3 (Mus musculus)",
+  "organism": "Mus musculus",
+  "biosample": "Mus musculus strain B6NCrl placenta tissue female adult (2 months)",
+  "assembly": "mm10",
+  "output_type": "fold change over control",
+  "policy": "ENCODE portal public data; no usage restrictions (ENCSR000CDQ is released without embargo)",
+  "subset": {
+    "chromosome": "chr5",
+    "chrom_size": 151834684,
+    "start": 105676940,
+    "end": 125676940,
+    "bin_bp": 25,
+    "bin_aggregation": "mean of per-base fold change within bin",
+    "min_value_threshold": 0.05,
+    "total_bins": 800000,
+    "retained_bins": 26383,
+    "retained_chromosomes": [
+      "chr5"
+    ]
+  },
+  "subset_size_bytes": 166274,
+  "bundle_sha256": "22123fac6ed76e7763d7755619abaef0ef5df1fcbf0c58f512465818fe6642dd",
+  "writer": "pychipseeker/scripts/build_bigwig_py.py (pure Python)"
+}

@@ -51,8 +51,27 @@ notice is preserved in the file header.
 
 MIT, same pyBigWig upstream as above.
 
+## ENCODE demo signal
+
+| Bundled file(s) | Upstream source |
+|---|---|
+| `src/pychipseeker/data/ENCODE_demo_signal.bw` | ENCODE experiment ENCSR000CDQ, file `ENCFF893ZGR` (H3K4me3 fold change over control, *Mus musculus* mm10), https://www.encodeproject.org/files/ENCFF893ZGR/ |
+| `src/pychipseeker/data/ENCODE_demo_signal.json` | generated provenance record (accession, MD5/SHA-256 of source and bundle, subsetting window and binning parameters) |
+
+The bundled bigWig is a small derived subset of `ENCFF893ZGR`: one 20 Mb
+window of chr5 re-binned to 25 bp means, with near-background bins
+(fold change < 0.05) left as gaps.  ENCODE portal data from released
+experiments is distributed by ENCODE with no usage restrictions; the
+subset was produced by `scripts/build_encode_subset.py` (which also
+documents the exact provenance) and is regenerated deterministically.
+
 ## Recreating the bundled datasets
 
 - `gsminfo.csv.gz` can be rebuilt from a locally downloaded `GEOmetadb.sqlite`
   with `python scripts/build_gsminfo.py` (offline, stdlib only).
 - `ucsc_release.csv.gz` is additionally referenced by that script.
+- `ENCODE_demo_signal.bw` is rebuilt from the downloaded ENCODE file with
+  `python scripts/build_encode_subset.py --out-dir src/pychipseeker/data`;
+  the writer used is `scripts/build_bigwig_py.py` (pure-Python bigWig
+  writer, stdlib only, needed because the MinGW-built
+  pyBigWig/libBigWig writer crashes on Windows).

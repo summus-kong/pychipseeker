@@ -49,6 +49,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 pychipseeker = [
     "data/*.csv.gz",
+    "data/*.json",
+    "data/*.bw",
     "data/GEO_sample_data/*.gz",
 ]
 

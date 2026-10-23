@@ -610,6 +610,34 @@ def get_tag_matrix_from_bigwig(
     )
 
 
+def example_signal_path() -> Path:
+    """Path to the bundled ENCODE H3K4me3 demo bigWig.
+
+    The bundled file is a compact subset of ENCODE ``ENCFF893ZGR``
+    (H3K4me3 fold change over control, *Mus musculus* mm10, experiment
+    ``ENCSR000CDQ``): one 20 Mb window of chr5 re-binned to 25 bp means.
+    See ``example_signal_provenance()`` for full details.
+    """
+    from importlib.resources import as_file, files
+
+    with as_file(
+        files("pychipseeker").joinpath("data", "ENCODE_demo_signal.bw")
+    ) as path:
+        return Path(path)
+
+
+def example_signal_provenance() -> dict:
+    """Provenance record for :func:`example_signal_path`."""
+    import json
+    from importlib.resources import as_file, files
+
+    with as_file(
+        files("pychipseeker").joinpath("data", "ENCODE_demo_signal.json")
+    ) as path:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+
+
 def _as_matrix(tag_matrix) -> tuple[np.ndarray, Optional[int], Optional[int]]:
     if isinstance(tag_matrix, TagMatrix):
         return np.asarray(tag_matrix, dtype=float), tag_matrix.upstream, tag_matrix.downstream
