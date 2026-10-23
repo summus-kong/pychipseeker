@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Optional, Sequence, Union
 
@@ -237,7 +238,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_enrich.add_argument("--organism", default="human")
     p_enrich.set_defaults(func=_cmd_enrich)
 
+    _allow_negative_values(parser)
+    _allow_negative_values(p_ann)
+    _allow_negative_values(p_plot)
+    _allow_negative_values(p_enrich)
+
     return parser
+
+
+def _allow_negative_values(parser: argparse.ArgumentParser) -> None:
+    """Teach argparse that comma-separated negative values are values.
+
+    Stock argparse only treats a token like ``-3000`` as a value; the
+    otherwise-valid ``--tss-region -3000,3000`` is misread as an unknown
+    option ("expected one argument").  Extending the negative-number
+    matcher to comma/dot forms fixes ``--tss-region -3000,3000``,
+    ``-3000,-500`` and ``--tss-region=-3000.5,3000.5`` alike.
+    """
+
+    parser._negative_number_matcher = re.compile(
+        r"^-\d+(?:\.\d+)?(?:,-?\d+(?:\.\d+)?)*$"
+    )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
