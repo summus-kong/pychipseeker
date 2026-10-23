@@ -1,0 +1,11 @@
+chr1	950	1050	P_promoter_plus	0	+
+chr1	1020	1040	P_5utr_plus	0	+
+chr1	1100	1150	P_exon_plus	0	+
+chr1	1500	1600	P_intron_plus	0	+
+chr1	2920	2940	P_3utr_plus	0	+
+chr1	6990	7000	P_promoter_minus	0	-
+chr1	6970	6990	P_5utr_minus	0	-
+chr1	6100	6150	P_exon_minus	0	-
+chr1	5500	5600	P_intron_minus	0	-
+chr1	20001	20100	P_intergenic	0	+
+chrX	100	200	P_unknown_chr	0	+
