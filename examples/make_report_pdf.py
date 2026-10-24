@@ -1,11 +1,11 @@
-﻿"""Build a complete multi-page PDF report from the bundled example data.
+"""Build a complete multi-page PDF report from the bundled example data.
 
 Run::
 
     python examples/make_report_pdf.py
 
-Uses the virtual data shipped with pychipseeker 鈥?``examples/example_peaks.bed`` (11 hand-wired peaks covering every genomic
-category) and ``examples/example.gtf`` 鈥?plus the bundled ENCODE H3K4me3
+Uses the virtual data shipped with pychipseeker —``examples/example_peaks.bed`` (11 hand-wired peaks covering every genomic
+category) and ``examples/example.gtf`` — plus the bundled ENCODE H3K4me3
 demo signal (``ENCSR000CDQ`` chr5 20 Mb subset, mm10), and writes every
 visualization as one page of ``examples/output/pychipseeker_report.pdf``.
 """
@@ -47,7 +47,7 @@ def _title_page(stat: pd.DataFrame, df: pd.DataFrame) -> plt.Figure:
     fig.text(0.5, 0.895, "ChIPseeker-style peak annotation report", ha="center", fontsize=13)
     fig.text(
         0.5, 0.86,
-        f"pychipseeker {__version__} 路 virtual example data + ENCODE demo signal",
+        f"pychipseeker {__version__} · virtual example data + ENCODE demo signal",
         ha="center", fontsize=10, color="0.4",
     )
 
@@ -108,7 +108,7 @@ def _final_page() -> plt.Figure:
         "  pcs.covplot(ann.peaks)\n"
         "  promoters = pcs.getPromoters(TxDb=ann.gene_annotation, upstream=1000, downstream=1000)\n"
         "  tag = pcs.getTagMatrix(peak=ann.peaks, windows=promoters, nbin=50)\n"
-        "  pcs.plotAvgProf(tag, conf=None)  路  pcs.tagHeatmap(tag)\n"
+        "  pcs.plotAvgProf(tag, conf=None)  ·  pcs.tagHeatmap(tag)\n"
         "  ann.plot_tss_profile(signal=..., window=100, n_bins=50)\n"
         "  ann.plot_tss_heatmap(signal=..., window=100, n_bins=50)\n\n"
         "ENCODE demo signal (bundled bigWig):\n"
@@ -117,7 +117,7 @@ def _final_page() -> plt.Figure:
         "  peaks   = _pseudo_peaks(bw_path, threshold=1.2)   # fold-change calling\n"
         "  cov     = pcs.covplot(peaks, weightCol='score')\n"
         "  tag     = pcs.get_tag_matrix_from_bigwig(bw_path, peaks +/- 1 kb, nbin=50)\n"
-        "  pcs.plotAvgProf(tag, conf=0.95)  路  pcs.tagHeatmap(tag)\n"
+        "  pcs.plotAvgProf(tag, conf=0.95)  ·  pcs.tagHeatmap(tag)\n"
         "  mat = pcs.extract_tss_matrix(bw_path, summit_table, window=1000)",
         fontsize=10.5, family="monospace", va="top",
     )
@@ -228,7 +228,7 @@ def _encode_track_page(
     ax.text(
         start + (end - start) * 0.62,
         0.94 * y_max,
-        f"pseudo-peak threshold = {PEAK_THRESHOLD}脳 fold change (dashed)",
+        f"pseudo-peak threshold = {PEAK_THRESHOLD}× fold change (dashed)",
         ha="left",
         va="top",
         fontsize=8.5,
@@ -236,18 +236,18 @@ def _encode_track_page(
     )
     ax.set_xlim(start, end)
     ax.set_ylim(bottom=0)
-    ax.set_xlabel(f"chr5 position ({start:,} 鈥?{end:,}, mm10)")
+    ax.set_xlabel(f"chr5 position ({start:,} — {end:,}, mm10)")
     ax.set_ylabel("H3K4me3 fold change over control")
-    ax.set_title("ENCODE H3K4me3 demo track 鈥?chr5 (20 Mb bundled subset)")
+    ax.set_title("ENCODE H3K4me3 demo track — chr5 (20 Mb bundled subset)")
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", color="#e6e6e6", linewidth=0.6)
     ax.set_axisbelow(True)
 
     meta = (
-        f"ENCODE experiment {prov['experiment']} 路 file {prov['source_file']} 路 "
+        f"ENCODE experiment {prov['experiment']} · file {prov['source_file']} · "
         f"{prov['biosample']}\n"
-        f"subset: {subset['total_bins']:,} 脳 25 bp bins re-binned to means; "
-        f"{subset['retained_bins']:,} bins retained (fold change 鈮?"
+        f"subset: {subset['total_bins']:,} × 25 bp bins re-binned to means; "
+        f"{subset['retained_bins']:,} bins retained (fold change ≥"
         f"{subset['min_value_threshold']}); bundle size "
         f"{prov['subset_size_bytes'] / 1024:.0f} KB\n"
         f"{len(peaks)} pseudo-peaks called (strongest of "
@@ -269,7 +269,7 @@ def _encode_covplot_page(peaks: pd.DataFrame) -> plt.Figure:
     summary = (
         f"pseudo-peaks: {len(peaks)}\n"
         f"median width: {float(np.median(peaks['end'] - peaks['start'])):,.0f} bp\n"
-        f"highest mean fold change in a peak: {peaks['score'].max():.1f}脳"
+        f"highest mean fold change in a peak: {peaks['score'].max():.1f}×"
     )
     fig.text(0.62, 0.80, summary, fontsize=9.5, family="monospace", va="top", color="0.25")
     return fig
@@ -282,7 +282,7 @@ def _summit_profile_page(matrix: np.ndarray) -> plt.Figure:
         matrix,
         window=1000,
         ax=ax,
-        title="H3K4me3 around pseudo-peak summits (mean 卤 SEM)",
+        title="H3K4me3 around pseudo-peak summits (mean ± SEM)",
         color="#3182bd",
     )
     ax.set_xlabel("Distance to summit (bp)")
@@ -343,8 +343,8 @@ def main() -> int:
         (ann.plot_tss_heatmap(signal=signal, window=100, n_bins=50)[0], "TSS heatmap (signal)"),
         (pcs.plot_avg_prof(tag, conf=None)[0], "Promoter avg profile (tagMatrix)"),
         (pcs.tag_heatmap(tag)[0], "Promoter tag heatmap (tagMatrix)"),
-        (_encode_track_page(bw_path, prov, peaks), "ENCODE chapter 鈥?H3K4me3 chr5 track"),
-        (_encode_covplot_page(peaks), "ENCODE chapter 鈥?pseudo-peak coverage"),
+        (_encode_track_page(bw_path, prov, peaks), "ENCODE chapter — H3K4me3 chr5 track"),
+        (_encode_covplot_page(peaks), "ENCODE chapter — pseudo-peak coverage"),
         (
             pcs.plot_avg_prof(
                 peak_tag,
@@ -352,22 +352,25 @@ def main() -> int:
                 color="#3182bd",
                 label="H3K4me3 (ENCODE)",
                 ylab="Mean fold change in window",
-                xlab="Pseudo-peak 卤 1 kb (5'->3')",
+                xlab="Pseudo-peak ± 1 kb (5'->3')",
             )[0],
-            "ENCODE chapter 鈥?profile around pseudo-peaks",
+            "ENCODE chapter — profile around pseudo-peaks",
         ),
         (
             pcs.tag_heatmap(
                 peak_tag, palette="Reds", title="H3K4me3 around pseudo-peaks"
             )[0],
-            "ENCODE chapter 鈥?tag heatmap",
+            "ENCODE chapter — tag heatmap",
         ),
-        (_summit_profile_page(summit_matrix), "ENCODE chapter 鈥?summit-anchored profile"),
+        (
+            _summit_profile_page(summit_matrix),
+            "ENCODE chapter \u2014 summit-anchored profile",
+        ),
         (
             pcs.plot_tss_heatmap(
-                summit_matrix, window=1000, cmap="viridis"
+                summit_matrix, window=1000, cmap="viridis", sort_rows=True
             )[0],
-            "ENCODE chapter 鈥?summit-anchored heatmap",
+            "ENCODE chapter \u2014 summit-anchored heatmap",
         ),
         (_final_page(), "How to reproduce"),
     ]

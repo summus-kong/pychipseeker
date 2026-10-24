@@ -676,10 +676,12 @@ def covplot(
             int(min(df["start"].min() for df in frames if len(df))),
             int(max(df["end"].max() for df in frames if len(df))),
         )))
-        ax.set_title(chrom)
+        ax.set_title(chrom, fontsize=10.5, fontweight="semibold", color="#333333")
         ax.set_xlabel(xlab if idx >= n - ncols else "")
         ax.set_ylabel(ylab)
         ax.spines[["top", "right"]].set_visible(False)
+        ax.spines[["left", "bottom"]].set_color("#cccccc")
+        ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
     if len(frames) > 1:
         handles = [
             plt.Line2D([0], [0], color=palette[i % len(palette)], linewidth=3)

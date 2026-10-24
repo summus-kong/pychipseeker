@@ -127,7 +127,33 @@ def _style_axes(ax) -> None:
     """Clean up spines/ticks for the ChIPseeker matplotlib look."""
 
     ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(length=3, width=0.8, labelsize=9)
+    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
+    ax.xaxis.label.set_color("#333333")
+    ax.yaxis.label.set_color("#333333")
+    for side in ("left", "bottom"):
+        if ax.spines.get(side) is not None:
+            ax.spines[side].set_color("#cccccc")
+
+
+def _title(ax, text: str) -> None:
+    """Set the standardized figure title."""
+
+    ax.set_title(
+        text,
+        fontsize=11.5,
+        fontweight="semibold",
+        color="#1a1a1a",
+        pad=12.0,
+    )
+
+
+def _soften(fig) -> None:
+    """Apply the shared light-weight typography to a whole figure."""
+
+    if fig._suptitle is not None:
+        fig._suptitle.set_fontsize(12.0)
+        fig._suptitle.set_fontweight("semibold")
+        fig._suptitle.set_color("#1a1a1a")
 
 
 def plot_anno_pie(
@@ -177,15 +203,41 @@ def plot_anno_pie(
         counterclock=False,
         autopct=autopct,
         pctdistance=pctdistance,
-        wedgeprops=dict(width=0.42, edgecolor="white", linewidth=1.5),
+        wedgeprops=dict(width=0.42, edgecolor="white", linewidth=2.0),
         **kwargs,
     )
     # Percentage labels: white when drawn on top of a dark wedge.
     for autotext, wedge in zip(autotexts, wedges):
-        autotext.set_fontsize(8.5)
+        autotext.set_fontsize(9.0)
+        autotext.set_fontweight("semibold")
         rgb = wedge.get_facecolor()
         luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
         autotext.set_color("white" if luminance < 0.6 else "#333333")
+    # Donut-hole annotation with the number of annotated peaks.
+    try:
+        n_rows = len(_as_df(annotation))
+    except Exception:  # pragma: no cover - defensive; annotation without a table
+        n_rows = None
+    if n_rows is not None:
+        ax.text(
+            0.0,
+            0.12,
+            f"{n_rows}",
+            ha="center",
+            va="center",
+            fontsize=17,
+            fontweight="bold",
+            color="#333333",
+        )
+        ax.text(
+            0.0,
+            -0.16,
+            "peaks\nannotated",
+            ha="center",
+            va="center",
+            fontsize=8.5,
+            color="#8c8c8c",
+        )
     if legend:
         ax.legend(
             wedges,
@@ -193,8 +245,9 @@ def plot_anno_pie(
             loc="center left",
             bbox_to_anchor=(1.0, 0.5),
             frameon=False,
+            fontsize=9.5,
         )
-    ax.set_title(title)
+    _title(ax, title)
     ax.axis("equal")
     fig.tight_layout()
     return fig, ax
@@ -311,7 +364,6 @@ def plot_anno_bar(
 
     ax.set_xlabel(ylab)
     ax.set_ylabel(xlab)
-    ax.set_title(title)
     ax.set_yticks(y)
     if single:
         ax.set_yticklabels([])
@@ -321,10 +373,15 @@ def plot_anno_bar(
         loc="center left",
         bbox_to_anchor=(1.0, 0.5),
         frameon=False,
+        fontsize=9.5,
         reverse=True,
     )
     ax.set_xlim(0, max(100.0, float(np.nanmax(left)) if len(left) else 100.0))
+    ax.grid(axis="x", color="#e6e6e6", linewidth=0.6)
+    ax.set_axisbelow(True)
+    ax.spines[["left"]].set_visible(False)
     _style_axes(ax)
+    _title(ax, title)
     fig.tight_layout()
     return fig, ax
 
@@ -470,17 +527,38 @@ def plot_dist_to_tss(
                 )
                 left_pos[group] += pos
 
-    ax.axvline(0, color="black", linewidth=0.8)
+    ax.axvline(0, color="#4d4d4d", linewidth=1.0)
     ax.set_yticks(y)
     ax.set_yticklabels(groups)
     ax.set_xlabel(ylab)
     ax.set_ylabel(xlab)
-    ax.set_title(title)
     ax.grid(axis="x", color="#dddddd", linewidth=0.6)
     ax.set_axisbelow(True)
     ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.spines["bottom"].set_color("#888888")
-    ax.tick_params(length=3, width=0.8, labelsize=9)
+    ax.spines["bottom"].set_color("#cccccc")
+    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
+    # 5'->3' orientation hints in figure coordinates.
+    ax.text(
+        0.02,
+        1.015,
+        "Upstream (5') \u2190",
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=8.5,
+        color="#8c8c8c",
+    )
+    ax.text(
+        0.98,
+        1.015,
+        "\u2192 Downstream (3')",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=8.5,
+        color="#8c8c8c",
+    )
+    _title(ax, title)
 
     # Symmetric-ish limits and absolute tick labels with TSS at zero.
     max_neg = max(left_neg.values(), default=0.0)
@@ -778,6 +856,29 @@ def plot_tss_profile(
         fig = ax.figure
 
     ax.plot(x, mean, color=color, linewidth=2.0, label="mean", **kwargs)
+    # Soft area under the mean curve for a cleaner visual mass.
+    ax.fill_between(x, 0.0, mean, color=color, alpha=0.08, linewidth=0, zorder=0.5)
+    # Highlight the profile maximum.
+    peak_idx = int(np.nanargmax(mean))
+    ax.plot(
+        x[peak_idx],
+        mean[peak_idx],
+        "o",
+        markersize=4.5,
+        color=color,
+        markeredgecolor="white",
+        markeredgewidth=0.8,
+        zorder=6,
+    )
+    ax.annotate(
+        f"{float(mean[peak_idx]):.4g}",
+        (float(x[peak_idx]), float(mean[peak_idx])),
+        textcoords="offset points",
+        xytext=(0, 7),
+        ha="center",
+        fontsize=8,
+        color="#333333",
+    )
     if show_sem:
         ax.fill_between(
             x,
@@ -792,11 +893,11 @@ def plot_tss_profile(
     ax.axhline(0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=0)
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Mean signal")
-    ax.set_title(title)
     if show_sem:
         ax.legend(frameon=False, fontsize=9)
     ax.margins(x=0.01)
     _style_axes(ax)
+    _title(ax, title)
     fig.tight_layout()
     return fig, ax
 
@@ -808,9 +909,14 @@ def plot_tss_heatmap(
     title: str = "TSS heatmap",
     cmap: str = "viridis",
     figsize: tuple[float, float] = (6.0, 5.0),
+    sort_rows: bool = False,
     **kwargs,
 ):
-    """Plot a heatmap of TSS-centered signal."""
+    """Plot a heatmap of TSS-centered signal.
+
+    With ``sort_rows=True`` rows are ordered by decreasing maximum signal so the
+    strongest features sit on top and the map fades downwards.
+    """
 
     plt = _plt()
     matrix = np.asarray(matrix, dtype=float)
@@ -818,6 +924,11 @@ def plot_tss_heatmap(
         raise ValueError("matrix must be 2-dimensional (features x bins)")
     if matrix.shape[0] == 0:
         raise ValueError("matrix has no rows")
+
+    if sort_rows:
+        finite = np.nan_to_num(matrix, nan=-np.inf)
+        order = np.argsort(-np.nanmax(finite, axis=1), kind="stable")
+        matrix = matrix[order]
 
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
@@ -839,9 +950,11 @@ def plot_tss_heatmap(
     ax.axvline(0, color="black", linewidth=1.0, linestyle="--", alpha=0.7)
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Features")
-    ax.set_title(title)
-    fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
+    cbar = fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(labelsize=8, length=2.5, color="#bfbfbf")
     _style_axes(ax)
+    _title(ax, title)
     fig.tight_layout()
     return fig, ax
 
