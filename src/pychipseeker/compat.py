@@ -717,11 +717,16 @@ def shuffle(
     if n is not None:
         peaks = peaks.sample(n=int(n), replace=len(peaks) < int(n), random_state=seed).reset_index(drop=True)
     if chrom_sizes is None and TxDb is not None:
-        model = (
-            TxDb
-            if isinstance(TxDb, GeneAnnotation)
-            else GeneAnnotation.from_gtf(TxDb)
-        )
+        from .genomes import is_assembly_name
+
+        if isinstance(TxDb, GeneAnnotation):
+            model = TxDb
+        elif is_assembly_name(TxDb):
+            from .genomes import load_genome  # deferred: keep import graph flat
+
+            model = load_genome(TxDb)
+        else:
+            model = GeneAnnotation.from_gtf(TxDb)
         chrom_sizes = model.genes.groupby("chrom")["end"].max().astype(int).to_dict()
     if chrom_sizes is None:
         chrom_sizes = _chrom_sizes_from_peaks(peaks)

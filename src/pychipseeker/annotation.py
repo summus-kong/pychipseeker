@@ -1605,7 +1605,14 @@ def annotate_peak(
     if gtf is None:
         gtf = TxDb
     if gtf is None:
-        raise ValueError("provide gtf=... or TxDb=...")
+        raise ValueError(
+            "provide gtf=... or TxDb=..., or a bundled assembly name such as "
+            f"{', '.join(supported_genomes())}"
+        )
+    from .genomes import is_assembly_name, load_genome, supported_genomes
+
+    if is_assembly_name(gtf):
+        gtf = load_genome(gtf)
     if str(overlap) not in {"TSS", "all"}:
         raise ValueError("overlap must be 'TSS' or 'all'")
 

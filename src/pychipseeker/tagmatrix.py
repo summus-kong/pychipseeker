@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from .annotation import GeneAnnotation, _normalise_peaks
+from .genomes import is_assembly_name
 from .io import read_peaks
 
 
@@ -85,6 +86,10 @@ def _resolve_annotation(
         raise ValueError("provide an annotation/gtf or a GeneAnnotation object")
     if isinstance(source, GeneAnnotation):
         return source
+    if is_assembly_name(source):
+        from .genomes import load_genome  # deferred: keep import graph flat
+
+        return load_genome(source)
     if isinstance(source, (str, Path, pd.DataFrame)):
         return GeneAnnotation.from_gtf(source)
     raise TypeError("annotation must be a GTF path, DataFrame or GeneAnnotation")
