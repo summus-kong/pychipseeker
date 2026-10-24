@@ -70,7 +70,9 @@ Legend:
 
 1. **Coordinates**: pychipseeker uses 0-based, half-open intervals throughout;
    ChIPseeker/GRanges use 1-based, closed intervals.
-2. **Annotation engine input**: GTF/GFF or a `GeneAnnotation` object replaces
+2. **Annotation engine input**: GTF/GFF, a `GeneAnnotation` object or a
+   bundled assembly name (`TxDb="hg38"`, `"hg19"`, `"mm10"`, `"mm9"` --
+   GENCODE-based bundles fetched on demand into a local cache) replaces
    a Bioconductor `TxDb`.
 3. **Isoform alignment**: the default follows ChIPseeker's development fix
    #252.  Use `align_annotation_feature=False` for release-1.48 behavior.
