@@ -238,16 +238,21 @@ def _encode_track_page(
     ax.set_ylim(bottom=0)
     ax.set_xlabel(f"chr5 position ({start:,} — {end:,}, mm10)")
     ax.set_ylabel("H3K4me3 fold change over control")
-    ax.set_title("ENCODE H3K4me3 demo track — chr5 (20 Mb bundled subset)")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", color="#e6e6e6", linewidth=0.6)
+    ax.set_title("ENCODE H3K4me3 demo track — chr5 (20 Mb bundled subset)", loc="left")
+    ax.set_facecolor("#EBEBEB")
+    ax.grid(color="white", linewidth=1.0)
     ax.set_axisbelow(True)
+    for side in ("top", "right", "bottom", "left"):
+        ax.spines[side].set_visible(False)
+    ax.tick_params(length=0, labelsize=9, labelcolor="#4D4D4D")
+    ax.xaxis.label.set_color("#333333")
+    ax.yaxis.label.set_color("#333333")
 
     meta = (
         f"ENCODE experiment {prov['experiment']} · file {prov['source_file']} · "
         f"{prov['biosample']}\n"
         f"subset: {subset['total_bins']:,} × 25 bp bins re-binned to means; "
-        f"{subset['retained_bins']:,} bins retained (fold change ≥"
+        f"{subset['retained_bins']:,} bins retained (fold change ≥ "
         f"{subset['min_value_threshold']}); bundle size "
         f"{prov['subset_size_bytes'] / 1024:.0f} KB\n"
         f"{len(peaks)} pseudo-peaks called (strongest of "
@@ -368,7 +373,7 @@ def main() -> int:
         ),
         (
             pcs.plot_tss_heatmap(
-                summit_matrix, window=1000, cmap="viridis", sort_rows=True
+                summit_matrix, window=1000, cmap="viridis"
             )[0],
             "ENCODE chapter \u2014 summit-anchored heatmap",
         ),

@@ -670,18 +670,21 @@ def covplot(
             color = palette[fi % len(palette)]
             ax.fill_between(xs, 0, ys, step="post", color=color, alpha=0.65, linewidth=0)
             ax.plot(xs, ys, drawstyle="steps-post", color=color, linewidth=0.8)
-            ax.grid(axis="x", color="#e6e6e6", linewidth=0.5)
-            ax.set_axisbelow(True)
         ax.set_xlim(*(xlim if xlim is not None else (
             int(min(df["start"].min() for df in frames if len(df))),
             int(max(df["end"].max() for df in frames if len(df))),
         )))
-        ax.set_title(chrom, fontsize=10.5, fontweight="semibold", color="#333333")
+        ax.set_title(chrom)
         ax.set_xlabel(xlab if idx >= n - ncols else "")
         ax.set_ylabel(ylab)
-        ax.spines[["top", "right"]].set_visible(False)
-        ax.spines[["left", "bottom"]].set_color("#cccccc")
-        ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
+        ax.set_facecolor("#EBEBEB")
+        ax.grid(color="white", linewidth=1.1)
+        ax.set_axisbelow(True)
+        for side in ("top", "right", "bottom", "left"):
+            ax.spines[side].set_visible(False)
+        ax.tick_params(length=0, labelsize=9, labelcolor="#4D4D4D")
+        ax.xaxis.label.set_color("#333333")
+        ax.yaxis.label.set_color("#333333")
     if len(frames) > 1:
         handles = [
             plt.Line2D([0], [0], color=palette[i % len(palette)], linewidth=3)

@@ -705,39 +705,16 @@ def plot_avg_prof(
     else:
         fig = ax.figure
 
-    from .plotting import _title as _title_style  # deferred: avoid import cycles
+    from .plotting import _style_axes as _gg_axes  # deferred: avoid import cycles
 
     line = ax.plot(
         x,
         mean,
         color=color or "#E45756",
-        linewidth=2.0,
+        linewidth=1.5,
         label=label,
         **kwargs,
     )[0]
-    # Soft area under the mean curve for a cleaner visual mass.
-    ax.fill_between(x, 0.0, mean, color=line.get_color(), alpha=0.08, linewidth=0, zorder=0.5)
-    # Highlight the profile maximum.
-    peak_idx = int(np.nanargmax(mean))
-    ax.plot(
-        x[peak_idx],
-        mean[peak_idx],
-        "o",
-        markersize=4.5,
-        color=line.get_color(),
-        markeredgecolor="white",
-        markeredgewidth=0.8,
-        zorder=6,
-    )
-    ax.annotate(
-        f"{float(mean[peak_idx]):.4g}",
-        (float(x[peak_idx]), float(mean[peak_idx])),
-        textcoords="offset points",
-        xytext=(0, 7),
-        ha="center",
-        fontsize=8,
-        color="#333333",
-    )
 
     if conf is not None:
         conf = float(conf)
@@ -750,20 +727,17 @@ def plot_avg_prof(
                 mean - z * sem,
                 mean + z * sem,
                 color=line.get_color(),
-                alpha=0.22,
+                alpha=0.2,
                 linewidth=0,
             )
 
-    ax.axvline(0, color="#555555", linewidth=0.9, linestyle="--")
-    # ChIPseeker draws a dashed baseline at zero signal.
-    ax.axhline(0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=0)
+    ax.axvline(0, color="#555555", linewidth=0.8, linestyle="--")
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     if label:
-        ax.legend(frameon=False, fontsize=9)
-    _title_style(ax, title)
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
+        ax.legend(frameon=False)
+    ax.set_title(title)
+    _gg_axes(ax, grid_axis="both")
     fig.tight_layout()
     return fig, ax
 
@@ -964,10 +938,10 @@ def tag_heatmap(
     else:
         fig = ax.figure
 
-    # ChIPseeker's heatmap is row-sorted by signal strength.  Strongest rows sit
-    # on top and the map fades downwards; sorting also makes the visual pattern
-    # stable across input orders.
-    order = np.argsort(-np.nanmean(arr, axis=1), kind="stable")
+    # ChIPseeker's heatmap is row-sorted by signal strength (ascending: strong
+    # rows near the bottom).  Sorting here also makes the visual pattern stable
+    # across input orders.
+    order = np.argsort(np.nanmean(arr, axis=1))
     data = arr[order]
     extent = (
         -int(upstream) if upstream is not None else 0,
@@ -976,10 +950,9 @@ def tag_heatmap(
         0,
     )
     from matplotlib import colormaps
-    from .plotting import _title as _title_style  # deferred: avoid import cycles
 
     cmap_obj = colormaps[(kwargs.pop("cmap", None) or palette or "Reds")].with_extremes(
-        bad="#f5f5f5"
+        bad="#EBEBEB"
     )
     im = ax.imshow(
         np.ma.masked_invalid(data),
@@ -989,15 +962,11 @@ def tag_heatmap(
         extent=extent,
         **kwargs,
     )
-    ax.axvline(0, color="black", linewidth=0.8, linestyle="--", alpha=0.7)
+    ax.axvline(0, color="black", linewidth=0.6, linestyle="--")
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab or "Peaks")
-    cbar = fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
-    cbar.outline.set_visible(False)
-    cbar.ax.tick_params(labelsize=8, length=2.5, color="#bfbfbf")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
-    _title_style(ax, title or "Tag heatmap")
+    ax.set_title(title or "Tag heatmap")
+    fig.colorbar(im, ax=ax, shrink=0.8)
     fig.tight_layout()
     return fig, ax
 

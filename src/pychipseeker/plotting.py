@@ -123,37 +123,51 @@ def _colors(n: int) -> list[str]:
     return ["#%02x%02x%02x" % tuple(v) for v in rgb]
 
 
-def _style_axes(ax) -> None:
-    """Clean up spines/ticks for the ChIPseeker matplotlib look."""
+#: ggplot2 theme_grey colours used by ChIPseeker figures.
+_GG_PANEL = "#EBEBEB"
+_GG_TEXT = "#4D4D4D"
+_GG_LABEL = "#333333"
+_GG_TICK = "#333333"
 
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
-    ax.xaxis.label.set_color("#333333")
-    ax.yaxis.label.set_color("#333333")
-    for side in ("left", "bottom"):
+
+def _style_axes(ax, grid_axis: Optional[str] = "x") -> None:
+    """Apply the ggplot2 theme_grey look used by ChIPseeker: grey panel,
+    white grid lines, no spines and small dark ticks."""
+
+    ax.set_facecolor(_GG_PANEL)
+    for side in ("top", "right", "bottom", "left"):
         if ax.spines.get(side) is not None:
-            ax.spines[side].set_color("#cccccc")
+            ax.spines[side].set_visible(False)
+    if grid_axis in ("x", "y", "both"):
+        if grid_axis == "both":
+            ax.grid(color="white", linewidth=1.1)
+        else:
+            ax.grid(axis=grid_axis, color="white", linewidth=1.1)
+        ax.set_axisbelow(True)
+    ax.tick_params(
+        length=2.2,
+        width=0.4,
+        color=_GG_TICK,
+        labelsize=9,
+        labelcolor=_GG_TEXT,
+    )
+    ax.xaxis.label.set_color(_GG_LABEL)
+    ax.yaxis.label.set_color(_GG_LABEL)
+    ax.xaxis.label.set_fontsize(10)
+    ax.yaxis.label.set_fontsize(10)
 
 
 def _title(ax, text: str) -> None:
-    """Set the standardized figure title."""
+    """ggplot2-default title: left-aligned, plain face; empty text is skipped."""
 
-    ax.set_title(
-        text,
-        fontsize=11.5,
-        fontweight="semibold",
-        color="#1a1a1a",
-        pad=12.0,
-    )
-
-
-def _soften(fig) -> None:
-    """Apply the shared light-weight typography to a whole figure."""
-
-    if fig._suptitle is not None:
-        fig._suptitle.set_fontsize(12.0)
-        fig._suptitle.set_fontweight("semibold")
-        fig._suptitle.set_color("#1a1a1a")
+    if text:
+        ax.set_title(
+            text,
+            loc="left",
+            fontsize=11,
+            color="#333333",
+            pad=10.0,
+        )
 
 
 def plot_anno_pie(
@@ -193,51 +207,26 @@ def plot_anno_pie(
     else:
         fig = ax.figure
 
-    autopct = kwargs.pop("autopct", lambda pct: f"{pct:.{ndigit}f}%" if pct >= 3.0 else "")
-    pctdistance = kwargs.pop("pctdistance", 0.80)
-    wedges, texts, autotexts = ax.pie(
+    autopct = kwargs.pop(
+        "autopct", lambda pct: f"{pct:.{ndigit}f}%" if pct >= 3.0 else ""
+    )
+    kwargs.setdefault("radius", 0.97)
+    wedges, _texts, autotexts = ax.pie(
         values,
         labels=None,
         colors=colors,
         startangle=90,
         counterclock=False,
         autopct=autopct,
-        pctdistance=pctdistance,
-        wedgeprops=dict(width=0.42, edgecolor="white", linewidth=2.0),
+        wedgeprops=dict(edgecolor="white", linewidth=1.0),
         **kwargs,
     )
     # Percentage labels: white when drawn on top of a dark wedge.
     for autotext, wedge in zip(autotexts, wedges):
-        autotext.set_fontsize(9.0)
-        autotext.set_fontweight("semibold")
+        autotext.set_fontsize(8.5)
         rgb = wedge.get_facecolor()
         luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
         autotext.set_color("white" if luminance < 0.6 else "#333333")
-    # Donut-hole annotation with the number of annotated peaks.
-    try:
-        n_rows = len(_as_df(annotation))
-    except Exception:  # pragma: no cover - defensive; annotation without a table
-        n_rows = None
-    if n_rows is not None:
-        ax.text(
-            0.0,
-            0.12,
-            f"{n_rows}",
-            ha="center",
-            va="center",
-            fontsize=17,
-            fontweight="bold",
-            color="#333333",
-        )
-        ax.text(
-            0.0,
-            -0.16,
-            "peaks\nannotated",
-            ha="center",
-            va="center",
-            fontsize=8.5,
-            color="#8c8c8c",
-        )
     if legend:
         ax.legend(
             wedges,
@@ -245,8 +234,11 @@ def plot_anno_pie(
             loc="center left",
             bbox_to_anchor=(1.0, 0.5),
             frameon=False,
-            fontsize=9.5,
         )
+    # ggplot polar panels show a grey disc behind the pie slices.
+    from matplotlib.patches import Circle
+
+    ax.add_patch(Circle((0, 0), 1.0, facecolor=_GG_PANEL, edgecolor="none", zorder=-2))
     _title(ax, title)
     ax.axis("equal")
     fig.tight_layout()
@@ -343,25 +335,6 @@ def plot_anno_bar(
         )
         left += vals
 
-    # Percentage labels centered in each segment wide enough to hold them.
-    for yy in y:
-        acc = 0.0
-        for color, feature in zip(colors, features):
-            val = float(data[feature].iloc[yy])
-            if val >= 4.0:
-                rgb = tuple(int(color[j : j + 2], 16) / 255 for j in (1, 3, 5))
-                luminance = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
-                ax.text(
-                    acc + val / 2.0,
-                    yy,
-                    f"{val:.1f}%",
-                    ha="center",
-                    va="center",
-                    fontsize=8.0,
-                    color="white" if luminance < 0.62 else "#333333",
-                )
-            acc += val
-
     ax.set_xlabel(ylab)
     ax.set_ylabel(xlab)
     ax.set_yticks(y)
@@ -373,14 +346,10 @@ def plot_anno_bar(
         loc="center left",
         bbox_to_anchor=(1.0, 0.5),
         frameon=False,
-        fontsize=9.5,
         reverse=True,
     )
     ax.set_xlim(0, max(100.0, float(np.nanmax(left)) if len(left) else 100.0))
-    ax.grid(axis="x", color="#e6e6e6", linewidth=0.6)
-    ax.set_axisbelow(True)
-    ax.spines[["left"]].set_visible(False)
-    _style_axes(ax)
+    _style_axes(ax, grid_axis="x")
     _title(ax, title)
     fig.tight_layout()
     return fig, ax
@@ -527,37 +496,12 @@ def plot_dist_to_tss(
                 )
                 left_pos[group] += pos
 
-    ax.axvline(0, color="#4d4d4d", linewidth=1.0)
+    ax.axvline(0, color="#333333", linewidth=0.8)
     ax.set_yticks(y)
     ax.set_yticklabels(groups)
     ax.set_xlabel(ylab)
     ax.set_ylabel(xlab)
-    ax.grid(axis="x", color="#dddddd", linewidth=0.6)
-    ax.set_axisbelow(True)
-    ax.spines[["top", "right", "left"]].set_visible(False)
-    ax.spines["bottom"].set_color("#cccccc")
-    ax.tick_params(length=3, width=0.8, labelsize=9, labelcolor="#4d4d4d", color="#bfbfbf")
-    # 5'->3' orientation hints in figure coordinates.
-    ax.text(
-        0.02,
-        1.015,
-        "Upstream (5') \u2190",
-        transform=ax.transAxes,
-        ha="left",
-        va="bottom",
-        fontsize=8.5,
-        color="#8c8c8c",
-    )
-    ax.text(
-        0.98,
-        1.015,
-        "\u2192 Downstream (3')",
-        transform=ax.transAxes,
-        ha="right",
-        va="bottom",
-        fontsize=8.5,
-        color="#8c8c8c",
-    )
+    _style_axes(ax, grid_axis="x")
     _title(ax, title)
 
     # Symmetric-ish limits and absolute tick labels with TSS at zero.
@@ -855,48 +799,24 @@ def plot_tss_profile(
     else:
         fig = ax.figure
 
-    ax.plot(x, mean, color=color, linewidth=2.0, label="mean", **kwargs)
-    # Soft area under the mean curve for a cleaner visual mass.
-    ax.fill_between(x, 0.0, mean, color=color, alpha=0.08, linewidth=0, zorder=0.5)
-    # Highlight the profile maximum.
-    peak_idx = int(np.nanargmax(mean))
-    ax.plot(
-        x[peak_idx],
-        mean[peak_idx],
-        "o",
-        markersize=4.5,
-        color=color,
-        markeredgecolor="white",
-        markeredgewidth=0.8,
-        zorder=6,
-    )
-    ax.annotate(
-        f"{float(mean[peak_idx]):.4g}",
-        (float(x[peak_idx]), float(mean[peak_idx])),
-        textcoords="offset points",
-        xytext=(0, 7),
-        ha="center",
-        fontsize=8,
-        color="#333333",
-    )
+    ax.plot(x, mean, color=color, linewidth=1.5, label="mean", **kwargs)
     if show_sem:
         ax.fill_between(
             x,
             mean - sem,
             mean + sem,
             color=color,
-            alpha=0.22,
+            alpha=0.2,
             linewidth=0,
-            label="±SEM",
+            label="SEM",
         )
-    ax.axvline(0, color="#555555", linewidth=0.9, linestyle="--")
-    ax.axhline(0, color="#bbbbbb", linewidth=0.8, linestyle="--", zorder=0)
+    ax.axvline(0, color="black", linewidth=0.8, linestyle="--")
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Mean signal")
     if show_sem:
         ax.legend(frameon=False, fontsize=9)
     ax.margins(x=0.01)
-    _style_axes(ax)
+    _style_axes(ax, grid_axis="both")
     _title(ax, title)
     fig.tight_layout()
     return fig, ax
@@ -947,14 +867,10 @@ def plot_tss_heatmap(
         extent=(-int(window), int(window), matrix.shape[0], 0),
         **kwargs,
     )
-    ax.axvline(0, color="black", linewidth=1.0, linestyle="--", alpha=0.7)
+    ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Features")
-    cbar = fig.colorbar(im, ax=ax, label="Signal", shrink=0.85, pad=0.02)
-    cbar.outline.set_visible(False)
-    cbar.ax.tick_params(labelsize=8, length=2.5, color="#bfbfbf")
-    _style_axes(ax)
-    _title(ax, title)
+    fig.colorbar(im, ax=ax, label="Signal")
     fig.tight_layout()
     return fig, ax
 
