@@ -67,9 +67,7 @@ def fake_bundled_genome(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     from pychipseeker import genomes as genomes_mod
 
     def patched_path(_assembly: str):
-        import contextlib
-
-        return contextlib.nullcontext(bundle)
+        return bundle
 
     monkeypatch.setattr(genomes_mod, "_bundle_path", patched_path)
     monkeypatch.setitem(genomes_mod.GENOME_ALIASES, "demo", "demo")
@@ -139,6 +137,36 @@ def test_get_tag_matrix_with_assembly_name(fake_bundled_genome: str) -> None:
     tag_matrix = pcs.get_tag_matrix(peak=peaks, windows=promoters, nbin=10)
     # tag-matrix rows follow the peaks, columns follow the bins, as in R
     assert tag_matrix.shape == (len(peaks), 10)
+
+
+def test_lookup_skips_download_when_installed_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, example_model: GeneAnnotation
+) -> None:
+    from pychipseeker import genomes as genomes_mod
+
+    fake = tmp_path / "genome_hg38.npz"
+    save_bundle(example_model, fake)
+    monkeypatch.setattr(genomes_mod, "_installed_bundle", lambda n: fake)
+    downloads: list[str] = []
+    monkeypatch.setattr(
+        genomes_mod,
+        "_download_bundle",
+        lambda n: downloads.append(n) or fake,
+    )
+    load_genome("hg38", refresh=True)
+    assert downloads == []
+
+
+def test_lookup_downloads_when_not_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, example_model: GeneAnnotation
+) -> None:
+    from pychipseeker import genomes as genomes_mod
+
+    fake = tmp_path / "genome_hg19.npz"
+    save_bundle(example_model, fake)
+    monkeypatch.setattr(genomes_mod, "_installed_bundle", lambda n: None)
+    monkeypatch.setattr(genomes_mod, "_download_bundle", lambda n: fake)
+    assert load_genome("hg19") is load_genome("hg19")
 
 
 def _peak_df(x: int = 1_000_000) -> pd.DataFrame:

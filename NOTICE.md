@@ -65,6 +65,27 @@ experiments is distributed by ENCODE with no usage restrictions; the
 subset was produced by `scripts/build_encode_subset.py` (which also
 documents the exact provenance) and is regenerated deterministically.
 
+## GENCODE genome annotation bundles
+
+| Bundled file(s) | Upstream source |
+|---|---|
+| `src/pychipseeker/data/genome_hg38.npz` / `.json` | GENCODE v47 **basic** annotation (GRCh38), `https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/` |
+| `src/pychipseeker/data/genome_hg19.npz` / `.json` | GENCODE v19 annotation (GRCh37), `https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/` |
+| `src/pychipseeker/data/genome_mm10.npz` / `.json` | GENCODE vM25 **basic** annotation (GRCm38), `https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M25/` |
+| `src/pychipseeker/data/genome_mm9.npz` / `.json` | GENCODE vM1 annotation (GRCm37), `https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M1/` |
+
+These six-frame annotation bundles back the `TxDb="hg38"` (etc.) genome
+lookup; each provenance JSON records the exact release, source URL, SHA-256
+of both the source GTF and the bundle, and per-frame record counts.  They
+are produced by `scripts/build_genome_tables.py`.
+
+Per the GENCODE Data Release Policy, GENCODE data are available for use
+without restrictions (see https://www.gencodegenes.org/ and the release
+pages).  The bundles therefore carry no additional licence terms; please
+cite the GENCODE project (Frankish et al., *Nucleic Acids Research* 49:
+D1110–D1123, 2021, and current releases) when using them.  GENCODE is
+produced by the Ensembl-Havana team; see https://www.gencodegenes.org/.
+
 ## Recreating the bundled datasets
 
 - `gsminfo.csv.gz` can be rebuilt from a locally downloaded `GEOmetadb.sqlite`
@@ -75,3 +96,12 @@ documents the exact provenance) and is regenerated deterministically.
   the writer used is `scripts/build_bigwig_py.py` (pure-Python bigWig
   writer, stdlib only, needed because the MinGW-built
   pyBigWig/libBigWig writer crashes on Windows).
+- `genome_*.npz` bundles are rebuilt with
+  `python scripts/build_genome_tables.py --assembly hg38` (also `hg19`,
+  `mm10`, `mm9`), which downloads the listed GENCODE GTF and converts it
+  through the ordinary `GeneAnnotation.from_gtf` pipeline.
+
+The genome bundles are committed for source builds and are also fetched on
+demand into the user cache directory (`pychipseeker.genomes.cache_dir()`)
+when a bundle is referenced and not found locally; the download base URL
+can be overridden with `PYCHIPSEEKER_GENOME_BASE`.

@@ -51,8 +51,6 @@ pychipseeker = [
     "data/*.csv.gz",
     "data/*.json",
     "data/*.bw",
-    "data/genome_*.npz",
-    "data/genome_*.json",
     "data/GEO_sample_data/*.gz",
 ]
 

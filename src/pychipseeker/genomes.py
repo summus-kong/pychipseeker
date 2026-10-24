@@ -29,7 +29,14 @@ read with :func:`genome_provenance`.
 from __future__ import annotations
 
 import json
+import hashlib
+import os
+import shutil
+import sys
+import time
+import urllib.request
 from typing import Any, Dict, Optional, Union
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -104,7 +111,22 @@ def _encode_column(table: str, values: pd.Series) -> Dict[str, np.ndarray]:
     prefix = f"{table}__{name}"
     tag = str(values.dtype)
     if tag == "int64":
-        return {prefix: values.to_numpy(dtype=np.int64)}
+        raw = values.to_numpy(dtype=object)
+        missing = pd.isna(raw)
+        if missing.any():
+            arr = np.array(
+                [0 if m else int(v) for v, m in zip(raw, missing)], dtype=np.int64
+            )
+        else:
+            arr = raw.astype(np.int64)
+        if int(np.max(arr, initial=0)) < np.iinfo(np.int32).max:
+            arr = arr.astype(np.int32)
+        if missing.any():
+            return {
+                prefix: arr,
+                f"{prefix}__na": np.ascontiguousarray(missing, dtype=bool),
+            }
+        return {prefix: arr}
     flat = values.to_numpy(dtype=object)
     missing = pd.isna(flat)
     strings = np.array(
@@ -113,11 +135,28 @@ def _encode_column(table: str, values: pd.Series) -> Dict[str, np.ndarray]:
     uniq, inverse = np.unique(strings, return_inverse=True)
     payload: Dict[str, np.ndarray] = {
         f"{prefix}__dict": uniq.astype(str),
-        f"{prefix}__idx": np.ascontiguousarray(inverse, dtype=np.int64),
+        f"{prefix}__idx": np.ascontiguousarray(inverse, dtype=np.int32),
     }
     if missing.any():
         payload[f"{prefix}__na"] = np.ascontiguousarray(missing, dtype=bool)
     return payload
+
+
+def _write_npz(dest, payload: Dict[str, np.ndarray]) -> None:
+    """npz writer with DEFLATE level 9 (np.savez_compressed uses level 6)."""
+
+    import zipfile
+
+    with zipfile.ZipFile(
+        dest, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9, allowZip64=True
+    ) as zf:
+        for key, arr in payload.items():
+            with zf.open(key, "w", force_zip64=True) as fp:
+                from numpy.lib import format as _npyformat
+
+                _npyformat.write_array(
+                    fp, np.ascontiguousarray(arr), allow_pickle=False
+                )
 
 
 def _encode_frame(frame: pd.DataFrame, table: str) -> Dict[str, np.ndarray]:
@@ -148,15 +187,130 @@ def save_bundle(model: GeneAnnotation, dest, drop: tuple[str, ...] = (
             if dropcols:
                 frame = frame.drop(columns=dropcols)
         payload.update(_encode_frame(frame, table))
-    np.savez_compressed(dest, **payload)
+    _write_npz(dest, payload)
 
 
-def _bundle_path(assembly: str):
+#: Public source of on-demand bundle downloads (raw files of this repository's
+#: committed ``src/pychipseeker/data`` directory; override with the
+#: ``PYCHIPSEEKER_GENOME_BASE`` environment variable, e.g. for a mirror).
+DEFAULT_BUNDLE_BASE = (
+    "https://raw.githubusercontent.com/summus-kong/pychipseeker/main/"
+    "src/pychipseeker/data"
+)
+
+
+def cache_dir() -> Path:
+    """Directory where downloaded genome bundles are stored.
+
+    ``%LOCALAPPDATA%\\pychipseeker\\genomes`` on Windows and
+    ``~/.cache/pychipseeker/genomes`` (honouring ``XDG_CACHE_HOME``)
+    elsewhere.  Created on first call.
+    """
+
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+        root = Path(base) / "pychipseeker" / "genomes"
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        root = Path(base) / "pychipseeker" / "genomes"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _installed_bundle(name: str) -> Optional[Path]:
+    """Bundle npz shipped inside the installed package, if any."""
+
     from importlib.resources import as_file, files
 
-    return as_file(
-        files("pychipseeker").joinpath("data", f"genome_{assembly}.npz")
-    )
+    try:
+        with as_file(
+            files("pychipseeker").joinpath("data", f"genome_{name}.npz")
+        ) as path:
+            return Path(path) if Path(path).is_file() else None
+    except (FileNotFoundError, ModuleNotFoundError):
+        return None
+
+
+def _cache_bundle(name: str) -> Optional[Path]:
+    """Bundle npz previously fetched into the user cache dir, if any."""
+
+    path = cache_dir() / f"genome_{name}.npz"
+    if path.is_file() and path.stat().st_size > 0:
+        return path
+    return None
+
+
+def _download_file(url: str, dest: Path) -> None:
+    """Stream ``url`` into ``dest`` with retries for flaky connections."""
+
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    last_error: Optional[Exception] = None
+    for attempt in range(1, 8):
+        try:
+            with urllib.request.urlopen(url, timeout=180) as resp, open(tmp, "wb") as fh:
+                shutil.copyfileobj(resp, fh)
+            break
+        except Exception as exc:  # noqa: BLE001 - retry any network error
+            last_error = exc
+            print(
+                f"pychipseeker: genome bundle download attempt {attempt} "
+                f"failed ({exc}); retrying" if attempt < 7 else f" ({exc})",
+                file=sys.stderr,
+            )
+            if attempt < 7:
+                time.sleep(8 * attempt)
+    else:
+        raise RuntimeError(
+            f"could not download genome bundle from {url}"
+        ) from last_error
+    tmp.replace(dest)
+
+
+def bundle_url(name: str) -> str:
+    """Download URL for a bundled genome table (npz)."""
+
+    base = os.environ.get("PYCHIPSEEKER_GENOME_BASE") or DEFAULT_BUNDLE_BASE
+    return f"{base}/genome_{name}.npz"
+
+
+def _download_bundle(name: str) -> Path:
+    """Fetch a genome bundle (npz + provenance JSON) into the cache dir.
+
+    The provenance file is fetched first and the downloaded npz is verified
+    against the recorded sha256; provenance travel together with the bundle
+    so :func:`genome_provenance` also works offline after the first fetch.
+    """
+
+    base = os.environ.get("PYCHIPSEEKER_GENOME_BASE") or DEFAULT_BUNDLE_BASE
+    try:
+        _download_file(f"{base}/genome_{name}.json", cache_dir() / f"genome_{name}.json")
+        with open(cache_dir() / f"genome_{name}.json", "r", encoding="utf-8") as fh:
+            expected = json.load(fh).get("bundle_sha256")
+    except Exception:  # noqa: BLE001 - provenance is a nicety, not a hard requirement
+        expected = None
+
+    dest = cache_dir() / f"genome_{name}.npz"
+    _download_file(bundle_url(name), dest)
+    if expected:
+        digest = hashlib.sha256()
+        with open(dest, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != expected:
+            dest.unlink()
+            raise RuntimeError(
+                f"downloaded genome bundle {dest.name} failed its sha256 check"
+            )
+    return dest
+
+
+def _bundle_path(name: str) -> Path:
+    """Locate a bundle npz: installed data -> cache -> public download."""
+
+    path = _installed_bundle(name) or _cache_bundle(name)
+    if path is None:
+        path = _download_bundle(name)
+    return path
 
 
 def _rebuild_frame(npz, table: str) -> pd.DataFrame:
@@ -166,20 +320,18 @@ def _rebuild_frame(npz, table: str) -> pd.DataFrame:
     columns: Dict[str, Any] = {}
     for name, tag in specs:
         key = f"{table}__{name}"
-        if tag == "int64" and f"{key}__na" not in npz.files:
-            columns[name] = npz[key]
+        if tag == "int64":
+            integers = npz[key].astype(np.int64)
+            if f"{key}__na" in npz.files:
+                values = integers.astype(object)
+                values[npz[f"{key}__na"].astype(bool)] = pd.NA
+                columns[name] = values
+            else:
+                columns[name] = integers
             continue
         strings = npz[f"{key}__dict"][npz[f"{key}__idx"]]
         has_na = f"{key}__na" in npz.files
         mask = npz[f"{key}__na"].astype(bool) if has_na else None
-        if tag == "int64":
-            # NA-ful integer column (e.g. nullable int dtype)
-            values = np.empty(len(strings), dtype=object)
-            values[:] = strings.astype(np.int64)
-            if mask is not None:
-                values[mask] = pd.NA
-            columns[name] = values
-            continue
         if tag.startswith("<M8"):
             columns[name] = strings
             continue
@@ -215,8 +367,7 @@ def load_genome(
     if name in _loaded and not refresh:
         return _loaded[name]
 
-    with _bundle_path(name) as path:
-        npz = np.load(str(path), allow_pickle=False)
+    npz = np.load(str(_bundle_path(name)), allow_pickle=False)
 
     frames = [_rebuild_frame(npz, table) for table in TABLES]
     npz.close()
@@ -227,16 +378,26 @@ def load_genome(
 
 
 def genome_provenance(assembly: Union[str, None]) -> dict:
-    """Return the provenance record of a bundled genome table."""
+    """Return the provenance record of a bundled genome table.
+
+    GENCODE release, source URL, checksums and counts; the JSON is looked up
+    beside the bundle (installed data or download cache) and fetched on
+    demand otherwise.
+    """
 
     name = canonical_assembly(assembly)
-    from importlib.resources import as_file, files
-
-    with as_file(
-        files("pychipseeker").joinpath("data", f"genome_{name}.json")
-    ) as path:
-        with open(path, "r", encoding="utf-8") as fh:
-            return json.load(fh)
+    installed = _installed_bundle(name)
+    candidates = []
+    if installed is not None:
+        candidates.append(installed.with_suffix(".json"))
+    candidates.append(cache_dir() / f"genome_{name}.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            with open(candidate, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+    _download_bundle(name)
+    with open(cache_dir() / f"genome_{name}.json", "r", encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def supported_genomes() -> tuple[str, ...]:

@@ -10,8 +10,10 @@ TSS distances.  The core annotation engine has been checked against
 **ChIPseeker 1.48.0**.  The package also provides Python equivalents for the
 common tag-matrix, profile, heatmap, overlap and summary helpers.
 
-It is **not** an official ChIPseeker port.  Bioconductor `TxDb`/`OrgDb` classes
-and the GEO database are not bundled; see [PARITY.md](PARITY.md) for the exact
+It is **not** an official ChIPseeker port.  Bioconductor `OrgDb` classes and
+the GEO database are not bundled; instead `TxDb=` accepts either a GTF/GFF
+path, a `GeneAnnotation` object, or a bundled assembly name (`"hg38"`,
+`"hg19"`, `"mm10"`, `"mm9"`); see [PARITY.md](PARITY.md) for the exact
 coverage and the remaining gaps.
 
 ## Features
@@ -76,6 +78,12 @@ print(ann.peakNum)
 
 # Snake_case API is also available
 ann2 = pcs.annotate_peak("peaks.bed", "genes.gtf", upstream=3000, downstream=3000)
+
+# Bundled genome lookup — TxDb="assembly", like ChIPseeker's TxDb= packages
+ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")   # also hg38, hg19, mm9
+# aliases (case-insensitive) work too: "GRCh38", "GRCh37", "GRCm38", "GRCm37"
+# bundles are fetched on demand into a local cache on first use; see
+# pychipseeker.genomes docs and NOTICE.md for provenance (GENCODE releases).
 
 # ChIPseeker-style column names
 chip_df = ann.to_chipseeker()

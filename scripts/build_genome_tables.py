@@ -48,13 +48,26 @@ DEFAULT_RELEASES: Dict[str, str] = {
     "mm9": "release_M1",
 }
 
-#: filename per assembly (recent GENCODE human/mouse main annotation files)
+#: filename per assembly (basic subsets where GENCODE provides them: closest
+#: to the per-gene models ChIPseeker's TxDb packages carry and much smaller)
 DEFAULT_FILES: Dict[str, str] = {
-    "hg38": "gencode.v47.annotation.gtf.gz",
+    "hg38": "gencode.v47.basic.annotation.gtf.gz",
     "hg19": "gencode.v19.annotation.gtf.gz",
-    "mm10": "gencode.vM25.annotation.gtf.gz",
+    "mm10": "gencode.vM25.basic.annotation.gtf.gz",
     "mm9": "gencode.vM1.annotation.gtf.gz",
 }
+
+#: columns dropped from bundles: raw GTF decoration unused by the annotation
+#: pipeline (annotation_id/rank/total/name columns are kept -- plotDistToTSS
+#: style detail strings depend on them)
+BUNDLE_DROP = (
+    "attributes",
+    "exon_id",
+    "source",
+    "score",
+    "frame",
+    "feature",
+)
 
 GENCODE_BASE = "https://ftp.ebi.ac.uk/pub/databases/gencode"
 
@@ -133,7 +146,7 @@ def build_bundle(
 
     npz_path = out_dir / f"genome_{assembly}.npz"
     npz_path.parent.mkdir(parents=True, exist_ok=True)
-    save_bundle(model, npz_path)
+    save_bundle(model, npz_path, drop=BUNDLE_DROP)
     provenance = {
         "assembly": assembly,
         "aliases": ALIASES[assembly],
