@@ -1564,7 +1564,7 @@ def _downstream_annotation(
 # main annotation API
 # ----------------------------------------------------------------------
 def annotate_peak(
-    peaks: Union[str, Path, pd.DataFrame],
+    peaks: Optional[Union[str, Path, pd.DataFrame]] = None,
     gtf: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
     tss_region: Sequence[int] = (-3000, 3000),
     level: str = "transcript",
@@ -1585,12 +1585,18 @@ def annotate_peak(
     drop_unmapped: bool = True,
     align_annotation_feature: bool = True,
     TxDb: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
+    **kwargs,
 ) -> PeakAnnotation:
-    """Annotate peaks with ChIPseeker-compatible genomic features.
+    """Annotate peaks with ChIPSeeker-compatible genomic features.
 
     Parameters mirror ``ChIPseeker::annotatePeak``.  ``upstream``/``downstream``
     are kept as convenience aliases for an asymmetric ``tss_region``.
     Coordinates are 0-based, half-open (BED).
+
+    ``annotatePeak`` is a bare alias of this function, so the R-style keyword
+    spellings (``tssRegion``, ``genomicAnnotationPriority``, ``peak``,
+    ``annotation``, ...) and the ``annoDb``/``columns`` gene-annotation
+    shortcut are handled here directly -- there is no separate wrapper.
 
     ``align_annotation_feature`` follows the ChIPseeker development fix for
     issue #252: when a peak overlaps an exon/intron/UTR from one isoform but the
@@ -1599,6 +1605,41 @@ def annotate_peak(
     ``False`` to reproduce ChIPseeker 1.48 and earlier, where the annotation
     text and transcript columns can refer to different isoforms.
     """
+
+    # ChIPseeker-compatible keyword spellings.  ``annotatePeak`` is a bare
+    # alias of this function, so R-style names and the ``peak=`` /
+    # ``annotation=`` spellings are accepted here rather than in a wrapper.
+    if peaks is None:
+        peaks = kwargs.pop("peak", None)
+    if peaks is None:
+        raise ValueError("provide peaks=... (a BED-like path or peak DataFrame)")
+    annotation_source = kwargs.pop("annotation", None)
+    if annotation_source is not None:
+        if gtf is not None or TxDb is not None:
+            raise ValueError("provide only one of gtf=, TxDb= or annotation=")
+        gtf = annotation_source
+    tss_region = kwargs.pop("tssRegion", tss_region)
+    assign_genomic_annotation = kwargs.pop(
+        "assignGenomicAnnotation", assign_genomic_annotation
+    )
+    genomic_annotation_priority = kwargs.pop(
+        "genomicAnnotationPriority", genomic_annotation_priority
+    )
+    add_flank_gene_info = kwargs.pop("addFlankGeneInfo", add_flank_gene_info)
+    flank_distance = kwargs.pop("flankDistance", flank_distance)
+    same_strand = kwargs.pop("sameStrand", same_strand)
+    ignore_overlap = kwargs.pop("ignoreOverlap", ignore_overlap)
+    ignore_upstream = kwargs.pop("ignoreUpstream", ignore_upstream)
+    ignore_downstream = kwargs.pop("ignoreDownstream", ignore_downstream)
+    anno_db = kwargs.pop("annoDb", None)
+    anno_columns = kwargs.pop("columns", None)
+    if kwargs:
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(
+            f"annotate_peak() got unexpected keyword argument(s): {unexpected}"
+        )
+    if genomic_annotation_priority is None:
+        genomic_annotation_priority = _DEFAULT_PRIORITY
 
     if level not in {"transcript", "gene"}:
         raise ValueError("level must be 'transcript' or 'gene'")
@@ -1644,19 +1685,23 @@ def annotate_peak(
         detail = pd.DataFrame(columns=list(_DETAIL_KEYS.values()) + [
             "genic", "Intergenic", "downstream", "distal_intergenic"
         ])
-        return PeakAnnotation(
-            peaks=peaks_df,
-            annotation=empty,
-            gene_annotation=model,
-            tss_region=tss_region,
-            level=level,
-            promoter_bins=bins,
-            genomic_annotation_priority=priority,
-            downstream_distance=downstream_distance,
-            detail_genomic_annotation=detail,
-            has_genomic_annotation=assign_genomic_annotation,
-            add_flank_gene_info=add_flank_gene_info,
-            flank_distance=flank_distance,
+        return _finish_annotation(
+            PeakAnnotation(
+                peaks=peaks_df,
+                annotation=empty,
+                gene_annotation=model,
+                tss_region=tss_region,
+                level=level,
+                promoter_bins=bins,
+                genomic_annotation_priority=priority,
+                downstream_distance=downstream_distance,
+                detail_genomic_annotation=detail,
+                has_genomic_annotation=assign_genomic_annotation,
+                add_flank_gene_info=add_flank_gene_info,
+                flank_distance=flank_distance,
+            ),
+            anno_db,
+            anno_columns,
         )
 
     records: list[dict[str, object]] = []
@@ -1893,20 +1938,42 @@ def annotate_peak(
             if col in mapping.columns:
                 annotation_df[col] = annotation_df["peak_id"].map(mapping[col])
 
-    return PeakAnnotation(
-        peaks=peaks_df,
-        annotation=annotation_df.reset_index(drop=True),
-        gene_annotation=model,
-        tss_region=tss_region,
-        level=level,
-        promoter_bins=bins,
-        genomic_annotation_priority=priority,
-        downstream_distance=downstream_distance,
-        detail_genomic_annotation=detail_df.reset_index(drop=True),
-        has_genomic_annotation=assign_genomic_annotation,
-        add_flank_gene_info=add_flank_gene_info,
-        flank_distance=flank_distance,
+    return _finish_annotation(
+        PeakAnnotation(
+            peaks=peaks_df,
+            annotation=annotation_df.reset_index(drop=True),
+            gene_annotation=model,
+            tss_region=tss_region,
+            level=level,
+            promoter_bins=bins,
+            genomic_annotation_priority=priority,
+            downstream_distance=downstream_distance,
+            detail_genomic_annotation=detail_df.reset_index(drop=True),
+            has_genomic_annotation=assign_genomic_annotation,
+            add_flank_gene_info=add_flank_gene_info,
+            flank_distance=flank_distance,
+        ),
+        anno_db,
+        anno_columns,
     )
+
+
+def _finish_annotation(
+    annotation: PeakAnnotation,
+    anno_db,
+    columns: Optional[Sequence[str]] = None,
+) -> PeakAnnotation:
+    """Apply the ChIPseeker ``annoDb``/``columns`` shortcut, if requested.
+
+    Imported lazily because :mod:`pychipseeker.compat` imports this module;
+    ``annotate_db`` lives there to keep the OrgDb-like helpers together.
+    """
+
+    if anno_db is None:
+        return annotation
+    from .compat import annotate_db
+
+    return annotate_db(annotation, anno_db, columns=columns)
 
 
 def _annotation_columns(level: str, assign: bool) -> list[str]:

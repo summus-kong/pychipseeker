@@ -64,7 +64,8 @@ pip install -e .
 ```python
 import pychipseeker as pcs
 
-# ChIPseeker-style API (camelCase and TxDb= are accepted)
+# ChIPseeker-style API: annotatePeak is a bare alias of annotate_peak,
+# so camelCase keywords and TxDb= work on the same function
 ann = pcs.annotatePeak(
     "peaks.bed",
     TxDb="genes.gtf",          # a GTF/GFF path or a GeneAnnotation object

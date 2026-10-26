@@ -14,7 +14,7 @@ Legend:
 
 | ChIPseeker API | pychipseeker | Notes |
 |---|---|---|
-| `annotatePeak` | Core | `annotatePeak` camelCase wrapper and `annotate_peak`; GTF/GFF or `GeneAnnotation` as `TxDb`; `annoDb` accepts a DataFrame/mapping |
+| `annotatePeak` | Core | `annotate_peak` engine with R-style keyword aliases; `annotatePeak` is a bare alias (no separate wrapper); GTF/GFF or `GeneAnnotation` as `TxDb`; `annoDb` accepts a DataFrame/mapping |
 | `as.GRanges` | Approx. | `asGRanges`/`as_granges` returns a GRanges-like pandas table |
 | `as.data.frame,csAnno` | Core | `to_dataframe()` / `to_chipseeker()` |
 | `show,csAnno` | Approx. | Python `repr`/printing |

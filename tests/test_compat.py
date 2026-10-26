@@ -32,10 +32,15 @@ def annotation(examples_dir):
 
 
 def test_read_peak_file_and_as_granges(examples_dir, annotation):
+    from pychipseeker import readPeakFile
+
+    assert readPeakFile is read_peak_file
     df = read_peak_file(examples_dir / "example_peaks.bed")
     assert {"chrom", "start", "end"}.issubset(df.columns)
     gr = read_peak_file(examples_dir / "example_peaks.bed", as_type="GRanges")
     assert {"seqnames", "start", "end"}.issubset(gr.columns)
+    gr_alias = readPeakFile(examples_dir / "example_peaks.bed", **{"as": "GRanges"})
+    assert {"seqnames", "start", "end"}.issubset(gr_alias.columns)
     ann_gr = as_granges(annotation)
     assert {"seqnames", "start", "end", "distanceToTSS"}.issubset(ann_gr.columns)
 
@@ -52,8 +57,10 @@ def test_annotation_statistics_and_drop(annotation):
 
 
 def test_chipseeker_annotatepeak_wrapper(examples_dir):
-    from pychipseeker import annotatePeak
+    from pychipseeker import annotatePeak, annotate_peak
 
+    # A bare alias: the R-style keyword spellings live in the engine itself.
+    assert annotatePeak is annotate_peak
     ann = annotatePeak(
         examples_dir / "example_peaks.bed",
         TxDb=examples_dir / "example.gtf",
@@ -72,6 +79,23 @@ def test_chipseeker_annotatepeak_wrapper(examples_dir):
     assert "SYMBOL" in ann2.annotation.columns
     assert set(ann2.annotation["SYMBOL"].dropna()).issubset({"A", "B", "C"})
     assert "A" in set(ann2.annotation["SYMBOL"].dropna())
+
+    # R spellings of the peak/source arguments and the default priority.
+    ann3 = annotatePeak(
+        peak=examples_dir / "example_peaks.bed",
+        annotation=examples_dir / "example.gtf",
+        tssRegion=(-1000, 1000),
+        genomicAnnotationPriority=None,
+    )
+    assert ann3.peakNum == ann.peakNum
+    assert ann3.genomic_annotation_priority == ann.genomic_annotation_priority
+
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        annotatePeak(
+            examples_dir / "example_peaks.bed",
+            gtf=examples_dir / "example.gtf",
+            bogus=1,
+        )
 
 
 def test_combine_annotations(annotation):

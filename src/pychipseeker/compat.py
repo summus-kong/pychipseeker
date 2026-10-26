@@ -65,8 +65,13 @@ def read_peak_file(
     as_type: str = "dataframe",
     **kwargs,
 ) -> pd.DataFrame:
-    """Read a peak file; ``as_type='GRanges'`` returns a GRanges-like table."""
+    """Read a peak file; ``as_type='GRanges'`` returns a GRanges-like table.
 
+    The ChIPseeker spelling ``as=`` (and ``as_=``) is accepted as an alias for
+    ``as_type``; ``readPeakFile`` is a bare alias of this function.
+    """
+
+    as_type = kwargs.pop("as_", kwargs.pop("as", as_type))
     if isinstance(peak, pd.DataFrame):
         df = peak.copy()
     else:
@@ -189,89 +194,6 @@ def annotate_db(
         return annotation
 
     raise TypeError("annoDb must be a pandas.DataFrame or a mapping")
-
-
-def annotatePeak(
-    peak,
-    tssRegion: Sequence[int] = (-3000, 3000),
-    TxDb=None,
-    level: str = "transcript",
-    assignGenomicAnnotation: bool = True,
-    genomicAnnotationPriority: Optional[Sequence[str]] = None,
-    annoDb=None,
-    addFlankGeneInfo: bool = False,
-    flankDistance: int = 5000,
-    sameStrand: bool = False,
-    ignoreOverlap: bool = False,
-    ignoreUpstream: bool = False,
-    ignoreDownstream: bool = False,
-    overlap: str = "TSS",
-    verbose: bool = True,
-    columns: Sequence[str] = ("ENTREZID", "ENSEMBL", "SYMBOL", "GENENAME"),
-    **kwargs,
-) -> PeakAnnotation:
-    """ChIPseeker-style ``annotatePeak`` wrapper with camelCase arguments."""
-
-    if "tss_region" in kwargs:
-        tssRegion = kwargs.pop("tss_region")
-    if "assign_genomic_annotation" in kwargs:
-        assignGenomicAnnotation = kwargs.pop("assign_genomic_annotation")
-    if "genomic_annotation_priority" in kwargs:
-        genomicAnnotationPriority = kwargs.pop("genomic_annotation_priority")
-    if "add_flank_gene_info" in kwargs:
-        addFlankGeneInfo = kwargs.pop("add_flank_gene_info")
-    if "flank_distance" in kwargs:
-        flankDistance = kwargs.pop("flank_distance")
-    if "same_strand" in kwargs:
-        sameStrand = kwargs.pop("same_strand")
-    if "ignore_overlap" in kwargs:
-        ignoreOverlap = kwargs.pop("ignore_overlap")
-    if "ignore_upstream" in kwargs:
-        ignoreUpstream = kwargs.pop("ignore_upstream")
-    if "ignore_downstream" in kwargs:
-        ignoreDownstream = kwargs.pop("ignore_downstream")
-
-    source = TxDb
-    if source is None:
-        source = kwargs.pop("gtf", None)
-    if source is None:
-        source = kwargs.pop("annotation", None)
-    if source is None:
-        raise ValueError("provide TxDb=... or gtf=...")
-
-    priority = (
-        tuple(genomicAnnotationPriority)
-        if genomicAnnotationPriority is not None
-        else (
-            "Promoter",
-            "5UTR",
-            "3UTR",
-            "Exon",
-            "Intron",
-            "Downstream",
-            "Intergenic",
-        )
-    )
-    ann = annotate_peak(
-        peaks=peak,
-        gtf=source,
-        tss_region=tssRegion,
-        level=level,
-        assign_genomic_annotation=assignGenomicAnnotation,
-        genomic_annotation_priority=priority,
-        add_flank_gene_info=addFlankGeneInfo,
-        flank_distance=flankDistance,
-        same_strand=sameStrand,
-        ignore_overlap=ignoreOverlap,
-        ignore_upstream=ignoreUpstream,
-        ignore_downstream=ignoreDownstream,
-        overlap=overlap,
-        verbose=verbose,
-        **kwargs,
-    )
-    if annoDb is not None:
-        ann = annotate_db(ann, annoDb, columns=columns)
-    return ann
 
 
 def combine_cs_anno(*annotations) -> PeakAnnotation:
@@ -1015,16 +937,6 @@ def upsetplot(
     return fig, ax
 
 
-def readPeakFile(peak, **kwargs) -> pd.DataFrame:
-    """ChIPseeker-style ``readPeakFile`` with ``as='GRanges'`` support."""
-
-    as_type = kwargs.pop(
-        "as_type",
-        kwargs.pop("as_", kwargs.pop("as", "dataframe")),
-    )
-    return read_peak_file(peak, as_type=as_type, **kwargs)
-
-
 # ----------------------------------------------------------------------
 # ChIPseeker GEO helpers (bundled gsminfo snapshot)
 # ----------------------------------------------------------------------
@@ -1221,6 +1133,10 @@ download_gsm_bed_files = downloadGSMbedFiles
 # ChIPseeker spelling aliases.  Python identifiers cannot contain a dot, so
 # ``as.GRanges`` and ``vennplot.peakfile`` are exposed as ``as_granges`` /
 # ``vennplot_peakfile`` (and, for interactive users, as function attributes).
+# ``annotatePeak`` and ``readPeakFile`` are bare aliases too: their R-style
+# keyword spellings are handled by the engine functions themselves.
+annotatePeak = annotate_peak
+readPeakFile = read_peak_file
 asGRanges = as_granges
 getAnnoStat = get_anno_stat
 dropAnno = drop_anno
