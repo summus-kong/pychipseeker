@@ -1432,9 +1432,6 @@ def _nearest_feature(
     else:
         feature_idx, distance = None, float("nan")
 
-    if feature_idx is None:
-        return None, float("nan")
-
     if not ignore_overlap:
         if overlap == "all":
             hits = span_index.overlapping(
@@ -1461,6 +1458,12 @@ def _nearest_feature(
             if len(hits):
                 feature_idx = int(hits[0])
                 distance = 0.0
+
+    # A peak that contains a TSS has no strict follow/precede neighbour.  The
+    # overlap query above still finds it, so only drop the peak when that also
+    # came up empty (e.g. a custom annotation with a single gene).
+    if feature_idx is None:
+        return None, float("nan")
 
     return int(feature_idx), float(distance)
 

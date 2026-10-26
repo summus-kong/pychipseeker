@@ -63,6 +63,37 @@ def test_promoter_uses_nearest_tss_only():
     assert row["nearest_gene_name"] == "GeneA"
 
 
+def test_single_gene_annotation_keeps_peak_containing_tss():
+    # A peak that contains the TSS has no strict follow/precede neighbour.  With
+    # only one gene on the chromosome the old code dropped it before checking
+    # TSS overlap; custom annotations often have exactly this shape.
+    gtf = pd.DataFrame(
+        {
+            "feature": ["gene", "transcript", "exon"],
+            "gene_id": ["G1", "G1", "G1"],
+            "gene_name": ["GeneA", "GeneA", "GeneA"],
+            "transcript_id": [None, "T1", "T1"],
+            "chrom": ["chr1", "chr1", "chr1"],
+            "start": [1000, 1000, 1000],
+            "end": [2000, 2000, 2000],
+            "strand": ["+", "+", "+"],
+        }
+    )
+    peaks = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [990, 1000],
+            "end": [1010, 1001],
+        }
+    )
+
+    ann = annotate_peak(peaks, gtf)
+    table = ann.to_dataframe()
+    assert len(table) == 2
+    assert table["annotation"].tolist() == ["Promoter (<=1kb)"] * 2
+    assert table["distance_to_tss"].tolist() == [0.0, 0.0]
+
+
 def test_groupby_uses_peak_metadata(examples_dir):
     peaks = pd.read_csv(
         examples_dir / "example_peaks.bed",
