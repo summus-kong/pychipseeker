@@ -1,0 +1,25 @@
+{
+  "assembly": "mm10",
+  "aliases": [
+    "mm10",
+    "GRCm38"
+  ],
+  "gencode_release": "release_M25",
+  "source_url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M25/gencode.vM25.basic.annotation.gtf.gz",
+  "source_sha256": "f0b448e01037339379782a1cbc973c3d26756bba9a8e8d4eac0cb9ec4714f869",
+  "source_size_bytes": 19833013,
+  "bundle": "genome_mm10.npz",
+  "bundle_sha256": "54ea88e2de8c368c2c8bcfe51e887913931a43a65d924c17bfd29e1687a04343",
+  "bundle_size_bytes": 17484313,
+  "built_at": "2026-10-24",
+  "license": "GENCODE data: free for academic and commercial research use; see https://www.gencodegenes.org/pages/license.html and NOTICE.md",
+  "counts": {
+    "genes": 55401,
+    "transcripts": 81540,
+    "exons": 527731,
+    "introns": 446191,
+    "utr5": 68996,
+    "utr3": 48720
+  },
+  "pipeline": "GENCODE GTF -> GeneAnnotation.from_gtf -> dict-encoded npz"
+}

@@ -169,10 +169,6 @@ def test_lookup_downloads_when_not_installed(
     assert load_genome("hg19") is load_genome("hg19")
 
 
-def _peak_df(x: int = 1_000_000) -> pd.DataFrame:
-    return pd.DataFrame({"chrom": ["chr1"], "start": [x], "end": [x + 249]})
-
-
 @pytest.mark.skipif(not _bundle_available("mm10"), reason="mm10 bundle not built yet")
 def test_bundled_mm10_load() -> None:
     model = load_genome("mm10")
@@ -185,7 +181,16 @@ def test_bundled_mm10_load() -> None:
 
 @pytest.mark.skipif(not _bundle_available("mm10"), reason="mm10 bundle not built yet")
 def test_bundled_mm10_annotate_and_tagmatrix() -> None:
-    peaks = _peak_df()
+    model = load_genome("mm10")
+    gene = model.genes.iloc[0]
+    tss = int(gene["tss"])
+    peaks = pd.DataFrame(
+        {
+            "chrom": [str(gene["chrom"])],
+            "start": [max(tss - 125, 0)],
+            "end": [max(tss - 125, 0) + 250],
+        }
+    )
     ann = pcs.annotate_peak(peaks=peaks, TxDb="mm10")
     table = ann.to_chipseeker()
     assert table["annotation"].notna().all()

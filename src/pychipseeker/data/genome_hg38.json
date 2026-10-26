@@ -1,0 +1,25 @@
+{
+  "assembly": "hg38",
+  "aliases": [
+    "hg38",
+    "GRCh38"
+  ],
+  "gencode_release": "release_47",
+  "source_url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.basic.annotation.gtf.gz",
+  "source_sha256": "8858ec2557c2904f91e44aeda762759cd998ce663774245710cb52ad4dc334ee",
+  "source_size_bytes": 33706193,
+  "bundle": "genome_hg38.npz",
+  "bundle_sha256": "05c673b195a54a1ec9a024c4185845e04865072417eb0e23eb523b00681b9c61",
+  "bundle_size_bytes": 28134489,
+  "built_at": "2026-10-24",
+  "license": "GENCODE data: free for academic and commercial research use; see https://www.gencodegenes.org/pages/license.html and NOTICE.md",
+  "counts": {
+    "genes": 78724,
+    "transcripts": 158338,
+    "exons": 1007358,
+    "introns": 849020,
+    "utr5": 111409,
+    "utr3": 72293
+  },
+  "pipeline": "GENCODE GTF -> GeneAnnotation.from_gtf -> dict-encoded npz"
+}

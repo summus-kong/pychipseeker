@@ -1,0 +1,25 @@
+{
+  "assembly": "mm9",
+  "aliases": [
+    "mm9",
+    "GRCm37"
+  ],
+  "gencode_release": "release_M1",
+  "source_url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_mouse/release_M1/gencode.vM1.annotation.gtf.gz",
+  "source_sha256": "ca85b03480d784b00a05992e4f3783d6501dd109fc08be1927528d7b59774013",
+  "source_size_bytes": 20822164,
+  "bundle": "genome_mm9.npz",
+  "bundle_sha256": "5b7911cd05759e1d2eeb26cac434527f4a2eab55980e33c66785637c8675910b",
+  "bundle_size_bytes": 18167735,
+  "built_at": "2026-10-24",
+  "license": "GENCODE data: free for academic and commercial research use; see https://www.gencodegenes.org/pages/license.html and NOTICE.md",
+  "counts": {
+    "genes": 37310,
+    "transcripts": 95495,
+    "exons": 677632,
+    "introns": 582137,
+    "utr5": 78663,
+    "utr3": 68828
+  },
+  "pipeline": "GENCODE GTF -> GeneAnnotation.from_gtf -> dict-encoded npz"
+}

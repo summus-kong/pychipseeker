@@ -1,0 +1,25 @@
+{
+  "assembly": "hg19",
+  "aliases": [
+    "hg19",
+    "GRCh37"
+  ],
+  "gencode_release": "release_19",
+  "source_url": "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz",
+  "source_sha256": "9909e8123a40eca090c3f8e501633f7cc65cd6c4adb83b95009745eca3564d70",
+  "source_size_bytes": 37991892,
+  "bundle": "genome_hg19.npz",
+  "bundle_sha256": "4f29dca5e261adcd796ddcd8b9d3c06fdb88f3c0858b234914aab19a84ec5786",
+  "bundle_size_bytes": 31495596,
+  "built_at": "2026-10-24",
+  "license": "GENCODE data: free for academic and commercial research use; see https://www.gencodegenes.org/pages/license.html and NOTICE.md",
+  "counts": {
+    "genes": 57820,
+    "transcripts": 196520,
+    "exons": 1196293,
+    "introns": 999773,
+    "utr5": 148096,
+    "utr3": 136477
+  },
+  "pipeline": "GENCODE GTF -> GeneAnnotation.from_gtf -> dict-encoded npz"
+}
