@@ -139,6 +139,24 @@ def test_get_tag_matrix_with_assembly_name(fake_bundled_genome: str) -> None:
     assert tag_matrix.shape == (len(peaks), 10)
 
 
+def test_bundle_bases_prefer_env_then_release_then_raw(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pychipseeker import genomes as genomes_mod
+
+    monkeypatch.delenv("PYCHIPSEEKER_GENOME_BASE", raising=False)
+    assert genomes_mod._bundle_bases() == (
+        genomes_mod.RELEASE_BUNDLE_BASE,
+        genomes_mod.RAW_BUNDLE_BASE,
+    )
+    monkeypatch.setenv("PYCHIPSEEKER_GENOME_BASE", "https://mirror.example/b/")
+    assert genomes_mod._bundle_bases() == (
+        "https://mirror.example/b",
+        genomes_mod.RELEASE_BUNDLE_BASE,
+        genomes_mod.RAW_BUNDLE_BASE,
+    )
+
+
 def test_lookup_skips_download_when_installed_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, example_model: GeneAnnotation
 ) -> None:

@@ -190,13 +190,27 @@ def save_bundle(model: GeneAnnotation, dest, drop: tuple[str, ...] = (
     _write_npz(dest, payload)
 
 
-#: Public source of on-demand bundle downloads (raw files of this repository's
-#: committed ``src/pychipseeker/data`` directory; override with the
-#: ``PYCHIPSEEKER_GENOME_BASE`` environment variable, e.g. for a mirror).
-DEFAULT_BUNDLE_BASE = (
+#: Public download sources for genome bundles, tried in order.  Release
+#: assets live on github.com (reliable worldwide); the raw.githubusercontent
+#: URL is a fallback.  ``PYCHIPSEEKER_GENOME_BASE`` (if set) is tried first,
+#: e.g. ``file:///D:/mirror`` or an internal mirror for air-gapped setups.
+RELEASE_BUNDLE_BASE = (
+    "https://github.com/summus-kong/pychipseeker/releases/download/"
+    "genome-data-2026.10"
+)
+RAW_BUNDLE_BASE = (
     "https://raw.githubusercontent.com/summus-kong/pychipseeker/main/"
     "src/pychipseeker/data"
 )
+
+
+def _bundle_bases() -> tuple[str, ...]:
+    bases = []
+    env_base = os.environ.get("PYCHIPSEEKER_GENOME_BASE")
+    if env_base:
+        bases.append(env_base.rstrip("/"))
+    bases += [RELEASE_BUNDLE_BASE, RAW_BUNDLE_BASE]
+    return tuple(dict.fromkeys(bases))
 
 
 def cache_dir() -> Path:
@@ -240,68 +254,74 @@ def _cache_bundle(name: str) -> Optional[Path]:
     return None
 
 
-def _download_file(url: str, dest: Path) -> None:
+def _download_file(url: str, dest: Path, tries: int = 4) -> None:
     """Stream ``url`` into ``dest`` with retries for flaky connections."""
 
     tmp = dest.with_suffix(dest.suffix + ".part")
     last_error: Optional[Exception] = None
-    for attempt in range(1, 8):
+    for attempt in range(1, tries + 1):
         try:
             with urllib.request.urlopen(url, timeout=180) as resp, open(tmp, "wb") as fh:
                 shutil.copyfileobj(resp, fh)
             break
         except Exception as exc:  # noqa: BLE001 - retry any network error
             last_error = exc
-            print(
-                f"pychipseeker: genome bundle download attempt {attempt} "
-                f"failed ({exc}); retrying" if attempt < 7 else f" ({exc})",
-                file=sys.stderr,
-            )
-            if attempt < 7:
-                time.sleep(8 * attempt)
+            if attempt < tries:
+                print(
+                    f"pychipseeker: genome bundle download attempt "
+                    f"{attempt} failed ({exc}); retrying",
+                    file=sys.stderr,
+                )
+                time.sleep(5 * attempt)
     else:
-        raise RuntimeError(
-            f"could not download genome bundle from {url}"
-        ) from last_error
+        raise RuntimeError(f"could not download {url}") from last_error
     tmp.replace(dest)
-
-
-def bundle_url(name: str) -> str:
-    """Download URL for a bundled genome table (npz)."""
-
-    base = os.environ.get("PYCHIPSEEKER_GENOME_BASE") or DEFAULT_BUNDLE_BASE
-    return f"{base}/genome_{name}.npz"
 
 
 def _download_bundle(name: str) -> Path:
     """Fetch a genome bundle (npz + provenance JSON) into the cache dir.
 
-    The provenance file is fetched first and the downloaded npz is verified
-    against the recorded sha256; provenance travel together with the bundle
-    so :func:`genome_provenance` also works offline after the first fetch.
+    Tries each source in :func:`_bundle_bases`.  The provenance JSON is
+    fetched first (best effort) so the npz can be verified against its
+    recorded sha256; keeping the JSON also makes
+    :func:`genome_provenance` work offline afterwards.
     """
 
-    base = os.environ.get("PYCHIPSEEKER_GENOME_BASE") or DEFAULT_BUNDLE_BASE
-    try:
-        _download_file(f"{base}/genome_{name}.json", cache_dir() / f"genome_{name}.json")
-        with open(cache_dir() / f"genome_{name}.json", "r", encoding="utf-8") as fh:
-            expected = json.load(fh).get("bundle_sha256")
-    except Exception:  # noqa: BLE001 - provenance is a nicety, not a hard requirement
-        expected = None
-
     dest = cache_dir() / f"genome_{name}.npz"
-    _download_file(bundle_url(name), dest)
-    if expected:
-        digest = hashlib.sha256()
-        with open(dest, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != expected:
-            dest.unlink()
-            raise RuntimeError(
-                f"downloaded genome bundle {dest.name} failed its sha256 check"
-            )
-    return dest
+    json_dest = cache_dir() / f"genome_{name}.json"
+    expected: Optional[str] = None
+    last_error: Optional[Exception] = None
+    for base in _bundle_bases():
+        if expected is None:
+            try:
+                _download_file(f"{base}/genome_{name}.json", json_dest, tries=2)
+                with open(json_dest, "r", encoding="utf-8") as fh:
+                    expected = json.load(fh).get("bundle_sha256")
+            except Exception:  # noqa: BLE001 - provenance is a nicety
+                expected = None
+        try:
+            _download_file(f"{base}/genome_{name}.npz", dest)
+        except Exception as exc:  # noqa: BLE001 - fall through to next source
+            last_error = exc
+            continue
+        if expected:
+            digest = hashlib.sha256()
+            with open(dest, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                dest.unlink(missing_ok=True)
+                last_error = RuntimeError(
+                    f"genome bundle {dest.name} from {base} failed its sha256 check"
+                )
+                continue
+        return dest
+    raise RuntimeError(
+        f"could not fetch genome bundle {name!r} from any source; download "
+        f"genome_{name}.npz + genome_{name}.json manually into "
+        f"{cache_dir()} (see NOTICE.md for the public URLs), or pass a local "
+        "GTF instead of TxDb="
+    ) from last_error
 
 
 def _bundle_path(name: str) -> Path:

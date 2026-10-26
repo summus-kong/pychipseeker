@@ -103,5 +103,12 @@ produced by the Ensembl-Havana team; see https://www.gencodegenes.org/.
 
 The genome bundles are committed for source builds and are also fetched on
 demand into the user cache directory (`pychipseeker.genomes.cache_dir()`)
-when a bundle is referenced and not found locally; the download base URL
-can be overridden with `PYCHIPSEEKER_GENOME_BASE`.
+when a bundle is referenced and not found locally.  Public download URLs
+(tried in order):
+
+- `https://github.com/summus-kong/pychipseeker/releases/download/genome-data-2026.10/`
+- `https://raw.githubusercontent.com/summus-kong/pychipseeker/main/src/pychipseeker/data/`
+
+A custom base (mirror, `file://` path) can be set with the
+`PYCHIPSEEKER_GENOME_BASE` environment variable; offline installations can
+simply place `genome_<assembly>.npz` + `.json` into the cache directory.
