@@ -123,6 +123,25 @@ print(ann.summary(groupby="cluster"))
 fig, ax = ann.plot_anno_bar(groupby="cluster")
 ```
 
+### Real ENCODE example
+
+`examples/call_encode_peaks.py` extracts peaks from a real ENCODE signal
+track; `examples/make_encode_plate.py` and `examples/make_encode_report.py`
+turn them into a single-page A3 plate and a multi-page PDF report:
+
+```bash
+export ENCODE_BIGWIG=/path/to/ENCFF893ZGR.bigWig   # H3K4me3, mm10, ENCSR000CDQ
+python examples/call_encode_peaks.py --bigwig "$ENCODE_BIGWIG" \
+    --out examples/encode_peaks.bed --threshold 3
+python examples/make_encode_plate.py    # encode_figure_plate.pdf + 6 figures
+python examples/make_encode_report.py   # 11-page encode_report.pdf
+```
+
+The committed `examples/encode_peaks.bed` holds the resulting 11,291 peaks
+(92% within 1 kb of a TSS, median width 958 bp).  The track is a
+fold-change/signal track, so these peaks are **threshold-called from the
+signal**, not ENCODE's own narrowPeak calls.
+
 ### OrgDb-like columns
 
 ChIPseeker's `annoDb=` expects an R OrgDb package.  Pure Python does not have
