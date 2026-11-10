@@ -19,6 +19,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.9", "3.10", "3.11", "3.12"]
+        exclude:
+          # py3.9 is unavailable on the current ubuntu-latest image.
+          - os: ubuntu-latest
+            python: "3.9"
+        include:
+          - os: ubuntu-22.04
+            python: "3.9"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,7 +33,12 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev,bigwig]"
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Install pyBigWig (optional)
+        # pyBigWig has no Windows wheels for every Python version; the tests
+        # that need it skip when the import is unavailable.
+        continue-on-error: true
+        run: python -m pip install "pyBigWig>=0.3.22"
       - name: Ruff
         run: python -m ruff check src tests examples
       - name: Pytest
