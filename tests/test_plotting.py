@@ -84,6 +84,60 @@ def test_extract_tss_matrix_from_signal():
     np.testing.assert_allclose(matrix[1], matrix[0, ::-1])
 
 
+def test_extract_tss_matrix_asymmetric_and_mask():
+    signal = pd.DataFrame(
+        {
+            "chrom": ["chr1"] * 4,
+            "start": [0, 100, 200, 300],
+            "end": [100, 200, 300, 400],
+            "value": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    genes = pd.DataFrame(
+        {"chrom": ["chr1", "chr1"], "tss": [200, 1000], "strand": ["+", "+"]}
+    )
+    matrix = extract_tss_matrix_from_signal(
+        signal,
+        genes,
+        n_bins=4,
+        upstream=50,
+        downstream=150,
+        min_value=None,
+    )
+    assert matrix.shape == (2, 4)
+    np.testing.assert_allclose(matrix[0], [2.0, 3.0, 3.0, 4.0])
+    assert np.isnan(matrix[1]).all()
+
+    dropped = extract_tss_matrix_from_signal(
+        signal,
+        genes,
+        n_bins=4,
+        upstream=50,
+        downstream=150,
+        min_value=None,
+        drop_empty=True,
+    )
+    assert dropped.shape == (1, 4)
+
+    kept, mask = extract_tss_matrix_from_signal(
+        signal,
+        genes,
+        n_bins=4,
+        upstream=50,
+        downstream=150,
+        min_value=None,
+        return_mask=True,
+    )
+    assert kept.shape == (2, 4)
+    assert mask.tolist() == [True, False]
+
+    fig, ax = plot_tss_profile(kept, upstream=50, downstream=150)
+    xdata = ax.lines[0].get_xdata()
+    assert float(np.min(xdata)) == pytest.approx(-50)
+    assert float(np.max(xdata)) == pytest.approx(150)
+    plt.close(fig)
+
+
 def test_extract_tss_matrix_from_signal_file(tmp_path):
     path = tmp_path / "signal.bedgraph"
     path.write_text(

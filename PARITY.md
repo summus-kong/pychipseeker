@@ -32,7 +32,7 @@ Legend:
 | `getGEOspecies` | Core | `getGEOspecies`/`get_geo_species`; `species`/`Freq` count table |
 | `getPromoters` | Core | `getBioRegion(type="start_site")` |
 | `getSampleFiles` | Core | `getSampleFiles`/`get_sample_files`; same GEO sample BED files as R extdata, same name regex |
-| `getTagMatrix` | Core | Peak-coverage tag matrix, binning, weights, strand handling |
+| `getTagMatrix` | Core | Peak-coverage tag matrix, binning, weights, strand handling; optional bigWig/BAM signal matrices |
 | `makeBioRegionFromGranges` | Core | DataFrame input instead of GRanges |
 | `overlap` | Core | Exact membership counts for generic sets/peaks |
 | `peakHeatmap` | Approx. | matplotlib heatmap |
@@ -53,7 +53,7 @@ Legend:
 | `seq2gene` | Core | Many-to-many peak-to-gene assignment |
 | `shuffle` | Approx. | Uniform relocation within chromosome bounds |
 | `tagHeatmap` | Approx. | matplotlib heatmap |
-| `upsetplot` | Approx. | Combination bar chart instead of ggupset |
+| `upsetplot` | Approx. | True UpSet layout (intersection bars, set sizes, dot matrix) with matplotlib styling |
 | `vennpie` | Approx. | Nested matplotlib pies |
 | `vennplot` | Approx. | 1-3 set Venn diagrams; bar chart for more sets |
 | `vennplot.peakfile` | Approx. | `vennplot_peakfile`, peaks compared by coordinates |
@@ -62,18 +62,30 @@ Legend:
 ## Additional Python-only helpers
 
 - `annotate_db`: apply a DataFrame/mapping of gene annotation columns.
-- `get_tag_matrix_from_bigwig`: direct bigWig tag-matrix extraction.
-- `plot_tss_profile` / `plot_tss_heatmap`: existing TSS signal helpers.
+- `get_tag_matrix_from_bigwig` / `get_tag_matrix_from_bam`: direct bigWig or
+  BAM/CRAM tag-matrix extraction.
+- `plot_tss_profile` / `plot_tss_heatmap`: asymmetric TSS signal helpers.
 - `enrich_go`, `enrich_kegg`, `enrichr`: optional `gseapy` wrappers.
+- `gsea`, `gsea_peak_genes`, `plot_enrichment`: preranked GSEA and
+  ORA/Enrichr/GSEA bar/dot plots.
+- `peak_qc`, `frip`, `tss_enrichment`, `qc_summary`: peak/FRiP/TSS QC.
+- `filter_peaks`: blacklist, mitochondrial, width, score and chromosome
+  filtering.
+- `detect_assembly`, `canonical_chrom`, `harmonize_frame`: conservative
+  assembly detection and UCSC/Ensembl chromosome matching.
+- `prune_genome_cache`: remove interrupted downloads and orphaned provenance
+  records.
 
 ## Known semantic differences
 
 1. **Coordinates**: pychipseeker uses 0-based, half-open intervals throughout;
    ChIPseeker/GRanges use 1-based, closed intervals.
-2. **Annotation engine input**: GTF/GFF, a `GeneAnnotation` object or a
-   bundled assembly name (`TxDb="hg38"`, `"hg19"`, `"mm10"`, `"mm9"` --
-   GENCODE-based bundles fetched on demand into a local cache) replaces
-   a Bioconductor `TxDb`.
+2. **Annotation engine input**: GTF/GFF, a `GeneAnnotation` object, a
+   prebuilt assembly name (`TxDb="hg38"`, `"hg19"`, `"mm10"`, `"mm9"`),
+   an on-demand Ensembl assembly (`"dm6"`, `"danRer11"`, `"rn7"`, `"mm39"`,
+   `"sacCer3"`), an `ensembl:`/`gencode:`/`url:` spec, or `TxDb="auto"` for
+   conservative detection replaces a Bioconductor `TxDb`.  All bundles live
+   in the user cache; the wheel does not embed the `.npz` tables.
 3. **Isoform alignment**: the default follows ChIPseeker's development fix
    #252.  Use `align_annotation_feature=False` for release-1.48 behavior.
 4. **`p_shared_exon`**: the devel fix intentionally differs from the 1.48
@@ -96,11 +108,11 @@ Legend:
    compatible `gsminfo` CSV from a locally downloaded `GEOmetadb.sqlite`
    (zero-dependency, stdlib only) plus the upstream
    `scripts/ucsc_release.csv.gz` mapping.  See the script docstring.
-8. **bigWig reading**: pyBigWig is a declared dependency and the supported
-   reader.  The libBigWig `fopen()` calls are patched to use `_wfopen()` so
-   UTF-8 (non-ASCII, e.g. Chinese) local paths work on Windows on a build
-   matching `pyBigWig` upstream; the tests use upstream's own
-   `pyBigWigTest/test.bw` file.
+8. **bigWig/BAM reading**: `pyBigWig` and `pysam` are optional extras
+   (`bigwig`, `bam`), not core dependencies.  The libBigWig `fopen()` calls
+   are patched to use `_wfopen()` so UTF-8 (non-ASCII, e.g. Chinese) local
+   paths work on Windows on a build matching `pyBigWig` upstream; the tests
+   use upstream's own `pyBigWigTest/test.bw` file.
 
 ## Re-running the R comparison
 

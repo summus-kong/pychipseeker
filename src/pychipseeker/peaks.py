@@ -66,61 +66,53 @@ def call_peaks(
             intervals = bw.intervals(chrom)
             if not intervals:
                 continue
-            starts, ends, values = [], [], []
-            for start, end, value in intervals:
-                if value is None or not np.isfinite(value) or value < threshold:
-                    continue
-                starts.append(int(start))
-                ends.append(int(end))
-                values.append(float(value))
-            if not starts:
+
+            table = np.asarray(intervals, dtype=np.float64)
+            if table.ndim != 2 or table.shape[0] == 0:
                 continue
+            starts = table[:, 0].astype(np.int64)
+            ends = table[:, 1].astype(np.int64)
+            values = table[:, 2]
+            keep = np.isfinite(values) & (values >= threshold) & (ends > starts)
+            if not keep.any():
+                continue
+            starts = starts[keep]
+            ends = ends[keep]
+            values = values[keep]
+            order = np.argsort(starts, kind="mergesort")
+            starts = starts[order]
+            ends = ends[order]
+            values = values[order]
 
-            run_start = starts[0]
-            run_end = ends[0]
-            run_sum = values[0] * (ends[0] - starts[0])
-            run_max = values[0]
-            run_peak = starts[0]
-            for start, end, value in zip(starts[1:], ends[1:], values[1:]):
-                if start - run_end <= max_gap:
-                    if value > run_max:
-                        run_max = value
-                        run_peak = start
-                    run_sum += value * (end - start)
-                    run_end = max(run_end, end)
+            # A new run starts when the next interval is farther than max_gap
+            # from the maximum end seen so far.  Using the cumulative maximum
+            # also handles nested/overlapping bigWig intervals.
+            cumulative_end = np.maximum.accumulate(ends)
+            breaks = np.flatnonzero(
+                starts[1:] > cumulative_end[:-1] + int(max_gap)
+            ) + 1
+            group_starts = np.concatenate(([0], breaks))
+            group_ends = np.concatenate((breaks, [len(starts)]))
+            run_start = starts[group_starts]
+            run_end = np.maximum.reduceat(ends, group_starts)
+            run_sum = np.add.reduceat(values * (ends - starts), group_starts)
+            run_max = np.maximum.reduceat(values, group_starts)
+            widths = run_end - run_start
+            for group, (a, b) in enumerate(zip(group_starts, group_ends)):
+                width = int(widths[group])
+                if width < min_width:
                     continue
-
-                width = run_end - run_start
-                if width >= min_width:
-                    rows.append(
-                        {
-                            "chrom": str(chrom),
-                            "start": run_start,
-                            "end": run_end,
-                            "name": f"Peak_{len(rows) + 1}",
-                            "score": round(run_max, 6),
-                            "strand": ".",
-                            "signalValue": run_sum / max(width, 1),
-                            "peak": run_peak - run_start,
-                        }
-                    )
-                run_start, run_end = start, end
-                run_sum = value * (end - start)
-                run_max = value
-                run_peak = start
-
-            width = run_end - run_start
-            if width >= min_width:
+                local = int(np.argmax(values[a:b]))
+                run_peak = int(starts[a + local])
                 rows.append(
                     {
                         "chrom": str(chrom),
-                        "start": run_start,
-                        "end": run_end,
-                        "name": f"Peak_{len(rows) + 1}",
-                        "score": round(run_max, 6),
+                        "start": int(run_start[group]),
+                        "end": int(run_end[group]),
+                        "score": round(float(run_max[group]), 6),
                         "strand": ".",
-                        "signalValue": run_sum / max(width, 1),
-                        "peak": run_peak - run_start,
+                        "signalValue": float(run_sum[group]) / max(width, 1),
+                        "peak": run_peak - int(run_start[group]),
                     }
                 )
     finally:
@@ -134,8 +126,123 @@ def call_peaks(
     if sample is not None and len(peaks) > int(sample):
         peaks = peaks.sample(n=int(sample), random_state=seed).sort_index()
         peaks = peaks.reset_index(drop=True)
-        peaks["name"] = [f"Peak_{i + 1}" for i in range(len(peaks))]
+    peaks["name"] = [f"Peak_{i + 1}" for i in range(len(peaks))]
     return peaks.reset_index(drop=True)
+
+
+def _overlaps_any(
+    peaks: pd.DataFrame,
+    blacklist: pd.DataFrame,
+) -> np.ndarray:
+    """Boolean mask of peaks overlapping any blacklist interval."""
+
+    result = np.zeros(len(peaks), dtype=bool)
+    required = {"chrom", "start", "end"}
+    if not required.issubset(blacklist.columns):
+        raise ValueError("blacklist must contain chrom/start/end columns")
+    bl = blacklist.copy()
+    bl["start"] = pd.to_numeric(bl["start"], errors="coerce")
+    bl["end"] = pd.to_numeric(bl["end"], errors="coerce")
+    bl = bl.dropna(subset=["start", "end"])
+    bl["chrom"] = bl["chrom"].astype(str)
+    for chrom, group in peaks.groupby("chrom", sort=False):
+        sub = bl[bl["chrom"] == str(chrom)].sort_values("start")
+        if sub.empty:
+            continue
+        b_start = sub["start"].to_numpy(dtype=np.int64)
+        b_end = sub["end"].to_numpy(dtype=np.int64)
+        cumulative_end = np.maximum.accumulate(b_end)
+        p_start = group["start"].to_numpy(dtype=np.int64)
+        p_end = group["end"].to_numpy(dtype=np.int64)
+        lo = np.searchsorted(cumulative_end, p_start, side="right")
+        hi = np.searchsorted(b_start, p_end, side="left")
+        overlap = hi > lo
+        result[group.index.to_numpy()] = overlap
+    return result
+
+
+def filter_peaks(
+    peaks: Union[str, Path, pd.DataFrame],
+    *,
+    blacklist: Optional[Union[str, Path, pd.DataFrame]] = None,
+    drop_mito: bool = False,
+    min_width: Optional[int] = None,
+    max_width: Optional[int] = None,
+    min_score: Optional[float] = None,
+    chroms: Optional[Sequence[str]] = None,
+    exclude_chroms: Optional[Sequence[str]] = None,
+) -> pd.DataFrame:
+    """Filter a peak table by blacklist, chromosome, width and score.
+
+    Blacklist intervals are removed when they overlap a peak by at least one
+    base.  Mitochondrial chromosomes are recognised in both UCSC (``chrM``)
+    and Ensembl (``MT``) spellings.
+    """
+
+    if isinstance(peaks, (str, Path)):
+        frame = read_peaks(peaks)
+    elif isinstance(peaks, pd.DataFrame):
+        frame = peaks.copy()
+    else:
+        raise TypeError("peaks must be a path or a pandas.DataFrame")
+    required = {"chrom", "start", "end"}
+    if not required.issubset(frame.columns):
+        raise ValueError(f"peak table is missing columns: {sorted(required - set(frame.columns))}")
+
+    frame = frame.copy()
+    frame["chrom"] = frame["chrom"].astype(str)
+    frame["start"] = pd.to_numeric(frame["start"], errors="coerce")
+    frame["end"] = pd.to_numeric(frame["end"], errors="coerce")
+    frame = frame.dropna(subset=["start", "end"])
+    frame = frame[frame["end"] > frame["start"]].copy()
+    frame["start"] = frame["start"].astype(np.int64)
+    frame["end"] = frame["end"].astype(np.int64)
+
+    if blacklist is not None:
+        if isinstance(blacklist, (str, Path)):
+            bl = read_peaks(blacklist)
+        elif isinstance(blacklist, pd.DataFrame):
+            bl = blacklist
+        else:
+            raise TypeError("blacklist must be a path or a pandas.DataFrame")
+        from .seqlevels import harmonize_frame
+
+        bl, _ = harmonize_frame(
+            bl, frame["chrom"].unique(), column="chrom", copy=True
+        )
+        frame = frame.loc[~_overlaps_any(frame, bl)].copy()
+
+    if drop_mito:
+        from .seqlevels import canonical_chrom
+
+        frame = frame[
+            frame["chrom"].map(canonical_chrom) != "m"
+        ].copy()
+
+    if chroms is not None:
+        from .seqlevels import canonical_chrom
+
+        keep_chroms = {canonical_chrom(value) for value in chroms}
+        frame = frame[frame["chrom"].map(canonical_chrom).isin(keep_chroms)].copy()
+    if exclude_chroms is not None:
+        from .seqlevels import canonical_chrom
+
+        drop_chroms = {canonical_chrom(value) for value in exclude_chroms}
+        frame = frame[~frame["chrom"].map(canonical_chrom).isin(drop_chroms)].copy()
+
+    widths = frame["end"] - frame["start"]
+    if min_width is not None:
+        frame = frame[widths >= int(min_width)].copy()
+        widths = frame["end"] - frame["start"]
+    if max_width is not None:
+        frame = frame[widths <= int(max_width)].copy()
+    if min_score is not None:
+        if "score" not in frame.columns:
+            raise ValueError("min_score requires a score column")
+        scores = pd.to_numeric(frame["score"], errors="coerce")
+        frame = frame[scores >= float(min_score)].copy()
+
+    return frame.reset_index(drop=True)
 
 
 def call_peaks_macs(

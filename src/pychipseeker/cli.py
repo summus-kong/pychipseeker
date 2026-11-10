@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 from typing import Optional, Sequence, Union
@@ -10,9 +11,9 @@ from typing import Optional, Sequence, Union
 import pandas as pd
 
 from ._version import __version__
-from .annotation import annotate_peak
+from .annotation import GeneAnnotation, annotate_peak
 from .enrichment import enrichr, ora
-from .io import write_table
+from .io import read_peaks, write_table
 from .plotting import plot_anno_bar, plot_anno_pie, plot_dist_to_tss
 
 
@@ -165,6 +166,122 @@ def _cmd_enrich(args: argparse.Namespace) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(out, sep="\t", index=False)
     print(f"Enrichment -> {out}")
+    if args.plot:
+        from .enrichment import plot_enrichment
+
+        fig, _ = plot_enrichment(result, top=args.top)
+        plot_path = out.parent / "enrichment.png"
+        _save_plot(fig, plot_path, args.dpi)
+        fig.clf()
+        print(f"Enrichment plot -> {plot_path}")
+    return 0
+
+
+def _cmd_callpeak(args: argparse.Namespace) -> int:
+    from .peaks import call_peaks, write_peaks
+
+    chroms = None
+    if args.chroms:
+        chroms = tuple(value.strip() for value in args.chroms.split(",") if value.strip())
+    peaks = call_peaks(
+        args.bigwig,
+        threshold=args.threshold,
+        max_gap=args.max_gap,
+        min_width=args.min_width,
+        chroms=chroms,
+        sample=args.sample,
+        seed=args.seed,
+    )
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_peaks(peaks, output)
+    print(f"Called {len(peaks):,} peaks -> {output}")
+    return 0
+
+
+def _cmd_filter(args: argparse.Namespace) -> int:
+    from .peaks import filter_peaks, write_peaks
+
+    chroms = None
+    if args.chroms:
+        chroms = tuple(value.strip() for value in args.chroms.split(",") if value.strip())
+    exclude = None
+    if args.exclude_chroms:
+        exclude = tuple(
+            value.strip() for value in args.exclude_chroms.split(",") if value.strip()
+        )
+    before = len(read_peaks(args.peaks))
+    peaks = filter_peaks(
+        args.peaks,
+        blacklist=args.blacklist,
+        drop_mito=args.drop_mito,
+        min_width=args.min_width,
+        max_width=args.max_width,
+        min_score=args.min_score,
+        chroms=chroms,
+        exclude_chroms=exclude,
+    )
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    write_peaks(peaks, output)
+    print(f"Kept {len(peaks):,}/{before:,} peaks -> {output}")
+    return 0
+
+
+def _load_annotation_source(
+    source: str, peaks: Optional[Union[str, Path]] = None
+) -> GeneAnnotation:
+    from .genomes import (
+        detect_assembly,
+        is_assembly_name,
+        is_genome_spec,
+        load_annotation,
+        load_genome,
+    )
+
+    if source.strip().lower() == "auto":
+        source = detect_assembly(peaks=peaks)
+    if is_assembly_name(source):
+        return load_genome(source)
+    if is_genome_spec(source):
+        return load_annotation(source)
+    return GeneAnnotation.from_gtf(source)
+
+
+def _cmd_qc(args: argparse.Namespace) -> int:
+    from .qc import qc_summary
+
+    if args.bigwig is None and args.bam is None:
+        raise SystemExit("qc needs --bigwig or --bam for FRiP and TSS metrics")
+    genes = None
+    source = args.txdb if args.txdb is not None else args.gtf
+    if source is not None and not args.no_tss:
+        try:
+            annotation = _load_annotation_source(source, peaks=args.peaks)
+        except (ValueError, FileNotFoundError) as exc:
+            raise SystemExit(str(exc)) from exc
+        genes = annotation.features("transcript")
+    elif source is not None and args.no_tss:
+        genes = None
+
+    table = qc_summary(
+        args.peaks,
+        bigwig=args.bigwig,
+        bam=args.bam,
+        genes=genes,
+        blacklist=args.blacklist,
+        tss_upstream=args.tss_upstream,
+        tss_downstream=args.tss_downstream,
+        tss_sample=args.tss_sample,
+        seed=args.seed,
+        exclude_duplicates=not args.include_duplicates,
+    )
+    print(table.to_string(index=False))
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(output, sep="\t", index=False)
+        print(f"QC -> {output}")
     return 0
 
 
@@ -183,13 +300,18 @@ def _cmd_report(args: argparse.Namespace) -> int:
         peaks=args.peaks,
         gtf=source,
         bigwig=args.bigwig,
+        bam=args.bam,
+        blacklist=args.blacklist,
         output=args.output,
         level=args.level,
         tss_region=tss_region or (-3000, 3000),
+        upstream=args.upstream,
+        downstream=args.downstream,
         sample=args.sample,
         seed=args.seed,
         title=args.title,
         include_tag_matrix=not args.no_tag_matrix,
+        qc=args.qc,
     )
     print(f"Report -> {output} ({output.stat().st_size / 1024:.0f} KiB)")
     return 0
@@ -200,11 +322,16 @@ def _cmd_cache(args: argparse.Namespace) -> int:
         cached_genomes,
         clear_genome_cache,
         download_genome,
+        genome_provenance,
+        prune_genome_cache,
     )
 
     action = args.cache_command
     if action == "list":
         rows = cached_genomes()
+        if args.json:
+            print(json.dumps(rows, indent=2, default=str))
+            return 0
         if not rows:
             print("No genome bundles found.")
             return 0
@@ -213,6 +340,18 @@ def _cmd_cache(args: argparse.Namespace) -> int:
                 index=False
             )
         )
+        return 0
+
+    if action == "info":
+        print(json.dumps(genome_provenance(args.assembly), indent=2, default=str))
+        return 0
+
+    if action == "prune":
+        removed = prune_genome_cache()
+        if not removed:
+            print("Nothing to prune.")
+        for path in removed:
+            print(f"removed {path}")
         return 0
 
     if action == "download":
@@ -358,7 +497,62 @@ def build_parser() -> argparse.ArgumentParser:
         default="BH",
         help="p-value adjustment: BH (default), Bonferroni or none",
     )
+    p_enrich.add_argument(
+        "--plot",
+        action="store_true",
+        help="save a -log10(adjusted p) bar chart beside the table",
+    )
+    p_enrich.add_argument("--top", type=int, default=20, help="terms shown in the plot")
+    p_enrich.add_argument("--dpi", type=int, default=300)
     p_enrich.set_defaults(func=_cmd_enrich)
+
+    p_call = sub.add_parser(
+        "callpeak", help="call broad peaks from a bigWig signal track"
+    )
+    p_call.add_argument("--bigwig", required=True, help="signal bigWig")
+    p_call.add_argument("--output", required=True, help="output BED6+ file")
+    p_call.add_argument("--threshold", type=float, default=3.0)
+    p_call.add_argument("--max-gap", type=int, default=1000)
+    p_call.add_argument("--min-width", type=int, default=500)
+    p_call.add_argument(
+        "--chroms", default=None, help="comma-separated chromosome subset"
+    )
+    p_call.add_argument("--sample", type=int, default=None)
+    p_call.add_argument("--seed", type=int, default=None)
+    p_call.set_defaults(func=_cmd_callpeak)
+
+    p_filter = sub.add_parser("filter", help="filter peaks by blacklist/width/score")
+    p_filter.add_argument("--peaks", required=True)
+    p_filter.add_argument("--output", required=True)
+    p_filter.add_argument("--blacklist", default=None, help="BED blacklist intervals")
+    p_filter.add_argument("--drop-mito", action="store_true")
+    p_filter.add_argument("--min-width", type=int, default=None)
+    p_filter.add_argument("--max-width", type=int, default=None)
+    p_filter.add_argument("--min-score", type=float, default=None)
+    p_filter.add_argument("--chroms", default=None, help="keep these chromosomes")
+    p_filter.add_argument("--exclude-chroms", default=None)
+    p_filter.set_defaults(func=_cmd_filter)
+
+    p_qc = sub.add_parser("qc", help="peak, FRiP and TSS quality-control metrics")
+    p_qc.add_argument("--peaks", required=True)
+    p_qc.add_argument("--bigwig", default=None)
+    p_qc.add_argument("--bam", default=None)
+    qc_source = p_qc.add_mutually_exclusive_group(required=False)
+    qc_source.add_argument("--gtf", default=None)
+    qc_source.add_argument("--txdb", default=None)
+    p_qc.add_argument("--blacklist", default=None)
+    p_qc.add_argument("--output", default=None, help="optional TSV output")
+    p_qc.add_argument("--tss-upstream", type=int, default=2000)
+    p_qc.add_argument("--tss-downstream", type=int, default=2000)
+    p_qc.add_argument("--tss-sample", type=int, default=2000)
+    p_qc.add_argument("--seed", type=int, default=20261026)
+    p_qc.add_argument("--no-tss", action="store_true")
+    p_qc.add_argument(
+        "--include-duplicates",
+        action="store_true",
+        help="count duplicate BAM reads in FRiP",
+    )
+    p_qc.set_defaults(func=_cmd_qc)
 
     p_report = sub.add_parser(
         "report", help="build a multi-page PDF annotation report"
@@ -368,12 +562,23 @@ def build_parser() -> argparse.ArgumentParser:
     report_source.add_argument("--gtf", help="GTF/GFF annotation file")
     report_source.add_argument("--txdb", help="bundled assembly name")
     p_report.add_argument("--bigwig", default=None, help="optional bigWig signal track")
+    p_report.add_argument("--bam", default=None, help="optional BAM for FRiP/QC")
+    p_report.add_argument("--blacklist", default=None, help="BED blacklist for QC")
+    p_report.add_argument(
+        "--qc", action="store_true", help="add a quality-control metrics page"
+    )
     p_report.add_argument("--output", default="pychipseeker_report.pdf")
     p_report.add_argument(
         "--level", choices=("transcript", "gene"), default="transcript"
     )
     p_report.add_argument(
         "--tss-region", default=None, help="promoter region, e.g. -3000,3000"
+    )
+    p_report.add_argument(
+        "--upstream", type=int, default=None, help="asymmetric signal window upstream"
+    )
+    p_report.add_argument(
+        "--downstream", type=int, default=None, help="asymmetric signal window downstream"
     )
     p_report.add_argument(
         "--sample",
@@ -392,7 +597,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_cache = sub.add_parser("cache", help="manage downloaded genome bundles")
     cache_sub = p_cache.add_subparsers(dest="cache_command", required=True)
-    cache_sub.add_parser("list", help="list installed and cached bundles")
+    cache_list = cache_sub.add_parser("list", help="list installed and cached bundles")
+    cache_list.add_argument("--json", action="store_true", help="machine-readable output")
+    cache_info = cache_sub.add_parser(
+        "info", help="show provenance for an assembly or download spec"
+    )
+    cache_info.add_argument("assembly")
+    cache_sub.add_parser("prune", help="remove partial and orphaned cache files")
     cache_download = cache_sub.add_parser("download", help="download genome bundles")
     cache_download.add_argument("assemblies", nargs="+")
     cache_clear = cache_sub.add_parser("clear", help="remove cached bundles")
@@ -406,6 +617,9 @@ def build_parser() -> argparse.ArgumentParser:
     _allow_negative_values(p_ann)
     _allow_negative_values(p_plot)
     _allow_negative_values(p_enrich)
+    _allow_negative_values(p_call)
+    _allow_negative_values(p_filter)
+    _allow_negative_values(p_qc)
     _allow_negative_values(p_report)
     _allow_negative_values(p_cache)
 

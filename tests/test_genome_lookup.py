@@ -205,10 +205,19 @@ def test_load_annotation_caches_url_spec(
     assert list(cache.glob("spec_*.gtf"))
     assert list(cache.glob("spec_*.npz"))
     assert list(cache.glob("spec_*.json"))
+    rows = {row["assembly"]: row for row in genomes_mod.cached_genomes()}
+    assert rows[spec]["source"] == "spec-cache"
+    provenance = genomes_mod.genome_provenance(spec)
+    assert provenance["provider"] == "url"
     # A fresh process only sees the npz bundle.
     monkeypatch.setattr(genomes_mod, "_loaded_specs", {})
     again = genomes_mod.load_annotation(spec)
     assert len(again.genes) == len(example_model.genes)
+
+    npz_path = next(cache.glob("spec_*.npz"))
+    removed = genomes_mod.clear_genome_cache(spec)
+    assert npz_path in removed
+    assert not npz_path.exists()
 
 
 def test_lookup_skips_download_when_installed_exists(

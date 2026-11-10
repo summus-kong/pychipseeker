@@ -23,6 +23,7 @@ import pandas as pd
 
 from .annotation import GeneAnnotation, _normalise_peaks
 from .genomes import is_assembly_name
+from .seqlevels import harmonize_frame
 
 
 class TagMatrix(np.ndarray):
@@ -413,48 +414,290 @@ def _bigwig_matrix(
         import pyBigWig
     except ImportError as exc:  # pragma: no cover - dependency installation issue
         raise ImportError(
-            "pyBigWig is required for bigWig-backed tag matrices; "
-            "reinstall pychipseeker (pyBigWig is a declared dependency)"
+            "pyBigWig is required for bigWig-backed tag matrices; install with "
+            "`pip install pychipseeker[bigwig]`"
         ) from exc
 
     if str(value_type) not in {"sum", "mean", "max", "min", "coverage", "std"}:
-        raise ValueError("unsupported bigWig value_type")
+        raise ValueError(
+            "unsupported bigWig value_type; choose sum, mean, max, min, "
+            "coverage or std"
+        )
 
     bw = pyBigWig.open(str(bigwig))
     if bw is None:
         raise ValueError(f"could not open bigWig: {bigwig}")
-    chrom_sizes = bw.chroms()
-    rows: list[np.ndarray] = []
-    kept: list[pd.Series] = []
-    is_binning = n_bins is not None
     try:
-        for _, window in windows.iterrows():
-            chrom = str(window["chrom"])
-            start = int(window["start"])
-            end = int(window["end"])
-            chrom_len = chrom_sizes.get(chrom)
-            if chrom_len is None or start < 0 or end > chrom_len or end <= start:
-                continue
-            bins = int(n_bins) if n_bins is not None else int(end - start)
-            if bins <= 1:
-                raise ValueError("nbin must be > 1")
-            vals = bw.stats(chrom, start, end, nBins=bins, type=value_type)
-            if vals is None:
-                continue
-            values = np.asarray(
-                [np.nan if v is None else float(v) for v in vals], dtype=float
+        chrom_sizes = bw.chroms()
+        windows = windows.reset_index(drop=True)
+        if windows.empty:
+            raise ValueError("windows is empty")
+
+        # Match Ensembl-style target names (1/MT) to UCSC query names
+        # (chr1/chrM), and vice versa.
+        windows, _chrom_map = harmonize_frame(
+            windows, chrom_sizes.keys(), column="chrom", copy=True
+        )
+        starts = pd.to_numeric(windows["start"], errors="coerce").to_numpy(
+            dtype=np.int64
+        )
+        ends = pd.to_numeric(windows["end"], errors="coerce").to_numpy(
+            dtype=np.int64
+        )
+        chroms = windows["chrom"].astype(str).to_numpy()
+        strands = windows["strand"].astype(str).to_numpy()
+        chrom_lengths = np.array(
+            [chrom_sizes.get(chrom, -1) for chrom in chroms], dtype=np.int64
+        )
+        widths = ends - starts
+        is_binning = n_bins is not None
+        bins_per_row = np.full(len(windows), -1, dtype=np.int64)
+        if n_bins is None:
+            if len(np.unique(widths)) != 1:
+                raise ValueError(
+                    "windows must have equal widths when nbin is not supplied; "
+                    "use nbin=... for variable-width regions"
+                )
+            bins_per_row[:] = widths
+        else:
+            bins_per_row[:] = int(n_bins)
+        if np.any(bins_per_row[widths > 0] <= 1):
+            raise ValueError("nbin must be > 1")
+
+        valid = (
+            (chrom_lengths > 0)
+            & (starts >= 0)
+            & (ends <= chrom_lengths)
+            & (ends > starts)
+            & (bins_per_row > 1)
+        )
+        rows_idx = np.flatnonzero(valid)
+        if rows_idx.size == 0:
+            raise ValueError("no windows overlap the bigWig track")
+        unique_bins = np.unique(bins_per_row[rows_idx])
+        if unique_bins.size != 1:
+            raise ValueError(
+                "windows must have equal widths when nbin is not supplied"
             )
-            values = np.nan_to_num(values, nan=0.0)
-            if str(window["strand"]) == "-" and not ignore_strand:
-                values = values[::-1]
-            rows.append(values)
-            kept.append(window)
+        n_bins_eff = int(unique_bins[0])
+        matrix = np.zeros((rows_idx.size, n_bins_eff), dtype=float)
+
+        intervals_fn = getattr(bw, "intervals", None)
+        vectorised = intervals_fn is not None and str(value_type) in {
+            "sum",
+            "mean",
+            "coverage",
+        }
+        if vectorised:
+            # Read each chromosome once and integrate the intervals at the
+            # bin edges.  This replaces one bw.stats() call per window, which
+            # dominates the runtime for transcript-scale matrices.
+            for chrom in pd.unique(chroms[rows_idx]):
+                index = rows_idx[chroms[rows_idx] == chrom]
+                intervals = intervals_fn(str(chrom))
+                if not intervals:
+                    continue
+                table = np.asarray(intervals, dtype=np.float64)
+                if table.ndim != 2 or table.shape[0] == 0:
+                    continue
+                order = np.argsort(table[:, 0], kind="mergesort")
+                table = table[order]
+                starts_i = table[:, 0].astype(np.int64)
+                ends_i = table[:, 1].astype(np.int64)
+                values_i = table[:, 2]
+                lengths = (ends_i - starts_i).astype(np.float64)
+                cum_len = np.concatenate([[0.0], np.cumsum(lengths)])
+                cum_val = np.concatenate([[0.0], np.cumsum(values_i * lengths)])
+                n_intervals = len(starts_i)
+                last = n_intervals - 1
+
+                def _cumulative(
+                    points: np.ndarray,
+                    *,
+                    starts_i: np.ndarray = starts_i,
+                    ends_i: np.ndarray = ends_i,
+                    lengths: np.ndarray = lengths,
+                    values_i: np.ndarray = values_i,
+                    cum_len: np.ndarray = cum_len,
+                    cum_val: np.ndarray = cum_val,
+                    n_intervals: int = n_intervals,
+                    last: int = last,
+                ):
+                    i = np.searchsorted(ends_i, points, side="right")
+                    j = np.minimum(i, last)
+                    part = np.where(
+                        i < n_intervals,
+                        np.clip(points - starts_i[j], 0.0, lengths[j]),
+                        0.0,
+                    )
+                    return cum_len[i] + part, cum_val[i] + part * values_i[j]
+
+                group_starts = starts[index]
+                group_ends = ends[index]
+                group_widths = (group_ends - group_starts).astype(np.int64)
+                edge_offsets = (
+                    np.arange(n_bins_eff + 1, dtype=np.int64)[None, :]
+                    * group_widths[:, None]
+                ) // n_bins_eff
+                edges = group_starts[:, None] + edge_offsets
+                covered, integral = _cumulative(edges.ravel())
+                covered = covered.reshape(len(index), n_bins_eff + 1)
+                integral = integral.reshape(len(index), n_bins_eff + 1)
+                bin_len = np.diff(covered, axis=1)
+                bin_val = np.diff(integral, axis=1)
+                if str(value_type) == "sum":
+                    arr = bin_val
+                elif str(value_type) == "mean":
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        arr = np.where(bin_len > 0, bin_val / bin_len, np.nan)
+                else:  # coverage
+                    bin_width = np.diff(edges, axis=1)
+                    with np.errstate(invalid="ignore", divide="ignore"):
+                        arr = np.where(bin_width > 0, bin_len / bin_width, np.nan)
+                matrix[np.searchsorted(rows_idx, index)] = arr
+            matrix = np.nan_to_num(matrix, nan=0.0)
+        else:
+            # max/min/std need per-bin extrema and are not expressible as a
+            # simple integral.  Keep the exact bw.stats fallback for them, and
+            # for minimal pyBigWig stand-ins without intervals().
+            for out_row, idx in enumerate(rows_idx):
+                vals = bw.stats(
+                    str(chroms[idx]),
+                    int(starts[idx]),
+                    int(ends[idx]),
+                    nBins=n_bins_eff,
+                    type=str(value_type),
+                )
+                if vals is None:
+                    continue
+                values = np.asarray(
+                    [np.nan if v is None else float(v) for v in vals],
+                    dtype=float,
+                )
+                matrix[out_row] = np.nan_to_num(values, nan=0.0)
+
+        if not ignore_strand:
+            minus = strands[rows_idx] == "-"
+            if minus.any():
+                matrix[minus] = matrix[minus][:, ::-1]
+        kept = windows.iloc[rows_idx].reset_index(drop=True)
+        return matrix, kept, is_binning
     finally:
         bw.close()
 
-    if not rows:
-        raise ValueError("no windows overlap the bigWig track")
-    return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True), is_binning
+
+def _bin_signal(values: np.ndarray, n_bins: Optional[int], value_type: str) -> np.ndarray:
+    """Aggregate per-base coverage into ``n_bins`` bins."""
+
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 1 or values.size == 0:
+        raise ValueError("coverage array is empty")
+    if n_bins is None or int(n_bins) == values.size:
+        return values
+    n_bins = int(n_bins)
+    if n_bins <= 1:
+        raise ValueError("nbin must be > 1")
+    edges = (np.arange(n_bins + 1, dtype=np.int64) * values.size) // n_bins
+    out = np.zeros(n_bins, dtype=float)
+    for i in range(n_bins):
+        chunk = values[edges[i] : edges[i + 1]]
+        if chunk.size == 0:
+            continue
+        if value_type == "sum":
+            out[i] = float(chunk.sum())
+        elif value_type == "max":
+            out[i] = float(chunk.max())
+        elif value_type == "coverage":
+            out[i] = float((chunk > 0).mean())
+        else:  # mean
+            out[i] = float(chunk.mean())
+    return out
+
+
+def _bam_matrix(
+    bam: Union[str, Path],
+    windows: pd.DataFrame,
+    *,
+    n_bins: Optional[int],
+    ignore_strand: bool,
+    value_type: str = "mean",
+    min_mapping_quality: int = 0,
+    exclude_duplicates: bool = True,
+) -> tuple[np.ndarray, pd.DataFrame, bool]:
+    """Extract a read-coverage matrix from a BAM/CRAM file.
+
+    Coverage is counted per base from alignments passing the mapping-quality
+    and duplicate filters, then binned.  ``value_type`` accepts ``mean``
+    (default), ``sum``, ``max`` or ``coverage``.
+    """
+
+    try:
+        import pysam  # type: ignore
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError(
+            "pysam is required for BAM-backed tag matrices; install with "
+            "`pip install pychipseeker[bam]`"
+        ) from exc
+
+    value_type = str(value_type)
+    if value_type not in {"mean", "sum", "max", "coverage"}:
+        raise ValueError("BAM value_type must be mean, sum, max or coverage")
+
+    handle = pysam.AlignmentFile(str(bam), "rb")
+    try:
+        references = list(getattr(handle, "references", []) or [])
+        windows = windows.reset_index(drop=True)
+        if references:
+            windows, _ = harmonize_frame(
+                windows, references, column="chrom", copy=True
+            )
+        strands = windows["strand"].astype(str).to_numpy()
+        rows: list[np.ndarray] = []
+        kept: list[pd.Series] = []
+        for row_idx, window in windows.iterrows():
+            chrom = str(window["chrom"])
+            start = int(window["start"])
+            end = int(window["end"])
+            if end <= start or start < 0 or chrom not in references:
+                continue
+            try:
+                coverage = handle.count_coverage(
+                    chrom,
+                    start,
+                    end,
+                    quality_threshold=0,
+                    read_callback=lambda read: not (
+                        read.is_unmapped
+                        or read.is_secondary
+                        or read.is_supplementary
+                        or (exclude_duplicates and read.is_duplicate)
+                        or int(read.mapping_quality) < int(min_mapping_quality)
+                    ),
+                )
+            except (ValueError, KeyError):
+                continue
+            if not coverage:
+                continue
+            values = np.sum(np.asarray(coverage, dtype=float), axis=0)
+            if values.size == 0:
+                continue
+            row = _bin_signal(values, n_bins, value_type)
+            if str(strands[row_idx]) == "-" and not ignore_strand:
+                row = row[::-1]
+            rows.append(row)
+            kept.append(window)
+
+        if not rows:
+            raise ValueError("no windows overlap the BAM file")
+        lengths = {row.size for row in rows}
+        if len(lengths) != 1:
+            raise ValueError(
+                "windows must have equal widths when nbin is not supplied"
+            )
+        matrix = np.vstack(rows)
+        return matrix, pd.DataFrame(kept).reset_index(drop=True), n_bins is not None
+    finally:
+        handle.close()
 
 
 def get_tag_matrix(
@@ -473,7 +716,10 @@ def get_tag_matrix(
     annotation: Optional[Union[GeneAnnotation, str, Path, pd.DataFrame]] = None,
     gtf: Optional[Union[str, Path, pd.DataFrame]] = None,
     bigwig: Optional[Union[str, Path]] = None,
+    bam: Optional[Union[str, Path]] = None,
     value_type: str = "sum",
+    min_mapping_quality: int = 0,
+    exclude_duplicates: bool = True,
 ) -> Union[TagMatrix, list[TagMatrix]]:
     """Build a ChIPseeker-style tag matrix.
 
@@ -493,6 +739,9 @@ def get_tag_matrix(
         suffix = str(peak).lower()
         if suffix.endswith((".bw", ".bigwig")):
             bigwig = peak
+            peak = None
+        elif suffix.endswith((".bam", ".cram")):
+            bam = peak
             peak = None
 
     if isinstance(windows, (list, tuple)):
@@ -515,7 +764,10 @@ def get_tag_matrix(
                 annotation=annotation,
                 gtf=gtf,
                 bigwig=bigwig,
+                bam=bam,
                 value_type=value_type,
+                min_mapping_quality=min_mapping_quality,
+                exclude_duplicates=exclude_duplicates,
             )
             matrix.label = (
                 getattr(one_window, "attrs", {}).get("label")
@@ -550,6 +802,8 @@ def get_tag_matrix(
         if type == "start_site" and windows_df.attrs.get("type"):
             type = str(windows_df.attrs["type"])
 
+    if bigwig is not None and bam is not None:
+        raise ValueError("supply only one of bigwig=... or bam=...")
     if bigwig is not None:
         matrix, kept, is_binning = _bigwig_matrix(
             bigwig,
@@ -557,6 +811,16 @@ def get_tag_matrix(
             n_bins=nbin,
             ignore_strand=ignore_strand,
             value_type=value_type,
+        )
+    elif bam is not None:
+        matrix, kept, is_binning = _bam_matrix(
+            bam,
+            windows_df,
+            n_bins=nbin,
+            ignore_strand=ignore_strand,
+            value_type=value_type,
+            min_mapping_quality=min_mapping_quality,
+            exclude_duplicates=exclude_duplicates,
         )
     else:
         if peak is None:
@@ -605,6 +869,39 @@ def get_tag_matrix_from_bigwig(
         n_bins=nbin,
         ignore_strand=ignore_strand,
         value_type=value_type,
+    )
+    return TagMatrix(
+        matrix,
+        upstream=windows_df.attrs.get("upstream"),
+        downstream=windows_df.attrs.get("downstream"),
+        type=windows_df.attrs.get("type"),
+        by=windows_df.attrs.get("by"),
+        label=windows_df.attrs.get("label"),
+        is_binning=is_binning,
+        rows=kept,
+    )
+
+
+def get_tag_matrix_from_bam(
+    bam: Union[str, Path],
+    windows: Union[pd.DataFrame, str, Path],
+    nbin: Optional[int] = None,
+    ignore_strand: bool = False,
+    value_type: str = "mean",
+    min_mapping_quality: int = 0,
+    exclude_duplicates: bool = True,
+) -> TagMatrix:
+    """Convenience wrapper for a BAM-backed :class:`TagMatrix`."""
+
+    windows_df = _window_frame(windows)
+    matrix, kept, is_binning = _bam_matrix(
+        bam,
+        windows_df,
+        n_bins=nbin,
+        ignore_strand=ignore_strand,
+        value_type=value_type,
+        min_mapping_quality=min_mapping_quality,
+        exclude_duplicates=exclude_duplicates,
     )
     return TagMatrix(
         matrix,

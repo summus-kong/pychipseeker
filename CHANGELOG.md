@@ -4,6 +4,57 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-11-10
+
+### Added
+
+- **Chromosome harmonisation.**  `canonical_chrom`, `chrom_aliases`,
+  `alias_map`, `harmonize_frame` and `chromosome_style` match UCSC (`chr1`)
+  and Ensembl (`1`) names without rewriting unrelated contigs.  Annotation,
+  signal matrices, tag matrices and QC now apply the mapping automatically.
+- **Assembly detection and `TxDb="auto"`.**  `detect_assembly` uses chromosome
+  sizes, a bigWig header or peak names; ambiguous human/mouse peak-only input
+  raises instead of guessing.  On-demand specs gain cache listing, provenance
+  (`cache info`) and partial-download cleanup (`cache prune`).
+- **Quality control.**  New `peak_qc`, `frip`, `tss_enrichment` and
+  `qc_summary` helpers report peak widths, mitochondrial/blacklist fractions,
+  FRiP from bigWig or BAM, and ENCODE-style TSS enrichment.  The PDF report
+  gains an optional QC page (`--qc`, `--bam`, `--blacklist`).
+- **BAM-backed matrices.**  `get_tag_matrix(bam=...)`,
+  `get_tag_matrix_from_bam` and `.bam`/`.cram` auto-detection build coverage
+  matrices with `pysam`, including strand handling and binning.
+- **Enrichment upgrades.**  Local ORA now reports odds ratios with 95%
+  confidence intervals; `gsea`/`gsea_peak_genes` wrap pranked GSEA through
+  `gseapy`; `plot_enrichment` draws bar and clusterProfiler-style dot plots;
+  the CLI gains `enrich --plot`.
+- **Peak workflow.**  `filter_peaks` removes blacklist, mitochondrial,
+  width- or score-filtered peaks, and new `callpeak`, `filter` and `qc` CLI
+  commands expose peak calling and QC without Python.
+- **Asymmetric signal windows.**  `extract_tss_matrix`,
+  `extract_tss_matrix_from_signal`, profile/heatmap helpers and
+  `PeakAnnotation` methods accept independent `upstream`/`downstream`
+  values, plus `drop_empty`, `return_mask` and `dtype`.
+- **Streaming annotation input.**  `read_gtf` streams large files
+  (`chunksize=`), truncates at `##FASTA`, explodes multi-parent GFF3 rows and
+  filters by feature type (`features=`).
+
+### Changed
+
+- `get_tag_matrix(bigwig=...)` vectorises `sum`/`mean`/`coverage` over
+  bigWig intervals; `max`/`min`/`std` keep the `pyBigWig.stats` fallback.
+- Report and CLI signal panels accept asymmetric windows; the CLI cache
+  listing gains `--json`, and `report` accepts `--upstream`/`--downstream`.
+- The test suite adds real bigWig QC/BAM stubs, chromosome aliases, GFF3 and
+  coverage gates (CI enforces 75% line coverage).
+
+### Fixed
+
+- Failed genome downloads remove their `.part` files; `cache prune` clears
+  interrupted bundles and orphaned provenance records.
+- GFF3 `##FASTA` sections no longer leak sequence rows into the annotation.
+- Multi-parent GFF3 exons/UTRs are duplicated per parent instead of keeping a
+  comma-separated transcript ID.
+
 ## [0.4.0] - 2026-11-10
 
 ### Added

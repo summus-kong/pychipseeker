@@ -1,6 +1,6 @@
 # Enrichment
 
-Two backends are available.
+Three backends are available.
 
 ## Enrichr (online)
 
@@ -37,10 +37,40 @@ res = pcs.ora(
 ```
 
 Output columns: `Term`, `Overlap`, `GeneSetSize`, `BackgroundSize`, `QuerySize`,
-`Expected`, `FoldEnrichment`, `PValue`, `AdjustedPValue`, `Genes`.
+`Expected`, `FoldEnrichment`, `OddsRatio`, `ORLower`, `ORUpper`, `PValue`,
+`AdjustedPValue`, `Genes`.  The odds ratio uses a Woolfe log-normal 95%
+confidence interval with a Haldane-Anscombe correction for zero cells.
 
 Use `pcs.read_gmt(path)` to load a GMT file directly.
 
 The local test is only as meaningful as the background supplied.  For
 ChIP-seq work, pass the set of genes that could have been detected (for
 example all genes with a valid TSS in the annotation), not the whole genome.
+
+## Preranked GSEA
+
+```python
+ranks = {"G1": 3.2, "G2": 1.7, "G3": 0.4}
+res = pcs.gsea(
+    ranks,
+    "GO_Biological_Process_2023",   # library, GMT path or {term: genes}
+    permutation_num=1000,
+    seed=20261026,
+)
+```
+
+`gsea` accepts a `{gene: score}` mapping, a two-column DataFrame or a ranked
+gene sequence (first gene highest).  `gsea_peak_genes(ann, ranks, ...)`
+restricts the ranking to peak-linked genes first.  Both require the `enrich`
+extra and return the `gseapy` result table.
+
+## Plots
+
+```python
+fig, ax = pcs.plot_enrichment(res, top=20)              # -log10(padj) bars
+fig, ax = pcs.plot_enrichment(res, top=20, kind="dot")  # clusterProfiler style
+```
+
+The plotter accepts ORA, Enrichr and GSEA tables and follows the same ggplot2
+`theme_grey` defaults as the rest of pychipseeker.  From the command line,
+`pychipseeker enrich ... --plot` writes `enrichment.png` beside the table.

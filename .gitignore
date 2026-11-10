@@ -7,3 +7,5 @@ venv/
 build/
 dist/
 examples/output/
+.coverage
+htmlcov/

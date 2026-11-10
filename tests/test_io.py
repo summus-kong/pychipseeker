@@ -30,6 +30,41 @@ def test_read_gtf_gzip(tmp_path, examples_dir):
     assert "G1" in set(df["gene_id"].dropna())
 
 
+def test_read_gff3_fasta_and_multi_parent(tmp_path):
+    path = tmp_path / "genes.gff3"
+    path.write_text(
+        "##gff-version 3\n"
+        "chr1\t.\tgene\t101\t500\t.\t+\t.\tID=gene:g1;Name=Gene1\n"
+        "chr1\t.\tmRNA\t101\t500\t.\t+\t.\tID=transcript:t1;Parent=gene:g1\n"
+        "chr1\t.\tmRNA\t101\t500\t.\t+\t.\tID=transcript:t2;Parent=gene:g1\n"
+        "chr1\t.\texon\t101\t200\t.\t+\t.\tParent=transcript:t1,transcript:t2\n"
+        "##FASTA\n"
+        ">chr1\n"
+        "ACGTACGT\n",
+        encoding="utf-8",
+    )
+    df = read_gtf(path)
+    exons = df[df["feature"] == "exon"]
+    assert len(exons) == 2
+    assert set(exons["transcript_id"]) == {"t1", "t2"}
+    assert set(exons["gene_id"]) == {"g1"}
+    # FASTA sequence rows must not become features.
+    assert "ACGTACGT" not in set(df["chrom"])
+
+
+def test_read_gtf_feature_filter_and_chunks(tmp_path, examples_dir):
+    full = read_gtf(examples_dir / "example.gtf")
+    exons = read_gtf(examples_dir / "example.gtf", features="exon")
+    assert set(exons["feature"]) == {"exon"}
+    assert len(exons) == (full["feature"] == "exon").sum()
+
+    chunked = read_gtf(examples_dir / "example.gtf", chunksize=2)
+    assert len(chunked) == len(full)
+    pd.testing.assert_frame_equal(
+        chunked.reset_index(drop=True), full.reset_index(drop=True)
+    )
+
+
 def test_read_peaks_bed(examples_dir):
     df = read_peaks(examples_dir / "example_peaks.bed")
     assert list(df.columns[:4]) == ["chrom", "start", "end", "name"]

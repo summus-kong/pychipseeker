@@ -1,7 +1,103 @@
 
+import json
+from pathlib import Path
+
 import pandas as pd
+import pytest
 
 from pychipseeker.cli import main
+from pychipseeker.io import read_peaks
+
+
+def _real_bigwig() -> Path:
+    pytest.importorskip("pyBigWig")
+    path = Path(__file__).parent / "data" / "test.bw"
+    if not path.exists():  # pragma: no cover - packaging guard
+        pytest.skip("tests/data/test.bw is missing")
+    return path
+
+
+def test_cli_callpeak_and_filter(tmp_path):
+    output = tmp_path / "peaks.bed"
+    rc = main(
+        [
+            "callpeak",
+            "--bigwig",
+            str(_real_bigwig()),
+            "--output",
+            str(output),
+            "--threshold",
+            "0.05",
+            "--min-width",
+            "1",
+            "--max-gap",
+            "0",
+            "--chroms",
+            "1",
+        ]
+    )
+    assert rc == 0
+    called = read_peaks(output)
+    assert len(called) > 0
+
+    filtered = tmp_path / "filtered.bed"
+    rc = main(
+        [
+            "filter",
+            "--peaks",
+            str(output),
+            "--output",
+            str(filtered),
+            "--min-width",
+            "3",
+        ]
+    )
+    assert rc == 0
+    assert len(read_peaks(filtered)) <= len(called)
+
+
+def test_cli_qc_and_cache_json(tmp_path, examples_dir, monkeypatch, capsys):
+    qc_out = tmp_path / "qc.tsv"
+    rc = main(
+        [
+            "qc",
+            "--peaks",
+            str(examples_dir / "example_peaks.bed"),
+            "--bigwig",
+            str(_real_bigwig()),
+            "--gtf",
+            str(examples_dir / "example.gtf"),
+            "--no-tss",
+            "--output",
+            str(qc_out),
+        ]
+    )
+    assert rc == 0
+    table = pd.read_csv(qc_out, sep="\t")
+    assert "FRiP" in set(table["Metric"])
+    capsys.readouterr()  # discard the QC table printed to stdout
+
+    from pychipseeker import genomes as genomes_mod
+
+    monkeypatch.setattr(genomes_mod, "cache_dir", lambda: tmp_path)
+    (tmp_path / "genome_dm6.npz").write_bytes(b"npz")
+    (tmp_path / "genome_dm6.json").write_text(
+        json.dumps({"provider": "ensembl", "release": "110"}), encoding="utf-8"
+    )
+    rc = main(["cache", "list", "--json"])
+    assert rc == 0
+    rows = json.loads(capsys.readouterr().out)
+    assert any(row["assembly"] == "dm6" for row in rows)
+
+    rc = main(["cache", "info", "hg38"])
+    assert rc == 0
+    provenance = json.loads(capsys.readouterr().out)
+    assert provenance["assembly"] == "hg38"
+
+    (tmp_path / "genome_hg19.npz.part").write_bytes(b"partial")
+    rc = main(["cache", "prune"])
+    assert rc == 0
+    assert not (tmp_path / "genome_hg19.npz.part").exists()
 
 
 def test_cli_annotate_negative_tss_region(tmp_path, examples_dir):

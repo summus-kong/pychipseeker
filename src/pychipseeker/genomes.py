@@ -52,6 +52,7 @@ import numpy as np
 import pandas as pd
 
 from .annotation import GeneAnnotation
+from .seqlevels import canonical_chrom, chromosome_style
 
 #: assembly name -> bundled-table stem (without extension)
 GENOME_ALIASES: Dict[str, str] = {
@@ -140,6 +141,20 @@ GENOME_SOURCES: Dict[str, Dict[str, str]] = {
 
 #: bundled assemblies first, then assemblies built from a downloaded GTF
 SUPPORTED_GENOMES: tuple[str, ...] = BUNDLED_GENOMES + tuple(GENOME_SOURCES)
+
+#: chromosome 1/2 sizes used by :func:`detect_assembly` (bp).  Sizes are for
+#: the primary assembly and are exact for UCSC/Ensembl chromosome reports.
+ASSEMBLY_CHROM_SIZES: Dict[str, Dict[str, int]] = {
+    "hg38": {"1": 248956422, "2": 242193529},
+    "hg19": {"1": 249250621, "2": 243199373},
+    "mm10": {"1": 195471971, "2": 182113224},
+    "mm9": {"1": 197195432, "2": 181976762},
+    "mm39": {"1": 195154279, "2": 181755017},
+    "dm6": {"1": 143726002, "2": 25286936},
+    "danRer11": {"1": 59578282, "2": 45631630},
+    "rn7": {"1": 282763074, "2": 267910886},
+    "sacCer3": {"1": 230218, "2": 813184},
+}
 
 #: Ensembl species aliases used by ``TxDb="ensembl:<species>[@release]"``
 ENSEMBL_SPECIES: Dict[str, tuple[str, str]] = {
@@ -300,6 +315,135 @@ def parse_genome_spec(spec: str) -> dict[str, str]:
     )
 
 
+def _assembly_size_candidates(
+    chrom_sizes: Dict[str, int],
+    *,
+    tolerance: float = 0.0005,
+) -> list[str]:
+    """Assemblies whose chromosome 1/2 sizes match ``chrom_sizes``."""
+
+    lookup = {canonical_chrom(name): int(size) for name, size in chrom_sizes.items()}
+    matches: list[str] = []
+    for assembly, expected in ASSEMBLY_CHROM_SIZES.items():
+        exact = [
+            key
+            for key, size in expected.items()
+            if key in lookup
+            and abs(int(lookup[key]) - int(size)) <= max(1.0, float(size) * tolerance)
+        ]
+        if len(exact) == len(expected):
+            matches.append(assembly)
+    return matches
+
+
+def detect_assembly(
+    peaks: Any = None,
+    chrom_sizes: Optional[Dict[str, int]] = None,
+    *,
+    bigwig: Union[str, Path, None] = None,
+    tolerance: float = 0.0005,
+) -> str:
+    """Infer a bundled assembly from chromosome names or chromosome sizes.
+
+    ``chrom_sizes`` may come from a bigWig header (``bigwig=...`` also opens
+    one directly) and is the most reliable signal.  With only a peak table the
+    function is deliberately conservative: if the chromosome set is compatible
+    with several assemblies (for example hg38 versus hg19) it raises a
+    :class:`ValueError` listing the candidates instead of guessing.
+
+    ``peaks`` accepts a DataFrame or any path understood by
+    :func:`pychipseeker.io.read_peaks`.
+    """
+
+    names: list[str] = []
+    max_end: Optional[int] = None
+
+    if bigwig is not None:
+        try:
+            import pyBigWig
+        except ImportError as exc:  # pragma: no cover - optional dependency
+            raise ImportError(
+                "pyBigWig is required to inspect a bigWig header; install with "
+                "`pip install pychipseeker[bigwig]`"
+            ) from exc
+        handle = pyBigWig.open(str(bigwig))
+        if handle is None:
+            raise ValueError(f"could not open bigWig: {bigwig}")
+        try:
+            chrom_sizes = dict(handle.chroms())
+        finally:
+            handle.close()
+
+    if peaks is not None:
+        if isinstance(peaks, pd.DataFrame):
+            frame = peaks.copy()
+        else:
+            from .io import read_peaks
+
+            frame = read_peaks(peaks)
+        if "chrom" not in frame.columns:
+            raise ValueError("peaks must contain a chrom column")
+        names = [str(value) for value in pd.unique(frame["chrom"].astype(str))]
+        if "end" in frame.columns:
+            end_values = pd.to_numeric(frame["end"], errors="coerce")
+            if end_values.notna().any():
+                max_end = int(end_values.max())
+
+    if chrom_sizes:
+        candidates = _assembly_size_candidates(chrom_sizes, tolerance=tolerance)
+        if len(candidates) == 1:
+            return candidates[0]
+        if len(candidates) > 1:
+            raise ValueError(
+                "chromosome sizes match several assemblies "
+                f"({', '.join(candidates)}); pass an explicit TxDb/assembly"
+            )
+        names = names or list(chrom_sizes)
+    if not names:
+        raise ValueError(
+            "cannot detect an assembly without peaks, chrom_sizes or bigwig"
+        )
+
+    keys = {canonical_chrom(name) for name in names}
+    human = {str(i) for i in range(1, 23)} | {"x", "y", "m"}
+    mouse = {str(i) for i in range(1, 20)} | {"x", "y", "m"}
+
+    if keys & {"20", "21", "22"}:
+        candidates = ["hg38", "hg19"]
+        if max_end is not None and max_end > 249_000_000:
+            candidates = ["hg19", "hg38"]
+        raise ValueError(
+            "chromosome names look human but cannot distinguish "
+            f"{', '.join(candidates)} without chromosome sizes; pass "
+            f"TxDb='{candidates[0]}' explicitly or use bigwig=... to detect it"
+        )
+    if keys <= mouse and (keys & {str(i) for i in range(1, 20)}):
+        if keys <= human:
+            raise ValueError(
+                "chromosome names are compatible with both hg38/hg19 and "
+                "mm10/mm39/mm9; pass an explicit TxDb or use bigwig=... to "
+                "detect the assembly"
+            )
+        raise ValueError(
+            "chromosome names look mouse-like, but mm10/mm39/mm9 cannot be "
+            "distinguished without chromosome sizes; pass an explicit TxDb "
+            "or use bigwig=... to detect it"
+        )
+    if keys <= human and any(key.isdigit() for key in keys):
+        raise ValueError(
+            "chromosome names are compatible with hg38/hg19; pass an explicit "
+            "TxDb or use bigwig=... to detect the assembly"
+        )
+    if keys & {"i", "ii", "iii", "iv", "v"}:
+        return "sacCer3"
+    if keys & {"2l", "2r", "3l", "3r", "4", "x", "y", "m"} and "2l" in keys:
+        return "dm6"
+    raise ValueError(
+        "could not detect an assembly from the supplied chromosome names "
+        f"({chromosome_style(names)} style); pass TxDb=... explicitly"
+    )
+
+
 def _spec_digest(spec: str) -> str:
     import hashlib as _hashlib
 
@@ -457,6 +601,23 @@ def _installed_bundle(name: str) -> Optional[Path]:
         return None
 
 
+def _installed_provenance(name: str) -> Optional[dict]:
+    """Provenance JSON shipped inside the installed package, if any."""
+
+    from importlib.resources import as_file, files
+
+    try:
+        with as_file(
+            files("pychipseeker").joinpath("data").joinpath(f"genome_{name}.json")
+        ) as path:
+            if not Path(path).is_file():
+                return None
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+    except (FileNotFoundError, ModuleNotFoundError):
+        return None
+
+
 def _cache_bundle(name: str) -> Optional[Path]:
     """Bundle npz previously fetched into the user cache dir, if any."""
 
@@ -486,6 +647,7 @@ def _download_file(url: str, dest: Path, tries: int = 4) -> None:
                 )
                 time.sleep(5 * attempt)
     else:
+        tmp.unlink(missing_ok=True)
         raise RuntimeError(f"could not download {url}") from last_error
     tmp.replace(dest)
 
@@ -764,6 +926,23 @@ def genome_provenance(assembly: Union[str, None]) -> dict:
     ``"downloaded": False``.
     """
 
+    if is_genome_spec(assembly):
+        spec = str(assembly).strip()
+        _, npz_path, info = _gtf_cache_paths(spec)
+        json_path = npz_path.with_suffix(".json")
+        if json_path.is_file():
+            with open(json_path, encoding="utf-8") as fh:
+                return json.load(fh)
+        return {
+            "assembly": spec,
+            "provider": info["provider"],
+            "release": info["release"],
+            "url": info["url"],
+            "description": info["description"],
+            "downloaded": False,
+            "cache_dir": str(cache_dir()),
+        }
+
     name = canonical_assembly(assembly)
     installed = _installed_bundle(name)
     candidates = []
@@ -774,6 +953,9 @@ def genome_provenance(assembly: Union[str, None]) -> dict:
         if candidate.is_file():
             with open(candidate, encoding="utf-8") as fh:
                 return json.load(fh)
+    shipped = _installed_provenance(name)
+    if shipped is not None:
+        return shipped
     if name in GENOME_SOURCES:
         return {
             "assembly": name,
@@ -819,12 +1001,38 @@ def download_genome(assembly: Union[str, None]) -> Path:
 def cached_genomes() -> list[dict[str, object]]:
     """Describe installed and downloaded bundles for ``pychipseeker cache``."""
 
+    root = cache_dir()
     names = set(SUPPORTED_GENOMES)
-    for bundle_path in cache_dir().glob("genome_*.npz"):
+    for bundle_path in root.glob("genome_*.npz"):
         stem = bundle_path.stem
         if stem.startswith("genome_"):
             names.add(stem[len("genome_") :])
     rows: list[dict[str, object]] = []
+
+    # On-demand ensembl:/gencode:/url: specs are cached as gtf/spec_*.npz.
+    gtf_root = root / "gtf"
+    if gtf_root.is_dir():
+        for npz_path in sorted(gtf_root.glob("spec_*.npz")):
+            spec_record: dict[str, object] = {}
+            json_path = npz_path.with_suffix(".json")
+            if json_path.is_file():
+                try:
+                    with open(json_path, encoding="utf-8") as fh:
+                        spec_record = json.load(fh)
+                except (OSError, ValueError):
+                    spec_record = {}
+            rows.append(
+                {
+                    "assembly": spec_record.get("assembly", npz_path.stem),
+                    "source": "spec-cache",
+                    "provider": spec_record.get("provider", ""),
+                    "release": spec_record.get("release", ""),
+                    "description": spec_record.get("description", ""),
+                    "size_mb": round(npz_path.stat().st_size / 1e6, 1),
+                    "path": str(npz_path),
+                    "cache_dir": str(root),
+                }
+            )
     for name in sorted(names):
         installed = _installed_bundle(name)
         cached = _cache_bundle(name)
@@ -885,6 +1093,11 @@ def clear_genome_cache(assembly: Union[str, None] = None) -> list[Path]:
             targets += sorted(gtf_root.glob("spec_*"))
         _loaded.clear()
         _loaded_specs.clear()
+    elif is_genome_spec(assembly):
+        spec = str(assembly).strip()
+        _, npz_path, _ = _gtf_cache_paths(spec)
+        targets = sorted((root / "gtf").glob(f"{npz_path.stem}.*"))
+        _loaded_specs.pop(spec, None)
     else:
         name = canonical_assembly(assembly)
         targets = [
@@ -902,4 +1115,36 @@ def clear_genome_cache(assembly: Union[str, None] = None) -> list[Path]:
             removed.append(path)
     if assembly is None and gtf_root.is_dir() and not any(gtf_root.iterdir()):
         gtf_root.rmdir()
+    return removed
+
+
+def prune_genome_cache() -> list[Path]:
+    """Remove incomplete cache entries and orphaned provenance JSON files.
+
+    Partial downloads (``*.part``), zero-byte bundles and JSON records whose
+    npz bundle is missing are leftovers from interrupted downloads.  Returns
+    the deleted paths.
+    """
+
+    root = cache_dir()
+    gtf_root = root / "gtf"
+    targets: list[Path] = []
+    for pattern in ("*.part", "genome_*.npz", "genome_*.json", "genome_*.gtf", "genome_*.gtf.gz"):
+        targets.extend(sorted(root.glob(pattern)))
+    if gtf_root.is_dir():
+        for pattern in ("*.part", "spec_*.npz", "spec_*.json", "spec_*.gtf", "spec_*.gtf.gz"):
+            targets.extend(sorted(gtf_root.glob(pattern)))
+
+    removed: list[Path] = []
+    for path in dict.fromkeys(targets):
+        if not path.exists():
+            continue
+        suffix = path.suffix.lower()
+        incomplete = suffix == ".part" or path.stat().st_size == 0
+        orphan = False
+        if suffix == ".json":
+            orphan = not path.with_suffix(".npz").is_file()
+        if incomplete or orphan:
+            path.unlink()
+            removed.append(path)
     return removed

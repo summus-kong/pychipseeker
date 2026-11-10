@@ -13,6 +13,7 @@ import datetime as _dt
 from pathlib import Path
 from typing import Any, Optional, Sequence, Union
 
+import numpy as np
 import pandas as pd
 
 from ._version import __version__
@@ -74,19 +75,63 @@ def _stats_page(annotation: PeakAnnotation):
     return fig
 
 
+def _qc_page(table: pd.DataFrame):
+    plt = _pyplot()
+    fig, ax = plt.subplots(figsize=_PAGE)
+    ax.axis("off")
+    ax.set_title("Quality control metrics", fontsize=14, loc="left")
+    rows: list[tuple[str, str]] = []
+    for row in table.itertuples(index=False):
+        metric = str(row.Metric)
+        value = row.Value
+        if isinstance(value, (float, np.floating)):
+            if "fraction" in metric.lower() or "FRiP" in metric:
+                text = f"{float(value):.4f}"
+            elif "signal" in metric.lower():
+                text = f"{float(value):.4f}"
+            elif "enrichment" in metric.lower():
+                text = f"{float(value):.3f}"
+            else:
+                text = f"{float(value):,.1f}"
+        elif isinstance(value, (int, np.integer)):
+            text = f"{int(value):,}"
+        else:
+            text = str(value)
+        rows.append((metric, text))
+    table_obj = ax.table(
+        cellText=rows,
+        colLabels=["Metric", "Value"],
+        loc="center",
+        cellLoc="center",
+        colWidths=[0.52, 0.28],
+    )
+    table_obj.auto_set_font_size(False)
+    table_obj.set_fontsize(10)
+    table_obj.scale(1.0, 1.8)
+    for cell in table_obj.get_celld().values():
+        cell.set_edgecolor("white")
+    return fig
+
+
 def _methods_page(
     annotation: PeakAnnotation,
     *,
     tss_region: tuple[int, int],
     bigwig: Optional[Path],
+    bam: Optional[Path],
     n_signal: int,
     seed: int,
+    qc: bool,
 ):
     signal_line = (
         f"   bigWig: {bigwig} ({n_signal:,} transcripts sampled, seed {seed})\n"
         if bigwig is not None
         else "   no bigWig supplied; signal panels omitted\n"
     )
+    if bam is not None:
+        signal_line += f"   BAM: {bam}\n"
+    if qc:
+        signal_line += "   QC: peak widths, blacklist, FRiP and TSS enrichment\n"
     body = (
         "1. Inputs\n"
         f"   peaks: {len(annotation.peaks):,}\n"
@@ -125,19 +170,26 @@ def build_report(
     gtf: Optional[Union[str, Path, pd.DataFrame]] = None,
     TxDb: Optional[Union[str, Path, pd.DataFrame]] = None,
     bigwig: Optional[Union[str, Path]] = None,
+    bam: Optional[Union[str, Path]] = None,
+    blacklist: Optional[Union[str, Path, pd.DataFrame]] = None,
     output: Union[str, Path] = "pychipseeker_report.pdf",
     level: str = "transcript",
     tss_region: Sequence[int] = (-3000, 3000),
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
     sample: int = 3000,
     seed: int = 20261026,
     title: Optional[str] = None,
     include_tag_matrix: bool = True,
+    qc: bool = False,
 ) -> Path:
     """Build a multi-page PDF report and return its path.
 
     Parameters mirror :func:`pychipseeker.annotate_peak`.  ``bigwig`` is
     optional; when supplied, TSS profile and heatmap pages are added using a
-    reproducible subsample of ``sample`` transcripts (``seed``).
+    reproducible subsample of ``sample`` transcripts (``seed``).  ``upstream``
+    and ``downstream`` optionally define an asymmetric signal window.
+    ``bam`` and ``blacklist`` feed the QC/FRiP pages enabled by ``qc=True``.
     """
 
     from .compat import covplot
@@ -170,6 +222,16 @@ def build_report(
     bigwig_path = None if bigwig is None else Path(bigwig)
     if bigwig_path is not None and not bigwig_path.exists():
         raise FileNotFoundError(bigwig_path)
+    bam_path = None if bam is None else Path(bam)
+    if bam_path is not None and not bam_path.exists():
+        raise FileNotFoundError(bam_path)
+
+    signal_up = (
+        abs(int(tss_region[0])) if upstream is None else abs(int(upstream))
+    )
+    signal_down = (
+        abs(int(tss_region[1])) if downstream is None else abs(int(downstream))
+    )
 
     plt = _pyplot()
     pages: list[tuple[Any, str]] = []
@@ -222,8 +284,38 @@ def build_report(
         except Exception:  # pragma: no cover - report best effort
             pass
 
+    transcripts = annotation.gene_annotation.features("transcript")
+
+    if qc:
+        from .qc import qc_summary
+
+        tables = [
+            annotation.gene_annotation.features("gene"),
+            annotation.gene_annotation.features("transcript"),
+        ]
+        chrom_sizes: dict[str, int] = {}
+        for table in tables:
+            if table is None or table.empty:
+                continue
+            for chrom, value in table.groupby("chrom", sort=False)["end"].max().items():
+                chrom_sizes[str(chrom)] = max(
+                    chrom_sizes.get(str(chrom), 0), int(value)
+                )
+        qc_table = qc_summary(
+            annotation.peaks,
+            bigwig=bigwig_path,
+            bam=bam_path,
+            genes=transcripts,
+            blacklist=blacklist,
+            chrom_sizes=chrom_sizes or None,
+            tss_upstream=signal_up,
+            tss_downstream=signal_down,
+            tss_sample=sample,
+            seed=int(seed),
+        )
+        pages.append((_qc_page(qc_table), "Quality control"))
+
     if bigwig_path is not None:
-        transcripts = annotation.gene_annotation.features("transcript")
         if sample and int(sample) < len(transcripts):
             subset = transcripts.sample(n=int(sample), random_state=int(seed))
         else:
@@ -232,14 +324,17 @@ def build_report(
         matrix = extract_tss_matrix(
             bigwig_path,
             subset,
-            window=max(abs(int(tss_region[0])), abs(int(tss_region[1]))),
             n_bins=100,
+            upstream=signal_up,
+            downstream=signal_down,
         )
+        assert isinstance(matrix, np.ndarray)
         pages.append(
             (
                 plot_tss_profile(
                     matrix,
-                    window=max(abs(int(tss_region[0])), abs(int(tss_region[1]))),
+                    upstream=signal_up,
+                    downstream=signal_down,
                     title="Signal around TSS",
                     show_sem=False,
                 )[0],
@@ -250,7 +345,8 @@ def build_report(
             (
                 plot_tss_heatmap(
                     matrix,
-                    window=max(abs(int(tss_region[0])), abs(int(tss_region[1]))),
+                    upstream=signal_up,
+                    downstream=signal_down,
                     cmap="Reds",
                     sort_rows=True,
                     title="Signal around TSS",
@@ -266,8 +362,10 @@ def build_report(
                 annotation,
                 tss_region=(int(tss_region[0]), int(tss_region[1])),
                 bigwig=bigwig_path,
+                bam=bam_path,
                 n_signal=n_signal,
                 seed=int(seed),
+                qc=qc,
             ),
             "Methods",
         )

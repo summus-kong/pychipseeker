@@ -285,10 +285,13 @@ def test_bigwig_real_file_get_tag_matrix():
         }
     )
     matrix = get_tag_matrix_from_bigwig(bigwig, windows, nbin=4)
-    assert matrix.shape == (3, 4)  # 'chr1' and out-of-range windows are dropped
+    # ``chr1`` is harmonised to the bigWig's ``1``; only the out-of-range
+    # window is dropped.
+    assert matrix.shape == (4, 4)
     np.testing.assert_allclose(matrix[0], [0.1, 0.2, 0.3, 0.0], rtol=1e-5)
     np.testing.assert_allclose(matrix[1], [0.0, 0.3, 0.2, 0.1], rtol=1e-5)
     np.testing.assert_allclose(matrix[2], [50.0, 50.0, 50.0, 50.0], rtol=1e-5)
+    np.testing.assert_allclose(matrix[3], matrix[0], rtol=1e-5)
 
 
 def test_bigwig_real_file_strand_and_value_type():

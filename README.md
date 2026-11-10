@@ -12,7 +12,7 @@ common tag-matrix, profile, heatmap, overlap and summary helpers.
 
 It is **not** an official ChIPseeker port.  Bioconductor `OrgDb` classes and
 the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
-`GeneAnnotation` object, a bundled assembly name (`"hg38"`, `"hg19"`,
+`GeneAnnotation` object, a prebuilt assembly name (`"hg38"`, `"hg19"`,
 `"mm10"`, `"mm9"`), an on-demand assembly (`"dm6"`, `"danRer11"`, `"rn7"`,
 `"mm39"`, `"sacCer3"`), or an `ensembl:`/`gencode:`/`url:` download spec.  See
 [docs/genomes.md](docs/genomes.md) and [PARITY.md](PARITY.md).
@@ -29,18 +29,24 @@ the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
   `makeBioRegionFromGranges`).
 - Peak-coverage tag matrices (`getTagMatrix`), average profiles, heatmaps and
   multi-window profiles.
-- bigWig signal matrices and TSS profiles (optional `[bigwig]` extra).
+- bigWig signal matrices and TSS profiles (optional `[bigwig]` extra), plus
+  BAM/CRAM coverage matrices (optional `[bam]` extra).
 - Peak-set overlap, true UpSet plots, coverage plots and overlap enrichment
   tests.
-- Threshold peak calling from a bigWig (`call_peaks`) and an optional MACS2/3
-  wrapper.
+- Threshold peak calling from a bigWig (`call_peaks`), peak filtering
+  (`filter_peaks`) and an optional MACS2/3 wrapper.
+- **Quality control**: peak-width summaries, blacklist/mitochondrial
+  fractions, FRiP and TSS enrichment from bigWig or BAM.
 - **Input formats**: BED, narrowPeak/broadPeak/gappedPeak (including gzip),
   TSV/CSV, bigBed (optional) and BAM/CRAM (optional).
-- **Multi-page PDF reports** and a `pychipseeker report` command.
-- **Enrichment**: Enrichr via optional `gseapy`, plus a dependency-free local
-  over-representation analysis with BH/Bonferroni correction and explicit
-  backgrounds.
-- **Genome cache**: bundled hg19/hg38/mm9/mm10 plus on-demand Ensembl
+- **Multi-page PDF reports** (including an optional QC page) and a
+  `pychipseeker report` command.
+- **Enrichment**: Enrichr/GSEA via optional `gseapy`, plus a dependency-free
+  local over-representation analysis with odds ratios, confidence intervals
+  and BH/Bonferroni correction.
+- **Chromosome harmonisation** between UCSC (`chr1`) and Ensembl (`1`) peak
+  and annotation files, with conservative assembly detection (`TxDb="auto"`).
+- **Genome cache**: prebuilt hg19/hg38/mm9/mm10 bundles, on-demand Ensembl
   assemblies and arbitrary `ensembl:`/`gencode:`/`url:` GTFs.
 
 ## Performance
@@ -84,9 +90,9 @@ pip install "pychipseeker[all]"
 
 `pyBigWig` has no official Windows wheel for every Python version; use
 conda-forge (`conda install -c conda-forge pybigwig`) or install a C compiler
-if pip must build it from source.  Bundled genome tables do not need
-`pyBigWig`; only direct signal-track access does.  R is not required for any
-Python functionality.
+if pip must build it from source.  Genome tables do not need `pyBigWig`; only
+direct signal-track access does.  R is not required for any Python
+functionality.
 
 ## Installation
 
@@ -116,7 +122,7 @@ print(ann.peakNum)
 # Snake_case API is also available
 ann2 = pcs.annotate_peak("peaks.bed", "genes.gtf", upstream=3000, downstream=3000)
 
-# Bundled genome lookup — TxDb="assembly", like ChIPseeker's TxDb= packages
+# Prebuilt genome lookup — TxDb="assembly", like ChIPseeker's TxDb= packages
 ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")   # also hg38, hg19, mm9
 # On-demand assemblies download once from Ensembl and are cached:
 ann = pcs.annotatePeak("peaks.bed", TxDb="dm6")    # also danRer11, rn7, mm39, sacCer3
@@ -125,8 +131,9 @@ ann = pcs.annotatePeak("peaks.bed", TxDb="ensembl:mouse@110")
 ann = pcs.annotatePeak("peaks.bed", TxDb="gencode:human@44")
 ann = pcs.annotatePeak("peaks.bed", TxDb="url:https://example.org/genes.gtf.gz")
 # aliases (case-insensitive) work too: "GRCh38", "GRCh37", "GRCm38", "GRCm37"
-# bundled tables ship with the wheel; downloaded bundles live in the cache and
-# `pychipseeker cache` manages them.  See docs/genomes.md and NOTICE.md.
+# hg19/hg38/mm9/mm10 are prebuilt and download once from the GitHub Release;
+# other assemblies are built from Ensembl GTFs.  Everything lives in the user
+# cache and `pychipseeker cache` manages it.  See docs/genomes.md and NOTICE.md.
 
 # ChIPseeker-style column names
 chip_df = ann.to_chipseeker()
@@ -227,9 +234,16 @@ tag = pcs.getTagMatrix(
     value_type="mean",   # sum/mean/max/min/coverage/std
 )
 
-# Or use the TSS convenience path
-fig, ax = ann.plot_tss_profile("signal.bw", window=2000, n_bins=100)
-fig, ax = ann.plot_tss_heatmap("signal.bw", window=2000, n_bins=100)
+# BAM/CRAM coverage works the same way (optional [bam] extra)
+tag = pcs.getTagMatrix(bam="alignments.bam", windows=promoters, nbin=100)
+
+# Or use the TSS convenience path; upstream/downstream may differ
+fig, ax = ann.plot_tss_profile(
+    "signal.bw", upstream=2000, downstream=4000, n_bins=100
+)
+fig, ax = ann.plot_tss_heatmap(
+    "signal.bw", upstream=2000, downstream=4000, n_bins=100
+)
 ```
 
 The older bedGraph/precomputed-matrix path remains available:
@@ -242,7 +256,7 @@ fig, ax = ann.plot_tss_profile(signal="signal.bedgraph", window=2000)
 Main profile/heatmap functions:
 
 - `getPromoters`, `getBioRegion`, `makeBioRegionFromGranges`
-- `getTagMatrix` / `getTagMatrixFromBigWig`
+- `getTagMatrix` / `get_tag_matrix_from_bigwig` / `get_tag_matrix_from_bam`
 - `plotAvgProf`, `plotAvgProf2`
 - `plotPeakProf`, `plotPeakProf2`, `plotPeakProf_MultiWindows`
 - `plotMultiProf`
@@ -252,6 +266,40 @@ Main profile/heatmap functions:
 All plotting helpers return matplotlib `(fig, ax)` (or `(fig, axes)` for
 multi-panel plots) and use the same 5'->3' orientation convention as
 ChIPseeker.
+
+## Quality control
+
+```python
+qc = pcs.qc_summary(
+    ann.peaks,
+    bigwig="signal.bw",              # or bam="alignments.bam"
+    genes=ann.gene_annotation.features("transcript"),
+    blacklist="ENCFF356LFX.bed.gz",
+    genome="mm10",
+)
+print(qc)  # Peaks, widths, mito/blacklist fractions, FRiP, TSS enrichment
+```
+
+`peak_qc`, `frip` and `tss_enrichment` are also available separately.  FRiP
+merges overlapping peaks before counting so the value never exceeds 1.
+
+## Enrichment
+
+```python
+res = pcs.ora(
+    genes,
+    gene_sets="gene_sets.gmt",
+    background=background_genes,
+    p_adjust="BH",
+)
+fig, ax = pcs.plot_enrichment(res, top=20, kind="dot")
+
+# Preranked GSEA (requires the [enrich] extra)
+gsea_res = pcs.gsea({"G1": 3.2, "G2": 1.7}, "GO_Biological_Process_2023")
+```
+
+ORA output includes `OddsRatio`, `ORLower` and `ORUpper` (95% Woolfe
+confidence interval) in addition to the hypergeometric p-values.
 
 ## Compatibility helpers
 
@@ -301,16 +349,25 @@ pychipseeker report \
     --peaks peaks.narrowPeak \
     --txdb mm10 \
     --bigwig signal.bw \
+    --qc \
     --output report.pdf
 
-pychipseeker cache list
+pychipseeker callpeak --bigwig signal.bw --output peaks.bed --threshold 3
+pychipseeker filter --peaks peaks.bed --blacklist blacklist.bed \
+    --drop-mito --output peaks.clean.bed
+pychipseeker qc --peaks peaks.clean.bed --bam alignments.bam --txdb mm10 \
+    --output qc.tsv
+
+pychipseeker cache list --json
+pychipseeker cache info mm10
 pychipseeker cache download dm6
+pychipseeker cache prune
 ```
 
 `--gtf` and `--txdb` are mutually exclusive; `--txdb` accepts the same names
 and specs as the Python API.  `report` builds the multi-page PDF described in
 [docs/cli.md](docs/cli.md), and `enrich` supports online Enrichr or offline
-ORA with `--local --gmt`.
+ORA with `--local --gmt` plus `--plot` bar charts.
 
 Plot from an existing annotation table:
 
@@ -427,7 +484,8 @@ python comparison/compare.py --no-r   # only re-check existing r_*/py_* files
   `python scripts/build_gsminfo.py GEOmetadb.sqlite -o gsminfo.csv.gz`
   (see the script's docstring; the very large `GEOmetadb.sqlite` download is
   up to the user).
-- GFF3 support is best-effort; GTF is the primary annotation input.
+- GFF3 support covers `gene`/`mRNA` parents, comma-separated multi-parent
+  features and `##FASTA` truncation; GTF remains the primary annotation input.
 - Visualization is matplotlib-based.  The implemented plot types reproduce
   ChIPseeker's ggplot2 `theme_grey` defaults (grey panel, white grid, matching
   colours, labels and axis directions); custom `theme_*` settings from R are
@@ -449,6 +507,7 @@ See [PARITY.md](PARITY.md) for the function-by-function status.
 ```bash
 pip install -e ".[dev,bigwig]"
 pytest -q
+pytest -q --cov=pychipseeker --cov-report=term-missing
 python -m ruff check src tests examples
 python -m mypy
 ```

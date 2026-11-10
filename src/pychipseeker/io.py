@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Iterable, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -71,64 +71,149 @@ def _strip_feature_prefix(values: pd.Series) -> pd.Series:
     )
 
 
-def read_gtf(path: Union[str, Path]) -> pd.DataFrame:
+class _GtfTextReader:
+    """File-like text reader that stops at a GFF3 ``##FASTA`` section.
+
+    pandas does not accept arbitrary line iterators, so this wrapper exposes
+    ``read``/``readline`` while streaming from an already-opened text handle.
+    Keeping the parser streaming avoids loading multi-gigabyte GENCODE GTFs
+    into memory just to skip embedded genome sequence.
+    """
+
+    def __init__(self, handle) -> None:
+        self._handle = handle
+        self._buffer = ""
+        self._eof = False
+
+    def _read_line(self) -> None:
+        line = self._handle.readline()
+        if not line:
+            self._eof = True
+            return
+        if line.startswith("##FASTA"):
+            self._eof = True
+            return
+        self._buffer += line
+
+    def _fill(self, size: int) -> None:
+        while not self._eof and len(self._buffer) < size:
+            self._read_line()
+
+    def read(self, size: int = -1) -> str:
+        if size is None or size < 0:
+            while not self._eof:
+                self._read_line()
+            text, self._buffer = self._buffer, ""
+            return text
+        self._fill(int(size))
+        text, self._buffer = self._buffer[: int(size)], self._buffer[int(size) :]
+        return text
+
+    def readline(self, size: int = -1) -> str:
+        while "\n" not in self._buffer and not self._eof:
+            self._read_line()
+        index = self._buffer.find("\n")
+        if index < 0:
+            text, self._buffer = self._buffer, ""
+            return text
+        text, self._buffer = self._buffer[: index + 1], self._buffer[index + 1 :]
+        return text
+
+    def readable(self) -> bool:
+        return True
+
+
+def _normalise_feature_names(
+    values: Union[str, Iterable[str]],
+) -> set[str]:
+    if isinstance(values, str):
+        values = [values]
+    names = {
+        str(value).strip().lower().replace("-", "_")
+        for value in values
+        if str(value).strip()
+    }
+    return {_FEATURE_ALIASES.get(name, name) for name in names}
+
+
+def read_gtf(
+    path: Union[str, Path],
+    *,
+    features: Optional[Union[str, Iterable[str]]] = None,
+    chunksize: Optional[int] = None,
+) -> pd.DataFrame:
     """Read a GTF/GFF file and extract common gene/transcript attributes.
 
     Coordinates are converted to 0-based, half-open intervals.  GTF is the
-    primary supported format; GFF3 is parsed on a best-effort basis.
+    primary supported format; GFF3 is parsed on a best-effort basis, including
+    comma-separated ``Parent`` values and an embedded ``##FASTA`` section.
+
+    ``features`` optionally restricts the returned rows to one or more feature
+    types (for example ``"exon"``).  Gene/transcript rows are still parsed
+    internally to recover parent identifiers.  ``chunksize`` streams large
+    files through pandas without changing the result.
     """
 
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(path)
+    if chunksize is not None and int(chunksize) <= 0:
+        raise ValueError("chunksize must be positive")
+    feature_filter = None if features is None else _normalise_feature_names(features)
 
-    df = pd.read_csv(
-        path,
-        sep="\t",
-        comment="#",
-        header=None,
-        names=GTF_COLUMNS,
-        dtype={
-            "chrom": "string",
-            "source": "string",
-            "feature": "string",
-            "start": "string",
-            "end": "string",
-            "score": "string",
-            "strand": "string",
-            "frame": "string",
-            "attributes": "string",
-        },
-        compression="infer",
-        low_memory=False,
-    )
-
-    # GFF3 files may contain a ##FASTA section; sequence rows do not have
-    # genomic coordinates.  Convert coordinates defensively and drop rows that
-    # are not valid feature records.
-    df["start"] = pd.to_numeric(df["start"], errors="coerce")
-    df["end"] = pd.to_numeric(df["end"], errors="coerce")
-    df = df.dropna(subset=["chrom", "feature", "start", "end"]).copy()
-
-    if df.empty:
+    dtype_map = {
+        "chrom": "string",
+        "source": "string",
+        "feature": "string",
+        "start": "string",
+        "end": "string",
+        "score": "string",
+        "strand": "string",
+        "frame": "string",
+        "attributes": "string",
+    }
+    frames: list[pd.DataFrame] = []
+    with _open_text(path) as handle:
+        reader = _GtfTextReader(handle)
+        parsed = pd.read_csv(
+            reader,
+            sep="\t",
+            comment="#",
+            header=None,
+            names=GTF_COLUMNS,
+            dtype=dtype_map,
+            low_memory=False,
+            chunksize=None if chunksize is None else int(chunksize),
+        )
+        chunks = [parsed] if isinstance(parsed, pd.DataFrame) else parsed
+        for chunk in chunks:
+            chunk = chunk.copy()
+            chunk["start"] = pd.to_numeric(chunk["start"], errors="coerce")
+            chunk["end"] = pd.to_numeric(chunk["end"], errors="coerce")
+            chunk = chunk.dropna(
+                subset=["chrom", "feature", "start", "end"]
+            ).copy()
+            if chunk.empty:
+                continue
+            chunk["start"] = chunk["start"].astype(np.int64) - 1
+            chunk["end"] = chunk["end"].astype(np.int64)
+            chunk["feature"] = (
+                chunk["feature"]
+                .astype("string")
+                .str.strip()
+                .str.lower()
+                .str.replace("-", "_", regex=False)
+            )
+            chunk["feature"] = chunk["feature"].replace(_FEATURE_ALIASES)
+            if feature_filter is not None:
+                keep = feature_filter | {"gene", "transcript", "mrna"}
+                chunk = chunk[chunk["feature"].isin(keep)].copy()
+            if not chunk.empty:
+                frames.append(chunk)
+    if not frames:
         raise ValueError(f"no records found in GTF: {path}")
-
-    # GTF is 1-based, closed.  Convert to 0-based, half-open.
-    df["start"] = df["start"].astype(np.int64) - 1
-    df["end"] = df["end"].astype(np.int64)
-
+    df = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
     attrs = df["attributes"].fillna("")
-
-    # Normalise feature names early so the GFF3 fallbacks can be
-    # feature-aware.
-    df["feature"] = (
-        df["feature"]
-        .astype("string")
-        .str.strip()
-        .str.lower()
-        .str.replace("-", "_", regex=False)
-    )
-    df["feature"] = df["feature"].replace(_FEATURE_ALIASES)
 
     # GTF-style attributes.
     df["gene_id"] = _extract_gtf(attrs, "gene_id")
@@ -176,6 +261,23 @@ def read_gtf(path: Union[str, Path]) -> pd.DataFrame:
     if mask.any():
         df.loc[mask, "transcript_id"] = _extract_gff(attrs[mask], "Parent")
 
+    # GFF3 allows a feature to belong to several parents:
+    # ``Parent=transcript:tx1,transcript:tx2``.  Duplicate the row once per
+    # parent so each transcript gets its own exon/UTR/CDS record.
+    for column, feature_set in (
+        ("transcript_id", child_features),
+        ("gene_id", tx_features),
+    ):
+        row_mask = df["feature"].isin(feature_set)
+        values = df[column].astype("string")
+        multiple = row_mask & values.str.contains(",", regex=False, na=False)
+        if multiple.any():
+            df[column] = df[column].astype(object)
+            df.loc[multiple, column] = df.loc[multiple, column].str.split(",")
+            df = df.explode(column, ignore_index=True)
+            df[column] = df[column].astype("string").str.strip()
+            attrs = df["attributes"].fillna("")
+
     mask = df["gene_name"].isna() & (df["feature"] == "gene")
     if mask.any():
         df.loc[mask, "gene_name"] = _extract_gff(attrs[mask], "Name")
@@ -220,6 +322,12 @@ def read_gtf(path: Union[str, Path]) -> pd.DataFrame:
     df["gene_name"] = df["gene_name"].fillna(df["gene_id"])
     df["strand"] = df["strand"].fillna(".")
 
+    if feature_filter is not None:
+        df = df[df["feature"].isin(feature_filter)].reset_index(drop=True)
+        if df.empty:
+            raise ValueError(
+                f"no records matching features={sorted(feature_filter)} in {path}"
+            )
     return df
 
 

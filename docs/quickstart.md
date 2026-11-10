@@ -3,7 +3,7 @@
 ```python
 import pychipseeker as pcs
 
-# Bundled genome tables: hg38, hg19, mm10, mm9
+# Prebuilt genome tables: hg38, hg19, mm10, mm9 (downloaded once)
 ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")
 print(ann.annoStat)
 
@@ -35,11 +35,25 @@ The `bigwig` extra is required.
 matrix = pcs.extract_tss_matrix(
     "signal.bw",
     ann.gene_annotation.features("transcript"),
-    window=2000,
+    upstream=2000,
+    downstream=4000,
     n_bins=100,
 )
-fig, ax = pcs.plot_tss_profile(matrix, window=2000)
-fig, ax = pcs.plot_tss_heatmap(matrix, window=2000)
+fig, ax = pcs.plot_tss_profile(matrix, upstream=2000, downstream=4000)
+fig, ax = pcs.plot_tss_heatmap(matrix, upstream=2000, downstream=4000)
+```
+
+## Quality control
+
+```python
+qc = pcs.qc_summary(
+    ann.peaks,
+    bam="alignments.bam",          # or bigwig="signal.bw"
+    genes=ann.gene_annotation.features("transcript"),
+    blacklist="blacklist.bed",
+    genome="mm10",
+)
+print(qc)
 ```
 
 ## One PDF report

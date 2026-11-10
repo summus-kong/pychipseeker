@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from .annotation import get_genomic_anno_stat
+from .seqlevels import harmonize_frame
 
 # ChIPseeker's getCols() palette (Set3-like).
 _CHIPSEEKER_COLORS = [
@@ -611,7 +612,13 @@ def extract_tss_matrix_from_signal(
     n_bins: int = 100,
     min_value: Optional[float] = 0.0,
     chrom_sizes: Optional[dict[str, int]] = None,
-) -> np.ndarray:
+    *,
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
+    drop_empty: bool = False,
+    return_mask: bool = False,
+    dtype: type = np.float64,
+) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
     """Extract a TSS-centered matrix from a bedGraph-like signal table.
 
     This is the no-pyBigWig alternative to :func:`extract_tss_matrix`.  The
@@ -621,8 +628,11 @@ def extract_tss_matrix_from_signal(
 
     ``genes`` needs ``chrom``, ``tss`` and ``strand`` columns, such as the
     transcript/gene table exposed by :class:`~pychipseeker.GeneAnnotation`.
-    Windows that fall outside a chromosome are skipped.  Chromosome lengths are
-    inferred from the signal unless ``chrom_sizes`` is supplied.
+    ``upstream``/``downstream`` support asymmetric windows.  Windows outside a
+    chromosome remain as all-``NaN`` rows by default; set ``drop_empty=True``
+    to omit them, and ``return_mask=True`` to receive ``(matrix, mask)``.
+    Chromosome lengths are inferred from the signal unless ``chrom_sizes`` is
+    supplied.
     """
 
     needed = {"chrom", "tss", "strand"}
@@ -630,10 +640,10 @@ def extract_tss_matrix_from_signal(
     if missing:
         raise ValueError(f"genes table is missing columns: {sorted(missing)}")
 
-    window = int(window)
+    up, down = _resolve_tss_window(window, upstream, downstream)
     n_bins = int(n_bins)
-    if window <= 0 or n_bins <= 1:
-        raise ValueError("window must be positive and n_bins must be > 1")
+    if n_bins <= 1:
+        raise ValueError("n_bins must be > 1")
 
     sig = _coerce_signal_frame(signal)
     if chrom_sizes is None:
@@ -652,8 +662,13 @@ def extract_tss_matrix_from_signal(
             group["value"].to_numpy(dtype=float),
         )
 
-    rows: list[np.ndarray] = []
-    for row in genes.itertuples(index=False):
+    genes = genes.reset_index(drop=True)
+    genes, _chrom_map = harmonize_frame(
+        genes, by_chrom.keys(), column="chrom", copy=True
+    )
+    matrix = np.full((len(genes), n_bins), np.nan, dtype=dtype)
+
+    for row_idx, row in enumerate(genes.itertuples(index=False)):
         chrom = str(row.chrom)
         if chrom not in by_chrom:
             continue
@@ -661,8 +676,8 @@ def extract_tss_matrix_from_signal(
         chrom_len = chrom_sizes.get(chrom)
         if chrom_len is None:
             continue
-        start = tss - window
-        end = tss + window
+        start = tss - up
+        end = tss + down
         if start < 0 or end > chrom_len:
             continue
 
@@ -681,11 +696,17 @@ def extract_tss_matrix_from_signal(
             arr = np.where(arr < float(min_value), 0.0, arr)
         if str(row.strand) == "-":
             arr = arr[::-1]
-        rows.append(arr)
+        matrix[row_idx] = arr
 
-    if not rows:
+    mask = ~np.all(np.isnan(matrix), axis=1)
+    if drop_empty:
+        matrix = matrix[mask]
+        mask = mask[mask]
+    if matrix.shape[0] == 0:
         raise ValueError("no features could be extracted from the signal track")
-    return np.vstack(rows)
+    if return_mask:
+        return matrix, mask
+    return matrix
 
 
 def _bin_values(values: np.ndarray, n_bins: int) -> np.ndarray:
@@ -728,24 +749,47 @@ def _bin_values(values: np.ndarray, n_bins: int) -> np.ndarray:
     return out
 
 
+def _resolve_tss_window(
+    window: int,
+    upstream: Optional[int],
+    downstream: Optional[int],
+) -> tuple[int, int]:
+    up = int(window) if upstream is None else int(upstream)
+    down = int(window) if downstream is None else int(downstream)
+    if up < 0 or down < 0 or up + down <= 0:
+        raise ValueError("upstream/downstream must be non-negative and not both zero")
+    return up, down
+
+
 def extract_tss_matrix(
     bigwig: Union[str, Path],
     genes: pd.DataFrame,
     window: int = 2000,
     n_bins: int = 100,
     min_value: float = 0.0,
-) -> np.ndarray:
+    *,
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
+    drop_empty: bool = False,
+    return_mask: bool = False,
+    dtype: type = np.float64,
+) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
     """Extract a features x bins TSS-centered signal matrix from a bigWig file.
 
-    Signal is read with ``bw.values`` in chromosome chunks and binned with
-    NumPy, which is roughly two orders of magnitude faster than one
-    ``bw.stats`` call per feature (a full mm10 transcript set drops from about
-    one hour to ~20-30 s on a typical machine).
+    Each chromosome is read once and integrated with cumulative sums, which is
+    much faster than issuing one ``bw.stats`` call per feature.  ``upstream``
+    and ``downstream`` optionally define an asymmetric window; otherwise
+    ``window`` is used on both sides.
 
-    ``pyBigWig`` is a declared dependency of pychipseeker.  A bedGraph table or
-    precomputed matrix can be used instead via
-    :func:`extract_tss_matrix_from_signal` or ``matrix=...`` in
-    ``plot_tss_profile`` / ``plot_tss_heatmap``.
+    Rows without any covered signal are kept by default so row order remains
+    aligned with ``genes``.  Pass ``drop_empty=True`` for the old behaviour, or
+    ``return_mask=True`` to receive ``(matrix, mask)`` where ``mask`` marks
+    rows with at least one finite bin.
+
+    ``pyBigWig`` is an optional dependency: install it with
+    ``pip install pychipseeker[bigwig]``.  A bedGraph table or precomputed
+    matrix can be used instead via :func:`extract_tss_matrix_from_signal` or
+    ``matrix=...`` in ``plot_tss_profile`` / ``plot_tss_heatmap``.
     """
 
     try:
@@ -753,9 +797,9 @@ def extract_tss_matrix(
     except ImportError as exc:  # pragma: no cover - dependency installation issue
         raise ImportError(
             "pyBigWig is required to read .bw/.bigWig files directly. "
-            "Reinstall pychipseeker (pyBigWig is a declared dependency), or "
-            "use extract_tss_matrix_from_signal() with a bedGraph table or "
-            "pass matrix=... to plot_tss_profile/plot_tss_heatmap."
+            "Install it with `pip install pychipseeker[bigwig]`, or use "
+            "extract_tss_matrix_from_signal() with a bedGraph table or pass "
+            "matrix=... to plot_tss_profile/plot_tss_heatmap."
         ) from exc
 
     needed = {"chrom", "tss", "strand"}
@@ -763,10 +807,10 @@ def extract_tss_matrix(
     if missing:
         raise ValueError(f"genes table is missing columns: {sorted(missing)}")
 
-    window = int(window)
+    up, down = _resolve_tss_window(window, upstream, downstream)
     n_bins = int(n_bins)
-    if window <= 0 or n_bins <= 1:
-        raise ValueError("window must be positive and n_bins must be > 1")
+    if n_bins <= 1:
+        raise ValueError("n_bins must be > 1")
 
     bw = pyBigWig.open(str(bigwig))
     if bw is None:
@@ -775,6 +819,9 @@ def extract_tss_matrix(
     try:
         chrom_sizes = bw.chroms()
         genes = genes.reset_index(drop=True)
+        genes, _chrom_map = harmonize_frame(
+            genes, chrom_sizes.keys(), column="chrom", copy=True
+        )
         tss = genes["tss"].to_numpy(dtype=np.int64, copy=False)
         strands = genes["strand"].astype(str).to_numpy()
         chroms = genes["chrom"].astype(str).to_numpy()
@@ -782,15 +829,15 @@ def extract_tss_matrix(
             [chrom_sizes.get(chrom, -1) for chrom in chroms], dtype=np.int64
         )
 
-        starts = tss - window
-        ends = tss + window
+        starts = tss - up
+        ends = tss + down
         valid = (
             (chrom_lengths > 0)
             & (starts >= 0)
             & (ends <= chrom_lengths)
         )
         rows = np.flatnonzero(valid)
-        matrix = np.full((len(genes), n_bins), np.nan, dtype=np.float64)
+        matrix = np.full((len(genes), n_bins), np.nan, dtype=dtype)
         if rows.size == 0:
             raise ValueError(
                 "no features could be extracted from the bigWig track"
@@ -804,7 +851,7 @@ def extract_tss_matrix(
         # pyBigWig's stats() uses integer bin edges; floor division reproduces
         # its binning exactly (verified against bw.stats for odd bin counts).
         edge_offsets = (
-            np.arange(n_bins + 1, dtype=np.int64) * (2 * window)
+            np.arange(n_bins + 1, dtype=np.int64) * (up + down)
         ) // n_bins
         for chrom in pd.unique(row_chroms):
             index = rows[row_chroms == chrom]
@@ -815,8 +862,8 @@ def extract_tss_matrix(
                     pos = int(tss[row_idx])
                     vals = bw.stats(
                         str(chrom),
-                        pos - window,
-                        pos + window,
+                        pos - up,
+                        pos + down,
                         nBins=n_bins,
                         type="mean",
                     )
@@ -867,7 +914,7 @@ def extract_tss_matrix(
                 )
                 return cum_len[i] + part, cum_val[i] + part * values_i[j]
 
-            window_starts = tss[index] - window
+            window_starts = tss[index] - up
             edges = window_starts[:, None] + edge_offsets[None, :]
             covered, integral = _cumulative(edges.ravel())
             covered = covered.reshape(len(index), n_bins + 1)
@@ -886,10 +933,15 @@ def extract_tss_matrix(
     finally:
         bw.close()
 
-    keep = ~np.all(np.isnan(matrix), axis=1)
-    if not keep.any():
+    mask = ~np.all(np.isnan(matrix), axis=1)
+    if drop_empty:
+        matrix = matrix[mask]
+        mask = mask[mask]
+    if matrix.shape[0] == 0:
         raise ValueError("no features could be extracted from the bigWig track")
-    return matrix[keep]
+    if return_mask:
+        return matrix, mask
+    return matrix
 
 
 def plot_tss_profile(
@@ -900,6 +952,9 @@ def plot_tss_profile(
     color: str = "#E45756",
     figsize: tuple[float, float] = (6.0, 4.0),
     show_sem: bool = True,
+    *,
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
     **kwargs,
 ):
     """Plot the mean TSS-centered signal profile."""
@@ -911,8 +966,9 @@ def plot_tss_profile(
     if matrix.shape[0] == 0:
         raise ValueError("matrix has no rows")
 
+    up, down = _resolve_tss_window(window, upstream, downstream)
     n_bins = matrix.shape[1]
-    x = np.linspace(-int(window), int(window), n_bins)
+    x = np.linspace(-up, down, n_bins)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -957,6 +1013,9 @@ def plot_tss_heatmap(
     cmap: str = "viridis",
     figsize: tuple[float, float] = (6.0, 5.0),
     sort_rows: bool = False,
+    *,
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
     **kwargs,
 ):
     """Plot a heatmap of TSS-centered signal.
@@ -972,6 +1031,7 @@ def plot_tss_heatmap(
     if matrix.shape[0] == 0:
         raise ValueError("matrix has no rows")
 
+    up, down = _resolve_tss_window(window, upstream, downstream)
     if sort_rows:
         finite = np.nan_to_num(matrix, nan=-np.inf)
         order = np.argsort(-np.nanmax(finite, axis=1), kind="stable")
@@ -991,7 +1051,7 @@ def plot_tss_heatmap(
         aspect="auto",
         cmap=cmap_obj,
         interpolation="nearest",
-        extent=(-int(window), int(window), matrix.shape[0], 0),
+        extent=(-up, down, matrix.shape[0], 0),
         **kwargs,
     )
     ax.axvline(0, color="white", linewidth=0.8, linestyle="--")

@@ -29,6 +29,7 @@ import pandas as pd
 
 from .intervals import BinnedIntervalIndex, SpanIndex, TSSIndex
 from .io import read_gtf, read_peaks
+from .seqlevels import harmonize_frame
 
 Number = Union[int, float]
 
@@ -1199,6 +1200,8 @@ class PeakAnnotation:
         window: int = 2000,
         n_bins: int = 100,
         min_value: Optional[float] = 0.0,
+        upstream: Optional[int] = None,
+        downstream: Optional[int] = None,
     ) -> np.ndarray:
         """Resolve a precomputed matrix, bedGraph signal, or bigWig."""
 
@@ -1224,6 +1227,8 @@ class PeakAnnotation:
                 window=window,
                 n_bins=n_bins,
                 min_value=min_value,
+                upstream=upstream,
+                downstream=downstream,
             )
 
         from .plotting import extract_tss_matrix
@@ -1234,6 +1239,8 @@ class PeakAnnotation:
             window=window,
             n_bins=n_bins,
             min_value=0.0 if min_value is None else float(min_value),
+            upstream=upstream,
+            downstream=downstream,
         )
 
     def plot_tss_profile(
@@ -1249,6 +1256,8 @@ class PeakAnnotation:
         window = int(kwargs.pop("window", 2000))
         n_bins = int(kwargs.pop("n_bins", 100))
         min_value = kwargs.pop("min_value", 0.0)
+        upstream = kwargs.pop("upstream", None)
+        downstream = kwargs.pop("downstream", None)
         matrix = self._tss_matrix(
             bigwig,
             matrix=matrix,
@@ -1256,8 +1265,16 @@ class PeakAnnotation:
             window=window,
             n_bins=n_bins,
             min_value=min_value,
+            upstream=upstream,
+            downstream=downstream,
         )
-        return plot_tss_profile(matrix, window=window, **kwargs)
+        return plot_tss_profile(
+            matrix,
+            window=window,
+            upstream=upstream,
+            downstream=downstream,
+            **kwargs,
+        )
 
     def plot_tss_heatmap(
         self,
@@ -1272,6 +1289,8 @@ class PeakAnnotation:
         window = int(kwargs.pop("window", 2000))
         n_bins = int(kwargs.pop("n_bins", 100))
         min_value = kwargs.pop("min_value", 0.0)
+        upstream = kwargs.pop("upstream", None)
+        downstream = kwargs.pop("downstream", None)
         matrix = self._tss_matrix(
             bigwig,
             matrix=matrix,
@@ -1279,8 +1298,16 @@ class PeakAnnotation:
             window=window,
             n_bins=n_bins,
             min_value=min_value,
+            upstream=upstream,
+            downstream=downstream,
         )
-        return plot_tss_heatmap(matrix, window=window, **kwargs)
+        return plot_tss_heatmap(
+            matrix,
+            window=window,
+            upstream=upstream,
+            downstream=downstream,
+            **kwargs,
+        )
 
 
 # ----------------------------------------------------------------------
@@ -1709,6 +1736,10 @@ def annotate_peak(
             f"{', '.join(supported_genomes())}"
         )
 
+    if isinstance(gtf, str) and gtf.strip().lower() == "auto":
+        from .genomes import detect_assembly
+
+        gtf = detect_assembly(peaks=peaks)
     if is_assembly_name(gtf):
         gtf = load_genome(gtf)
     elif is_genome_spec(gtf):
@@ -1739,6 +1770,13 @@ def annotate_peak(
 
     model = gtf if isinstance(gtf, GeneAnnotation) else GeneAnnotation.from_gtf(gtf)
     peaks_df = _normalise_peaks(peaks)
+    # Ensembl annotations use ``1``/``MT`` while BED files often use
+    # ``chr1``/``chrM``.  Harmonise the query names before the interval search
+    # so otherwise valid peaks are not silently dropped.
+    target_chroms = pd.unique(model.features(level)["chrom"].astype(str))
+    peaks_df, _chrom_map = harmonize_frame(
+        peaks_df, target_chroms, column="chrom", copy=False
+    )
     if peaks_df.empty:
         empty = pd.DataFrame(columns=_annotation_columns(level, assign_genomic_annotation))
         detail = pd.DataFrame(columns=list(_DETAIL_KEYS.values()) + [
@@ -2251,6 +2289,12 @@ def seq2gene_links(
     flank_distance = int(flank_distance)
 
     peaks_df = _normalise_peaks(peaks)
+    peaks_df, _chrom_map = harmonize_frame(
+        peaks_df,
+        pd.unique(gene_annotation.features(level)["chrom"].astype(str)),
+        column="chrom",
+        copy=False,
+    )
     links: dict[tuple[str, str], dict[str, object]] = {}
 
     def add_link(
@@ -2362,6 +2406,12 @@ def get_flanking_genes(
         raise ValueError("level must be 'transcript' or 'gene'")
     peaks_df = _normalise_peaks(peaks)
     features = model.features(level)
+    peaks_df, _chrom_map = harmonize_frame(
+        peaks_df,
+        pd.unique(features["chrom"].astype(str)),
+        column="chrom",
+        copy=False,
+    )
     records: list[dict[str, object]] = []
     distance = int(distance)
 

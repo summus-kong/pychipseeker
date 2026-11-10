@@ -31,6 +31,13 @@ jobs:
         run: python -m ruff check src tests examples
       - name: Pytest
         run: python -m pytest -q
+      - name: Coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: >-
+          python -m pytest -q
+          --cov=pychipseeker
+          --cov-report=term-missing
+          --cov-fail-under=75
 
   typing:
     name: typing (mypy)

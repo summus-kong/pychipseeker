@@ -65,12 +65,18 @@ def test_call_peaks_threshold_merge_and_write(tmp_path, monkeypatch):
 
 def test_report_builds_multipage_pdf(tmp_path, examples_dir):
     output = tmp_path / "report.pdf"
+    blacklist = tmp_path / "blacklist.bed"
+    blacklist.write_text("chr1\t950\t1050\n", encoding="utf-8")
     path = pcs.build_report(
         peaks=examples_dir / "example_peaks.bed",
         gtf=examples_dir / "example.gtf",
+        blacklist=blacklist,
         output=output,
         sample=10,
         include_tag_matrix=False,
+        qc=True,
+        upstream=500,
+        downstream=1000,
     )
     assert path == output
     assert output.exists()
@@ -102,6 +108,13 @@ def test_cache_helpers_list_and_clear(tmp_path, monkeypatch):
 
     pcs.clear_genome_cache()
     assert not (gtf_dir / "spec_abc.gtf").exists()
+
+    (tmp_path / "genome_hg19.npz.part").write_bytes(b"partial")
+    (tmp_path / "genome_hg19.json").write_text("{}", encoding="utf-8")
+    pruned = pcs.prune_genome_cache()
+    assert (tmp_path / "genome_hg19.npz.part") in pruned
+    assert (tmp_path / "genome_hg19.json") in pruned
+    assert not (tmp_path / "genome_hg19.npz.part").exists()
 
 
 def test_upsetplot_uses_dot_matrix(examples_dir):

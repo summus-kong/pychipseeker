@@ -56,12 +56,16 @@ from .enrichment import (
     enrich_kegg,
     enrich_peak_genes,
     enrichr,
+    gsea,
+    gsea_peak_genes,
     ora,
+    plot_enrichment,
     read_gmt,
 )
 from .genomes import (
     cached_genomes,
     clear_genome_cache,
+    detect_assembly,
     download_genome,
     download_gtf,
     genome_provenance,
@@ -69,10 +73,11 @@ from .genomes import (
     load_annotation,
     load_genome,
     parse_genome_spec,
+    prune_genome_cache,
     supported_genomes,
 )
 from .io import read_gtf, read_peaks, write_table
-from .peaks import call_peaks, call_peaks_macs, write_peaks
+from .peaks import call_peaks, call_peaks_macs, filter_peaks, write_peaks
 from .plotting import (
     extract_tss_matrix,
     extract_tss_matrix_from_signal,
@@ -82,12 +87,15 @@ from .plotting import (
     plot_tss_heatmap,
     plot_tss_profile,
 )
+from .qc import frip, peak_qc, qc_summary, tss_enrichment
 from .report import build_report
+from .seqlevels import canonical_chrom, chromosome_style, harmonize_frame
 from .tagmatrix import (
     TagMatrix,
     get_bio_region,
     get_promoters,
     get_tag_matrix,
+    get_tag_matrix_from_bam,
     get_tag_matrix_from_bigwig,
     getBioRegion,
     getPromoters,
@@ -136,7 +144,16 @@ __all__ = [
     "write_table",
     "call_peaks",
     "call_peaks_macs",
+    "filter_peaks",
     "write_peaks",
+    "frip",
+    "peak_qc",
+    "qc_summary",
+    "tss_enrichment",
+    "canonical_chrom",
+    "chromosome_style",
+    "harmonize_frame",
+    "detect_assembly",
     "load_genome",
     "load_annotation",
     "supported_genomes",
@@ -146,6 +163,7 @@ __all__ = [
     "download_gtf",
     "cached_genomes",
     "clear_genome_cache",
+    "prune_genome_cache",
     "genome_provenance",
     "build_report",
     "as_granges",
@@ -200,6 +218,7 @@ __all__ = [
     "get_tag_matrix",
     "getTagMatrix",
     "get_tag_matrix_from_bigwig",
+    "get_tag_matrix_from_bam",
     "make_bio_region_from_granges",
     "makeBioRegionFromGranges",
     "plot_avg_prof",
@@ -227,6 +246,9 @@ __all__ = [
     "read_gmt",
     "enrich_kegg",
     "enrich_peak_genes",
+    "gsea",
+    "gsea_peak_genes",
+    "plot_enrichment",
 ]
 
 # ChIPseeker-style aliases for users coming from R.
