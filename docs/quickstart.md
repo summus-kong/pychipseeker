@@ -10,6 +10,9 @@ print(ann.annoStat)
 # A GTF/GFF file, DataFrame or GeneAnnotation object works too
 ann = pcs.annotate_peak("peaks.bed", "genes.gtf", tss_region=(-3000, 3000))
 
+# Large peak sets: annotate on all cores (results match the sequential run)
+ann = pcs.annotate_peak("peaks.bed", TxDb="mm10", n_jobs=-1)
+
 # ChIPseeker-style result table and plots
 df = ann.to_chipseeker()
 fig, ax = ann.plot_anno_pie()

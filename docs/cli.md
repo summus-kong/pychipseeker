@@ -28,6 +28,9 @@ on-demand assembly (`dm6`, `danRer11`, `rn7`, `mm39`, `sacCer3`), an
 `ensembl:`/`gencode:`/`url:` spec, `auto`, or an alias.  Use `--gtf` for a
 local GTF/GFF file.
 
+`--jobs N` annotates large peak sets in parallel (`-1` = all cores); the
+default `1` keeps the run sequential.
+
 ## callpeak and filter
 
 ```bash
@@ -49,7 +52,8 @@ pychipseeker filter \
 
 `callpeak` is a dependency-free threshold caller for signal tracks (it needs
 the `bigwig` extra).  `filter` also accepts `--min-score`, `--chroms` and
-`--exclude-chroms`.
+`--exclude-chroms`.  `callpeak --jobs -1` calls chromosomes in parallel; each
+worker opens the bigWig read-only.
 
 ## qc
 
@@ -65,7 +69,9 @@ pychipseeker qc \
 The table contains peak counts/widths, mitochondrial and blacklist fractions,
 FRiP and TSS enrichment.  Supply `--bigwig` instead of `--bam` for signal
 coverage, `--no-tss` to skip TSS enrichment, or `--include-duplicates` to count
-duplicate BAM reads in FRiP.
+duplicate BAM reads in FRiP.  `--jobs N` parallelises the BAM coverage matrix
+over TSS features (`-1` = all cores); FRiP itself uses the C-level counter and
+is already fast on multi-million-read files.
 
 ## report
 
@@ -86,7 +92,8 @@ The PDF contains title/summary, pie, bar, TSS distance, coverage, tag-matrix
 profile/heatmap, optional bigWig TSS profile/heatmap, optional QC, `annoStat`,
 and methods pages.  `--no-tag-matrix` skips the tag-matrix pages.
 `--upstream`/`--downstream` define an asymmetric signal window and default to
-the `--tss-region` values.
+the `--tss-region` values.  `--jobs N` forwards the worker count to annotation
+and QC (`-1` = all cores).
 
 ## cache
 

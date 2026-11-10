@@ -67,6 +67,7 @@ def _cmd_annotate(args: argparse.Namespace) -> int:
         drop_unmapped=not args.keep_unmapped,
         align_annotation_feature=not args.no_align_annotation_feature,
         verbose=not args.quiet,
+        n_jobs=args.jobs,
     )
     df = annotation.to_chipseeker() if args.chipseeker_columns else annotation.to_dataframe()
 
@@ -191,6 +192,7 @@ def _cmd_callpeak(args: argparse.Namespace) -> int:
         chroms=chroms,
         sample=args.sample,
         seed=args.seed,
+        n_jobs=args.jobs,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -275,6 +277,7 @@ def _cmd_qc(args: argparse.Namespace) -> int:
         tss_sample=args.tss_sample,
         seed=args.seed,
         exclude_duplicates=not args.include_duplicates,
+        n_jobs=args.jobs,
     )
     print(table.to_string(index=False))
     if args.output:
@@ -312,6 +315,7 @@ def _cmd_report(args: argparse.Namespace) -> int:
         title=args.title,
         include_tag_matrix=not args.no_tag_matrix,
         qc=args.qc,
+        n_jobs=args.jobs,
     )
     print(f"Report -> {output} ({output.stat().st_size / 1024:.0f} KiB)")
     return 0
@@ -461,6 +465,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_ann.add_argument("--dpi", type=int, default=300)
+    p_ann.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="worker processes for large peak sets (-1 = all cores)",
+    )
     p_ann.add_argument("--quiet", action="store_true")
     p_ann.set_defaults(func=_cmd_annotate)
 
@@ -519,6 +529,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_call.add_argument("--sample", type=int, default=None)
     p_call.add_argument("--seed", type=int, default=None)
+    p_call.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="worker processes, one task per chromosome (-1 = all cores)",
+    )
     p_call.set_defaults(func=_cmd_callpeak)
 
     p_filter = sub.add_parser("filter", help="filter peaks by blacklist/width/score")
@@ -551,6 +567,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-duplicates",
         action="store_true",
         help="count duplicate BAM reads in FRiP",
+    )
+    p_qc.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="worker processes for the BAM TSS matrix (-1 = all cores)",
     )
     p_qc.set_defaults(func=_cmd_qc)
 
@@ -592,6 +614,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-tag-matrix",
         action="store_true",
         help="skip the tagMatrix profile/heatmap pages",
+    )
+    p_report.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="worker processes for annotation/QC (-1 = all cores)",
     )
     p_report.set_defaults(func=_cmd_report)
 

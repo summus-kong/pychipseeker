@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from .io import read_peaks
+from .parallel import chunk_bounds, effective_jobs, parallel_map
 from .seqlevels import canonical_chrom, harmonize_frame
 
 
@@ -234,6 +235,28 @@ def _frip_bigwig(
     return float(in_peaks / total)
 
 
+def _read_keep_callback(
+    exclude_duplicates: bool,
+    min_mapping_quality: int,
+):
+    """Build the pysam ``read_callback`` used by the counting paths."""
+
+    def keep(read: object) -> bool:
+        if getattr(read, "is_unmapped", True):
+            return False
+        if getattr(read, "is_secondary", False) or getattr(
+            read, "is_supplementary", False
+        ):
+            return False
+        if exclude_duplicates and getattr(read, "is_duplicate", False):
+            return False
+        return int(getattr(read, "mapping_quality", 0)) >= int(
+            min_mapping_quality
+        )
+
+    return keep
+
+
 def _frip_bam(
     bam: Union[str, Path],
     peaks: pd.DataFrame,
@@ -248,38 +271,57 @@ def _frip_bam(
         merged, _ = harmonize_frame(
             merged, references, column="chrom", copy=False
         )
-    by_chrom: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for chrom, group in merged.groupby("chrom", sort=False):
-        starts = group["start"].to_numpy(dtype=np.int64)
-        ends = group["end"].to_numpy(dtype=np.int64)
-        order = np.argsort(starts, kind="mergesort")
-        by_chrom[str(chrom)] = (starts[order], ends[order])
+    keep = _read_keep_callback(exclude_duplicates, min_mapping_quality)
 
     total = 0
     in_peaks = 0
+    indexed = False
     try:
-        for read in handle.fetch(until_eof=True):
-            if read.is_unmapped or read.is_secondary or read.is_supplementary:
-                continue
-            if exclude_duplicates and read.is_duplicate:
-                continue
-            if int(read.mapping_quality) < int(min_mapping_quality):
-                continue
-            chrom = read.reference_name
-            if chrom is None:
-                continue
-            start = int(read.reference_start)
-            end = read.reference_end
-            if end is None:
-                end = start + max(1, int(read.query_length or 1))
-            end = int(end)
-            total += 1
-            if str(chrom) not in by_chrom:
-                continue
-            peak_starts, peak_ends = by_chrom[str(chrom)]
-            index = int(np.searchsorted(peak_ends, start, side="right"))
-            if index < len(peak_starts) and peak_starts[index] < end:
-                in_peaks += 1
+        indexed = bool(getattr(handle, "has_index", lambda: False)())
+        if indexed and hasattr(handle, "count"):
+            # C-level counting: one sequential pass for the denominator and
+            # one indexed query per merged peak for the numerator.  This is
+            # orders of magnitude faster than inspecting every alignment in
+            # Python on multi-million-read files.
+            total = int(handle.count(until_eof=True, read_callback=keep))
+            for row in merged.itertuples(index=False):
+                start = int(row.start)
+                end = int(row.end)
+                if end <= start:
+                    continue
+                in_peaks += int(
+                    handle.count(
+                        str(row.chrom), start, end, read_callback=keep
+                    )
+                )
+        else:
+            # Indexless BAM/CRAM files (or minimal pysam stand-ins) fall back
+            # to a single streaming pass.
+            by_chrom: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+            for chrom, group in merged.groupby("chrom", sort=False):
+                starts = group["start"].to_numpy(dtype=np.int64)
+                ends = group["end"].to_numpy(dtype=np.int64)
+                order = np.argsort(starts, kind="mergesort")
+                by_chrom[str(chrom)] = (starts[order], ends[order])
+
+            for read in handle.fetch(until_eof=True):
+                if not keep(read):
+                    continue
+                chrom = read.reference_name
+                if chrom is None:
+                    continue
+                start = int(read.reference_start)
+                end = read.reference_end
+                if end is None:
+                    end = start + max(1, int(read.query_length or 1))
+                end = int(end)
+                total += 1
+                if str(chrom) not in by_chrom:
+                    continue
+                peak_starts, peak_ends = by_chrom[str(chrom)]
+                index = int(np.searchsorted(peak_ends, start, side="right"))
+                if index < len(peak_starts) and peak_starts[index] < end:
+                    in_peaks += 1
     finally:
         handle.close()
     if total <= 0:
@@ -317,15 +359,24 @@ def frip(
     )
 
 
-def _bam_tss_matrix(
+def _bam_tss_rows(
     bam: Union[str, Path],
     genes: pd.DataFrame,
     *,
     upstream: int,
     downstream: int,
     n_bins: int,
+    handle=None,
 ) -> np.ndarray:
-    handle = _bam_handle(bam)
+    """Coverage matrix for one block of TSS features.
+
+    ``handle`` lets the caller reuse an already-open alignment file; the
+    process-pool workers open their own handle per chunk.
+    """
+
+    owns_handle = handle is None
+    if handle is None:
+        handle = _bam_handle(bam)
     matrix = np.full((len(genes), n_bins), np.nan, dtype=np.float64)
     try:
         for row_idx, row in enumerate(genes.itertuples(index=False)):
@@ -369,8 +420,66 @@ def _bam_tss_matrix(
                 binned = binned[::-1]
             matrix[row_idx] = binned
     finally:
-        handle.close()
+        if owns_handle:
+            handle.close()
     return matrix
+
+
+_BAM_TSS_MIN_FEATURES = 500
+_BAM_TSS_WORKER: Optional[tuple[str, int, int, int]] = None
+
+
+def _bam_tss_worker_init(
+    bam: Union[str, Path], upstream: int, downstream: int, n_bins: int
+) -> None:
+    global _BAM_TSS_WORKER
+    _BAM_TSS_WORKER = (str(bam), int(upstream), int(downstream), int(n_bins))
+
+
+def _bam_tss_worker(genes: pd.DataFrame) -> np.ndarray:
+    if _BAM_TSS_WORKER is None:  # pragma: no cover - pool initialiser guard
+        raise RuntimeError("BAM TSS worker was not initialised")
+    bam, upstream, downstream, n_bins = _BAM_TSS_WORKER
+    return _bam_tss_rows(
+        bam,
+        genes,
+        upstream=upstream,
+        downstream=downstream,
+        n_bins=n_bins,
+    )
+
+
+def _bam_tss_matrix(
+    bam: Union[str, Path],
+    genes: pd.DataFrame,
+    *,
+    upstream: int,
+    downstream: int,
+    n_bins: int,
+    n_jobs: Optional[int] = None,
+) -> np.ndarray:
+    workers = effective_jobs(n_jobs, tasks=len(genes))
+    if workers <= 1 or len(genes) < _BAM_TSS_MIN_FEATURES:
+        return _bam_tss_rows(
+            bam,
+            genes,
+            upstream=int(upstream),
+            downstream=int(downstream),
+            n_bins=int(n_bins),
+        )
+
+    chunks = [
+        genes.iloc[start:stop].reset_index(drop=True)
+        for start, stop in chunk_bounds(len(genes), workers * 4)
+    ]
+    matrices = parallel_map(
+        _bam_tss_worker,
+        chunks,
+        n_jobs=workers,
+        initializer=_bam_tss_worker_init,
+        initargs=(bam, int(upstream), int(downstream), int(n_bins)),
+    )
+    return np.vstack(matrices)
 
 
 def _profile_score(
@@ -443,6 +552,7 @@ def tss_enrichment(
     seed: int = 20261026,
     center_window: int = 100,
     flank_window: Optional[int] = None,
+    n_jobs: Optional[int] = None,
 ) -> dict[str, float]:
     """Compute the ENCODE-style TSS enrichment score.
 
@@ -450,7 +560,8 @@ def tss_enrichment(
     divided by the mean signal in the outer flanks of the window.  Supply
     exactly one of ``bigwig`` or ``bam``; BAM coverage is counted per base with
     ``pysam``.  A reproducible subsample of ``sample`` features is used unless
-    ``sample=None``.
+    ``sample=None``.  ``n_jobs`` parallelises the BAM coverage matrix across
+    processes (``-1`` uses every core).
     """
 
     if (bigwig is None) == (bam is None):
@@ -500,6 +611,7 @@ def tss_enrichment(
             upstream=int(upstream),
             downstream=int(downstream),
             n_bins=int(n_bins),
+            n_jobs=n_jobs,
         )
     return _profile_score(
         np.asarray(matrix, dtype=float),
@@ -524,8 +636,12 @@ def qc_summary(
     tss_sample: Optional[int] = 2000,
     seed: int = 20261026,
     exclude_duplicates: bool = True,
+    n_jobs: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Combine peak metrics, FRiP and TSS enrichment in one long table."""
+    """Combine peak metrics, FRiP and TSS enrichment in one long table.
+
+    ``n_jobs`` is forwarded to the BAM-backed TSS enrichment matrix.
+    """
 
     table = peak_qc(
         peaks,
@@ -556,6 +672,7 @@ def qc_summary(
             downstream=int(tss_downstream),
             sample=tss_sample,
             seed=int(seed),
+            n_jobs=n_jobs,
         )
         rows.extend(enrichment.items())
     return pd.DataFrame(rows, columns=["Metric", "Value"])

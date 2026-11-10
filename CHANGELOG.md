@@ -4,6 +4,34 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-10
+
+### Added
+
+- **Multiprocessing for large data sets.**  `annotate_peak(n_jobs=...)`,
+  `call_peaks(n_jobs=...)`, `tss_enrichment(n_jobs=...)`,
+  `qc_summary(n_jobs=...)`, `get_tag_matrix(n_jobs=...)`,
+  `get_tag_matrix_from_bam(n_jobs=...)` and `build_report(n_jobs=...)` split
+  work across processes; `-1` uses every core and results are identical to the
+  sequential run.  Annotation on 100k mm10 peaks drops from 75.9 s to 21.7 s
+  with 4 jobs.
+- **CLI `--jobs`.**  The `annotate`, `callpeak`, `qc` and `report` commands
+  accept `--jobs N` (`-1` = all cores).
+- **`pychipseeker.parallel`.**  Public `available_cores`, `effective_jobs`,
+  `chunk_bounds` and `parallel_map` helpers used by the parallel paths.
+
+### Changed
+
+- Annotation workers rebuild the `GeneAnnotation` from its GTF or cached
+  `.npz` source instead of pickling the full model, keeping worker memory flat.
+- BAM FRiP uses the C-level `pysam` counter: one streaming pass for the
+  denominator and one indexed query per merged peak for the numerator, with the
+  old streaming path kept for indexless files.
+- The BAM tag matrix and BAM TSS matrix are chunked across workers for large
+  feature sets; peak calling parallelises one task per chromosome.
+- CI installs `pysam` in an always-succeeding optional step so the real-BAM
+  tests run on Linux/macOS and skip cleanly on Windows.
+
 ## [0.5.0] - 2026-11-10
 
 ### Added

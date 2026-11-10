@@ -65,6 +65,28 @@ The TSS matrix path reproduces `pyBigWig.stats` exactly for divisible and
 odd bin counts.  Run `python scripts/bench.py --txdb mm10` to reproduce the
 annotation numbers on your machine.
 
+### Large data sets and multiprocessing
+
+Pass `n_jobs` (Python) or `--jobs` (CLI) to split the heavy paths across
+processes.  `-1` uses every core, the default is sequential, small inputs stay
+in-process so the startup cost is never paid for nothing, and results are
+identical to the sequential run.
+
+| Operation | Work unit | Parallel threshold |
+|---|---|---|
+| `annotate_peak` | contiguous peak chunks | 2,000 peaks |
+| BAM tag matrix / TSS enrichment | feature/window chunks | 500 regions |
+| `call_peaks` (bigWig) | one task per chromosome | 2+ chromosomes |
+
+On 100,000 mm10 peaks annotation takes 75.9 s sequentially and 21.7 s with
+four jobs (~3.5x).  Annotation workers rebuild the genome model from its GTF or
+cached `.npz` instead of pickling the 280 MB object, so memory per worker stays
+flat.  The BAM FRiP calculation uses the C-level `pysam` counter (one streaming
+pass plus one indexed query per merged peak) and no longer inspects every
+alignment in Python.  On Windows, scripts that use `n_jobs > 1` must guard
+their entry point with `if __name__ == "__main__":`, as required by the
+`spawn` start method.
+
 ## Dependencies
 
 Core installation requires only:

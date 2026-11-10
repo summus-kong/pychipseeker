@@ -182,6 +182,7 @@ def build_report(
     title: Optional[str] = None,
     include_tag_matrix: bool = True,
     qc: bool = False,
+    n_jobs: Optional[int] = None,
 ) -> Path:
     """Build a multi-page PDF report and return its path.
 
@@ -190,6 +191,7 @@ def build_report(
     reproducible subsample of ``sample`` transcripts (``seed``).  ``upstream``
     and ``downstream`` optionally define an asymmetric signal window.
     ``bam`` and ``blacklist`` feed the QC/FRiP pages enabled by ``qc=True``.
+    ``n_jobs`` parallelises peak annotation and the BAM QC matrix.
     """
 
     from .compat import covplot
@@ -217,6 +219,7 @@ def build_report(
         level=level,
         tss_region=tuple(int(x) for x in tss_region),
         verbose=False,
+        n_jobs=n_jobs,
     )
 
     bigwig_path = None if bigwig is None else Path(bigwig)
@@ -312,6 +315,7 @@ def build_report(
             tss_downstream=signal_down,
             tss_sample=sample,
             seed=int(seed),
+            n_jobs=n_jobs,
         )
         pages.append((_qc_page(qc_table), "Quality control"))
 

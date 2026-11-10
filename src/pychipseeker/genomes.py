@@ -775,7 +775,11 @@ def _npz_model(path: Path) -> GeneAnnotation:
         frames = [_rebuild_frame(npz, table) for table in TABLES]
     finally:
         npz.close()
-    return GeneAnnotation(*frames, copy=False)
+    model = GeneAnnotation(*frames, copy=False)
+    # Lets multiprocessing workers rebuild the model from the compact bundle
+    # instead of unpickling the full annotation.
+    model.source = ("npz", str(path))
+    return model
 
 
 def load_annotation(spec: str, refresh: bool = False) -> GeneAnnotation:

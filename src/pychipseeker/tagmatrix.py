@@ -23,6 +23,7 @@ import pandas as pd
 
 from .annotation import GeneAnnotation, _normalise_peaks
 from .genomes import is_assembly_name
+from .parallel import chunk_bounds, effective_jobs, parallel_map
 from .seqlevels import harmonize_frame
 
 
@@ -615,22 +616,21 @@ def _bin_signal(values: np.ndarray, n_bins: Optional[int], value_type: str) -> n
     return out
 
 
-def _bam_matrix(
+_BAM_MATRIX_MIN_WINDOWS = 500
+_BAM_MATRIX_WORKER: Optional[tuple[object, ...]] = None
+
+
+def _bam_matrix_rows(
     bam: Union[str, Path],
     windows: pd.DataFrame,
     *,
     n_bins: Optional[int],
     ignore_strand: bool,
-    value_type: str = "mean",
-    min_mapping_quality: int = 0,
-    exclude_duplicates: bool = True,
-) -> tuple[np.ndarray, pd.DataFrame, bool]:
-    """Extract a read-coverage matrix from a BAM/CRAM file.
-
-    Coverage is counted per base from alignments passing the mapping-quality
-    and duplicate filters, then binned.  ``value_type`` accepts ``mean``
-    (default), ``sum``, ``max`` or ``coverage``.
-    """
+    value_type: str,
+    min_mapping_quality: int,
+    exclude_duplicates: bool,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Extract coverage rows for one block of windows."""
 
     try:
         import pysam  # type: ignore
@@ -640,10 +640,6 @@ def _bam_matrix(
             "`pip install pychipseeker[bam]` (on Windows use "
             "`conda install -c bioconda pysam`)"
         ) from exc
-
-    value_type = str(value_type)
-    if value_type not in {"mean", "sum", "max", "coverage"}:
-        raise ValueError("BAM value_type must be mean, sum, max or coverage")
 
     handle = pysam.AlignmentFile(str(bam), "rb")
     try:
@@ -690,16 +686,131 @@ def _bam_matrix(
             kept.append(window)
 
         if not rows:
-            raise ValueError("no windows overlap the BAM file")
-        lengths = {row.size for row in rows}
-        if len(lengths) != 1:
-            raise ValueError(
-                "windows must have equal widths when nbin is not supplied"
-            )
-        matrix = np.vstack(rows)
-        return matrix, pd.DataFrame(kept).reset_index(drop=True), n_bins is not None
+            width = int(n_bins) if n_bins is not None else 0
+            return np.empty((0, width), dtype=float), pd.DataFrame(columns=windows.columns)
+        return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True)
     finally:
         handle.close()
+
+
+def _bam_matrix_worker_init(
+    bam: Union[str, Path],
+    n_bins: Optional[int],
+    ignore_strand: bool,
+    value_type: str,
+    min_mapping_quality: int,
+    exclude_duplicates: bool,
+) -> None:
+    global _BAM_MATRIX_WORKER
+    _BAM_MATRIX_WORKER = (
+        str(bam),
+        n_bins,
+        bool(ignore_strand),
+        value_type,
+        int(min_mapping_quality),
+        bool(exclude_duplicates),
+    )
+
+
+def _bam_matrix_worker(
+    windows: pd.DataFrame,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    if _BAM_MATRIX_WORKER is None:  # pragma: no cover - pool guard
+        raise RuntimeError("BAM matrix worker was not initialised")
+    bam, n_bins, ignore_strand, value_type, min_mapq, exclude_duplicates = (
+        _BAM_MATRIX_WORKER
+    )
+    return _bam_matrix_rows(
+        bam,
+        windows,
+        n_bins=n_bins,
+        ignore_strand=ignore_strand,
+        value_type=value_type,
+        min_mapping_quality=min_mapq,
+        exclude_duplicates=exclude_duplicates,
+    )
+
+
+def _bam_matrix(
+    bam: Union[str, Path],
+    windows: pd.DataFrame,
+    *,
+    n_bins: Optional[int],
+    ignore_strand: bool,
+    value_type: str = "mean",
+    min_mapping_quality: int = 0,
+    exclude_duplicates: bool = True,
+    n_jobs: Optional[int] = None,
+) -> tuple[np.ndarray, pd.DataFrame, bool]:
+    """Extract a read-coverage matrix from a BAM/CRAM file.
+
+    Coverage is counted per base from alignments passing the mapping-quality
+    and duplicate filters, then binned.  ``value_type`` accepts ``mean``
+    (default), ``sum``, ``max`` or ``coverage``.  ``n_jobs`` splits the
+    windows across processes; each worker reads its own chromosome regions
+    from the indexed BAM.
+    """
+
+    value_type = str(value_type)
+    if value_type not in {"mean", "sum", "max", "coverage"}:
+        raise ValueError("BAM value_type must be mean, sum, max or coverage")
+
+    # Fail early with the friendly optional-dependency message.
+    try:
+        import pysam  # type: ignore  # noqa: F401
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise ImportError(
+            "pysam is required for BAM-backed tag matrices; install with "
+            "`pip install pychipseeker[bam]` (on Windows use "
+            "`conda install -c bioconda pysam`)"
+        ) from exc
+
+    windows = windows.reset_index(drop=True)
+    workers = effective_jobs(n_jobs, tasks=len(windows))
+    if workers <= 1 or len(windows) < _BAM_MATRIX_MIN_WINDOWS:
+        matrix, kept = _bam_matrix_rows(
+            bam,
+            windows,
+            n_bins=n_bins,
+            ignore_strand=ignore_strand,
+            value_type=value_type,
+            min_mapping_quality=min_mapping_quality,
+            exclude_duplicates=exclude_duplicates,
+        )
+    else:
+        chunks = [
+            windows.iloc[start:stop].reset_index(drop=True)
+            for start, stop in chunk_bounds(len(windows), workers * 4)
+        ]
+        results = parallel_map(
+            _bam_matrix_worker,
+            chunks,
+            n_jobs=workers,
+            initializer=_bam_matrix_worker_init,
+            initargs=(
+                bam,
+                n_bins,
+                ignore_strand,
+                value_type,
+                min_mapping_quality,
+                exclude_duplicates,
+            ),
+        )
+        matrices = [chunk for chunk, _ in results if chunk.size]
+        kept_frames = [frame for _, frame in results if len(frame)]
+        if not matrices:
+            raise ValueError("no windows overlap the BAM file")
+        matrix = np.vstack(matrices)
+        kept = pd.concat(kept_frames, ignore_index=True)
+
+    if matrix.size == 0:
+        raise ValueError("no windows overlap the BAM file")
+    lengths = {row.size for row in matrix}
+    if len(lengths) != 1:
+        raise ValueError(
+            "windows must have equal widths when nbin is not supplied"
+        )
+    return matrix, kept.reset_index(drop=True), n_bins is not None
 
 
 def get_tag_matrix(
@@ -722,6 +833,7 @@ def get_tag_matrix(
     value_type: str = "sum",
     min_mapping_quality: int = 0,
     exclude_duplicates: bool = True,
+    n_jobs: Optional[int] = None,
 ) -> Union[TagMatrix, list[TagMatrix]]:
     """Build a ChIPseeker-style tag matrix.
 
@@ -770,6 +882,7 @@ def get_tag_matrix(
                 value_type=value_type,
                 min_mapping_quality=min_mapping_quality,
                 exclude_duplicates=exclude_duplicates,
+                n_jobs=n_jobs,
             )
             matrix.label = (
                 getattr(one_window, "attrs", {}).get("label")
@@ -823,6 +936,7 @@ def get_tag_matrix(
             value_type=value_type,
             min_mapping_quality=min_mapping_quality,
             exclude_duplicates=exclude_duplicates,
+            n_jobs=n_jobs,
         )
     else:
         if peak is None:
@@ -892,6 +1006,7 @@ def get_tag_matrix_from_bam(
     value_type: str = "mean",
     min_mapping_quality: int = 0,
     exclude_duplicates: bool = True,
+    n_jobs: Optional[int] = None,
 ) -> TagMatrix:
     """Convenience wrapper for a BAM-backed :class:`TagMatrix`."""
 
@@ -904,6 +1019,7 @@ def get_tag_matrix_from_bam(
         value_type=value_type,
         min_mapping_quality=min_mapping_quality,
         exclude_duplicates=exclude_duplicates,
+        n_jobs=n_jobs,
     )
     return TagMatrix(
         matrix,

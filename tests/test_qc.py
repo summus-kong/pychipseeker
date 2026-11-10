@@ -204,3 +204,124 @@ def test_bam_tag_matrix_binning_and_strand(monkeypatch: pytest.MonkeyPatch) -> N
         "fake.bam", windows.iloc[[0]], nbin=2, value_type="coverage"
     )
     np.testing.assert_allclose(coverage[0], [1.0, 1.0])
+
+
+def test_frip_bam_real_file(small_bam: Path) -> None:
+    """The indexed counting path must agree with the read-level definition."""
+
+    peaks = pd.DataFrame({"chrom": ["chr1"], "start": [90], "end": [200]})
+    assert frip(peaks, bam=small_bam) == pytest.approx(2 / 6)
+    # MAPQ 10 drops the low-quality read from the denominator.
+    assert frip(peaks, bam=small_bam, min_mapping_quality=10) == pytest.approx(2 / 5)
+    # Keeping duplicates adds one read both inside and outside the peak.
+    assert frip(
+        peaks, bam=small_bam, exclude_duplicates=False
+    ) == pytest.approx(3 / 7)
+
+
+def test_frip_bam_indexed_counting_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise the C-level count() branch without a real BAM file."""
+
+    reads = [
+        SimpleNamespace(
+            is_unmapped=False,
+            is_secondary=False,
+            is_supplementary=False,
+            is_duplicate=False,
+            mapping_quality=60,
+            reference_name="chr1",
+            reference_start=100,
+            reference_end=150,
+        ),
+        SimpleNamespace(
+            is_unmapped=False,
+            is_secondary=False,
+            is_supplementary=False,
+            is_duplicate=False,
+            mapping_quality=60,
+            reference_name="chr1",
+            reference_start=400,
+            reference_end=450,
+        ),
+        SimpleNamespace(
+            is_unmapped=False,
+            is_secondary=False,
+            is_supplementary=False,
+            is_duplicate=False,
+            mapping_quality=60,
+            reference_name="chr2",
+            reference_start=10,
+            reference_end=60,
+        ),
+    ]
+
+    class Handle:
+        references = ["chr1", "chr2"]
+
+        def has_index(self) -> bool:
+            return True
+
+        def count(
+            self,
+            contig=None,
+            start=None,
+            stop=None,
+            until_eof: bool = False,
+            read_callback="all",
+        ) -> int:
+            if until_eof:
+                selected = reads
+            else:
+                selected = [
+                    read
+                    for read in reads
+                    if read.reference_name == contig
+                    and read.reference_start < int(stop)
+                    and read.reference_end > int(start)
+                ]
+            return sum(1 for read in selected if read_callback(read))
+
+        def close(self) -> None:
+            return None
+
+    fake = types.ModuleType("pysam")
+    fake.AlignmentFile = lambda *args, **kwargs: Handle()
+    monkeypatch.setitem(sys.modules, "pysam", fake)
+
+    peaks = pd.DataFrame({"chrom": ["1"], "start": [90], "end": [200]})
+    assert frip(peaks, bam="fake.bam") == pytest.approx(1 / 3)
+
+
+def test_tss_enrichment_real_bam(small_bam: Path) -> None:
+    genes = pd.DataFrame({"chrom": ["chr1"], "tss": [110], "strand": ["+"]})
+    result = tss_enrichment(
+        genes,
+        bam=small_bam,
+        upstream=100,
+        downstream=100,
+        n_bins=4,
+        sample=None,
+        center_window=50,
+    )
+    assert result["TSS features"] == 1
+    assert np.isfinite(result["TSS enrichment"])
+    assert result["TSS enrichment"] > 0
+
+
+def test_bam_tag_matrix_real_file(small_bam: Path) -> None:
+    windows = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 0],
+            "end": [200, 200],
+            "strand": ["+", "-"],
+        }
+    )
+    matrix = get_tag_matrix_from_bam(
+        small_bam, windows, nbin=4, value_type="mean"
+    )
+    assert matrix.shape == (2, 4)
+    # The reverse-strand row is the forward profile flipped.
+    np.testing.assert_allclose(matrix[1], matrix[0][::-1])

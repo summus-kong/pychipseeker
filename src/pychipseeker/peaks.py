@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .io import read_peaks, write_table
+from .parallel import effective_jobs, parallel_map
 
 
 def _open_bigwig(path: Union[str, Path]):
@@ -34,6 +35,98 @@ def _open_bigwig(path: Union[str, Path]):
     return handle
 
 
+def _call_peaks_chrom(
+    bw,
+    chrom: str,
+    *,
+    threshold: float,
+    max_gap: int,
+    min_width: int,
+) -> list[dict[str, object]]:
+    """Call peaks for one chromosome from an open bigWig handle."""
+
+    intervals = bw.intervals(chrom)
+    if not intervals:
+        return []
+
+    table = np.asarray(intervals, dtype=np.float64)
+    if table.ndim != 2 or table.shape[0] == 0:
+        return []
+    starts = table[:, 0].astype(np.int64)
+    ends = table[:, 1].astype(np.int64)
+    values = table[:, 2]
+    keep = np.isfinite(values) & (values >= threshold) & (ends > starts)
+    if not keep.any():
+        return []
+    starts = starts[keep]
+    ends = ends[keep]
+    values = values[keep]
+    order = np.argsort(starts, kind="mergesort")
+    starts = starts[order]
+    ends = ends[order]
+    values = values[order]
+
+    # A new run starts when the next interval is farther than max_gap from the
+    # maximum end seen so far.  Using the cumulative maximum also handles
+    # nested/overlapping bigWig intervals.
+    cumulative_end = np.maximum.accumulate(ends)
+    breaks = np.flatnonzero(starts[1:] > cumulative_end[:-1] + int(max_gap)) + 1
+    group_starts = np.concatenate(([0], breaks))
+    group_ends = np.concatenate((breaks, [len(starts)]))
+    run_start = starts[group_starts]
+    run_end = np.maximum.reduceat(ends, group_starts)
+    run_sum = np.add.reduceat(values * (ends - starts), group_starts)
+    run_max = np.maximum.reduceat(values, group_starts)
+    widths = run_end - run_start
+
+    rows: list[dict[str, object]] = []
+    for group, (a, b) in enumerate(zip(group_starts, group_ends)):
+        width = int(widths[group])
+        if width < min_width:
+            continue
+        local = int(np.argmax(values[a:b]))
+        run_peak = int(starts[a + local])
+        rows.append(
+            {
+                "chrom": str(chrom),
+                "start": int(run_start[group]),
+                "end": int(run_end[group]),
+                "score": round(float(run_max[group]), 6),
+                "strand": ".",
+                "signalValue": float(run_sum[group]) / max(width, 1),
+                "peak": run_peak - int(run_start[group]),
+            }
+        )
+    return rows
+
+
+_CALLPEAK_WORKER: Optional[tuple[str, float, int, int]] = None
+
+
+def _callpeak_worker_init(
+    bigwig: Union[str, Path], threshold: float, max_gap: int, min_width: int
+) -> None:
+    global _CALLPEAK_WORKER
+    _CALLPEAK_WORKER = (str(bigwig), float(threshold), int(max_gap), int(min_width))
+
+
+def _callpeak_worker(chrom: str) -> list[dict[str, object]]:
+    if _CALLPEAK_WORKER is None:  # pragma: no cover - pool initialiser guard
+        raise RuntimeError("peak-calling worker was not initialised")
+    bigwig, threshold, max_gap, min_width = _CALLPEAK_WORKER
+    handle = _open_bigwig(bigwig)
+    try:
+        return _call_peaks_chrom(
+            handle,
+            chrom,
+            threshold=threshold,
+            max_gap=max_gap,
+            min_width=min_width,
+        )
+    finally:
+        handle.close()
+
+
 def call_peaks(
     bigwig: Union[str, Path],
     *,
@@ -43,6 +136,7 @@ def call_peaks(
     chroms: Optional[Sequence[str]] = None,
     sample: Optional[int] = None,
     seed: Optional[int] = None,
+    n_jobs: Optional[int] = None,
 ) -> pd.DataFrame:
     """Call peaks as runs of signal above ``threshold``.
 
@@ -50,6 +144,10 @@ def call_peaks(
     ``max_gap`` bases; merged runs shorter than ``min_width`` are discarded.
     Returns a BED6+ table with ``signalValue`` (mean signal over the peak) and
     ``peak`` (offset of the highest base from the peak start).
+
+    ``n_jobs`` calls chromosomes in parallel processes; ``-1`` uses every
+    available core.  Each worker opens the bigWig read-only, so memory stays
+    flat even for whole-genome tracks.
     """
 
     threshold = float(threshold)
@@ -58,66 +156,39 @@ def call_peaks(
     if max_gap < 0 or min_width < 0:
         raise ValueError("max_gap and min_width must be non-negative")
 
-    bw = _open_bigwig(bigwig)
-    rows: list[dict[str, object]] = []
+    probe = _open_bigwig(bigwig)
     try:
-        available = list(bw.chroms().keys())
-        selected = available if chroms is None else [str(c) for c in chroms]
-        for chrom in selected:
-            intervals = bw.intervals(chrom)
-            if not intervals:
-                continue
-
-            table = np.asarray(intervals, dtype=np.float64)
-            if table.ndim != 2 or table.shape[0] == 0:
-                continue
-            starts = table[:, 0].astype(np.int64)
-            ends = table[:, 1].astype(np.int64)
-            values = table[:, 2]
-            keep = np.isfinite(values) & (values >= threshold) & (ends > starts)
-            if not keep.any():
-                continue
-            starts = starts[keep]
-            ends = ends[keep]
-            values = values[keep]
-            order = np.argsort(starts, kind="mergesort")
-            starts = starts[order]
-            ends = ends[order]
-            values = values[order]
-
-            # A new run starts when the next interval is farther than max_gap
-            # from the maximum end seen so far.  Using the cumulative maximum
-            # also handles nested/overlapping bigWig intervals.
-            cumulative_end = np.maximum.accumulate(ends)
-            breaks = np.flatnonzero(
-                starts[1:] > cumulative_end[:-1] + int(max_gap)
-            ) + 1
-            group_starts = np.concatenate(([0], breaks))
-            group_ends = np.concatenate((breaks, [len(starts)]))
-            run_start = starts[group_starts]
-            run_end = np.maximum.reduceat(ends, group_starts)
-            run_sum = np.add.reduceat(values * (ends - starts), group_starts)
-            run_max = np.maximum.reduceat(values, group_starts)
-            widths = run_end - run_start
-            for group, (a, b) in enumerate(zip(group_starts, group_ends)):
-                width = int(widths[group])
-                if width < min_width:
-                    continue
-                local = int(np.argmax(values[a:b]))
-                run_peak = int(starts[a + local])
-                rows.append(
-                    {
-                        "chrom": str(chrom),
-                        "start": int(run_start[group]),
-                        "end": int(run_end[group]),
-                        "score": round(float(run_max[group]), 6),
-                        "strand": ".",
-                        "signalValue": float(run_sum[group]) / max(width, 1),
-                        "peak": run_peak - int(run_start[group]),
-                    }
-                )
+        available = list(probe.chroms().keys())
     finally:
-        bw.close()
+        probe.close()
+    selected = available if chroms is None else [str(c) for c in chroms]
+
+    workers = effective_jobs(n_jobs, tasks=len(selected))
+    if workers > 1 and len(selected) > 1:
+        chunks = parallel_map(
+            _callpeak_worker,
+            selected,
+            n_jobs=workers,
+            initializer=_callpeak_worker_init,
+            initargs=(bigwig, threshold, max_gap, min_width),
+        )
+        rows = [row for chunk in chunks for row in chunk]
+    else:
+        bw = _open_bigwig(bigwig)
+        try:
+            rows = [
+                row
+                for chrom in selected
+                for row in _call_peaks_chrom(
+                    bw,
+                    chrom,
+                    threshold=threshold,
+                    max_gap=max_gap,
+                    min_width=min_width,
+                )
+            ]
+        finally:
+            bw.close()
 
     if not rows:
         raise ValueError(

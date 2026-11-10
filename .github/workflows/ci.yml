@@ -49,6 +49,21 @@ jobs:
                   "::warning::pyBigWig is unavailable; "
                   "bigWig-specific tests will be skipped"
               )
+      - name: Install pysam (optional)
+        # pysam has no Windows wheels for every Python version either.  The
+        # real-BAM regression tests skip when the import fails.
+        shell: python
+        run: |
+          import subprocess, sys
+          result = subprocess.run(
+              [sys.executable, "-m", "pip", "install", "pysam>=0.21"],
+              check=False,
+          )
+          if result.returncode:
+              print(
+                  "::warning::pysam is unavailable; "
+                  "BAM-specific tests will be skipped"
+              )
       - name: Ruff
         run: python -m ruff check src tests examples
       - name: Pytest

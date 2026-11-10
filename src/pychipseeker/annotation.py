@@ -29,6 +29,7 @@ import pandas as pd
 
 from .intervals import BinnedIntervalIndex, SpanIndex, TSSIndex
 from .io import read_gtf, read_peaks
+from .parallel import chunk_bounds, effective_jobs, parallel_map
 from .seqlevels import harmonize_frame
 
 Number = Union[int, float]
@@ -346,6 +347,11 @@ class GeneAnnotation:
         self.tss_index = self._tss_indexes["gene"]
         self.span_index = self._span_indexes["gene"]
 
+        # Populated when the model comes from a GTF or cached npz bundle.  The
+        # process pool uses it to rebuild the model in each worker instead of
+        # pickling hundreds of megabytes of DataFrames.
+        self.source: Optional[tuple[str, str]] = None
+
         self._positions: Dict[str, Dict[str, int]] = {}
         for level, table in self._features.items():
             id_col = "gene_id" if level == "gene" else "transcript_id"
@@ -372,8 +378,10 @@ class GeneAnnotation:
     # ------------------------------------------------------------------
     @classmethod
     def from_gtf(cls, gtf: Union[str, Path, pd.DataFrame]) -> "GeneAnnotation":
+        source: Optional[tuple[str, str]] = None
         if isinstance(gtf, (str, Path)):
             df = read_gtf(gtf)
+            source = ("gtf", str(gtf))
         elif isinstance(gtf, pd.DataFrame):
             df = gtf.copy()
         else:
@@ -727,7 +735,9 @@ class GeneAnnotation:
         utr5 = _prepare_utrs(utr5)
         utr3 = _prepare_utrs(utr3)
 
-        return cls(genes, transcripts, exons, introns, utr5, utr3)
+        model = cls(genes, transcripts, exons, introns, utr5, utr3)
+        model.source = source
+        return model
 
     # ------------------------------------------------------------------
     # feature access
@@ -1637,174 +1647,37 @@ def _downstream_annotation(
     return f"Downstream ({dsd / 1000:g}kb-{dsd}bp)", int(dd)
 
 
-# ----------------------------------------------------------------------
-# main annotation API
-# ----------------------------------------------------------------------
-def annotate_peak(
-    peaks: Optional[Union[str, Path, pd.DataFrame]] = None,
-    gtf: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
-    tss_region: Sequence[int] = (-3000, 3000),
-    level: str = "transcript",
-    assign_genomic_annotation: bool = True,
-    genomic_annotation_priority: Sequence[str] = _DEFAULT_PRIORITY,
-    add_flank_gene_info: bool = False,
-    flank_distance: int = 5000,
-    same_strand: bool = False,
-    ignore_overlap: bool = False,
-    ignore_upstream: bool = False,
-    ignore_downstream: bool = False,
-    overlap: str = "TSS",
+def _annotate_rows(
+    model: GeneAnnotation,
+    peaks_df: pd.DataFrame,
+    *,
+    level: str,
+    tss_region: Sequence[int],
+    bins: Sequence[int],
+    priority: Sequence[str],
+    assign_genomic_annotation: bool,
+    same_strand: bool,
+    ignore_overlap: bool,
+    ignore_upstream: bool,
+    ignore_downstream: bool,
+    overlap: str,
+    align_annotation_feature: bool,
+    downstream_distance: int,
     verbose: bool = False,
-    upstream: Optional[int] = None,
-    downstream: Optional[int] = None,
-    promoter_bins: Optional[Sequence[int]] = None,
-    downstream_distance: int = 300,
-    drop_unmapped: bool = True,
-    align_annotation_feature: bool = True,
-    TxDb: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
-    **kwargs,
-) -> PeakAnnotation:
-    """Annotate peaks with ChIPSeeker-compatible genomic features.
+    total: Optional[int] = None,
+) -> tuple[list[dict[str, object]], list[dict[str, bool]], int]:
+    """Annotate one block of peaks.
 
-    Parameters mirror ``ChIPseeker::annotatePeak``.  ``upstream``/``downstream``
-    are kept as convenience aliases for an asymmetric ``tss_region``.
-    Coordinates are 0-based, half-open (BED).
-
-    ``annotatePeak`` is a bare alias of this function, so the R-style keyword
-    spellings (``tssRegion``, ``genomicAnnotationPriority``, ``peak``,
-    ``annotation``, ...) and the ``annoDb``/``columns`` gene-annotation
-    shortcut are handled here directly -- there is no separate wrapper.
-
-    ``align_annotation_feature`` follows the ChIPseeker development fix for
-    issue #252: when a peak overlaps an exon/intron/UTR from one isoform but the
-    nearest TSS belongs to another isoform, report the gene/transcript and
-    distance of the isoform that supplied the genomic annotation.  Set it to
-    ``False`` to reproduce ChIPseeker 1.48 and earlier, where the annotation
-    text and transcript columns can refer to different isoforms.
+    This is the unit of work for both the sequential path and the process
+    pool.  Keeping it module-level makes it picklable on Windows and macOS,
+    where ``spawn`` recreates the interpreter.
     """
 
-    # ChIPseeker-compatible keyword spellings.  ``annotatePeak`` is a bare
-    # alias of this function, so R-style names and the ``peak=`` /
-    # ``annotation=`` spellings are accepted here rather than in a wrapper.
-    if peaks is None:
-        peaks = kwargs.pop("peak", None)
-    if peaks is None:
-        raise ValueError("provide peaks=... (a BED-like path or peak DataFrame)")
-    annotation_source = kwargs.pop("annotation", None)
-    if annotation_source is not None:
-        if gtf is not None or TxDb is not None:
-            raise ValueError("provide only one of gtf=, TxDb= or annotation=")
-        gtf = annotation_source
-    tss_region = kwargs.pop("tssRegion", tss_region)
-    assign_genomic_annotation = kwargs.pop(
-        "assignGenomicAnnotation", assign_genomic_annotation
-    )
-    genomic_annotation_priority = kwargs.pop(
-        "genomicAnnotationPriority", genomic_annotation_priority
-    )
-    add_flank_gene_info = kwargs.pop("addFlankGeneInfo", add_flank_gene_info)
-    flank_distance = kwargs.pop("flankDistance", flank_distance)
-    same_strand = kwargs.pop("sameStrand", same_strand)
-    ignore_overlap = kwargs.pop("ignoreOverlap", ignore_overlap)
-    ignore_upstream = kwargs.pop("ignoreUpstream", ignore_upstream)
-    ignore_downstream = kwargs.pop("ignoreDownstream", ignore_downstream)
-    anno_db = kwargs.pop("annoDb", None)
-    anno_columns = kwargs.pop("columns", None)
-    if kwargs:
-        unexpected = ", ".join(sorted(kwargs))
-        raise TypeError(
-            f"annotate_peak() got unexpected keyword argument(s): {unexpected}"
-        )
-    if genomic_annotation_priority is None:
-        genomic_annotation_priority = _DEFAULT_PRIORITY
-
-    if level not in {"transcript", "gene"}:
-        raise ValueError("level must be 'transcript' or 'gene'")
-    if gtf is None:
-        gtf = TxDb
-    from .genomes import (
-        is_assembly_name,
-        is_genome_spec,
-        load_annotation,
-        load_genome,
-        supported_genomes,
-    )
-
-    if gtf is None:
-        raise ValueError(
-            "provide gtf=... or TxDb=..., or a bundled assembly name such as "
-            f"{', '.join(supported_genomes())}"
-        )
-
-    if isinstance(gtf, str) and gtf.strip().lower() == "auto":
-        from .genomes import detect_assembly
-
-        gtf = detect_assembly(peaks=peaks)
-    if is_assembly_name(gtf):
-        gtf = load_genome(gtf)
-    elif is_genome_spec(gtf):
-        gtf = load_annotation(gtf)
-    if str(overlap) not in {"TSS", "all"}:
-        raise ValueError("overlap must be 'TSS' or 'all'")
-
-    if upstream is not None or downstream is not None:
-        up = 3000 if upstream is None else int(upstream)
-        down = 3000 if downstream is None else int(downstream)
-        tss_region = (-up, down)
-    tss_region = (int(tss_region[0]), int(tss_region[1]))
-    if tss_region[1] < tss_region[0]:
-        raise ValueError("tss_region must be (upstream-negative, downstream-positive)")
-
-    if promoter_bins is None:
-        bins = _promoter_bins_from_region(tss_region)
-    else:
-        bins = tuple(int(x) for x in promoter_bins)
-        if any(b <= 0 for b in bins) or list(bins) != sorted(bins):
-            raise ValueError("promoter_bins must be increasing positive integers")
-
-    priority = _normalise_priority(genomic_annotation_priority)
-    downstream_distance = int(downstream_distance)
-    flank_distance = int(flank_distance)
-    if downstream_distance < 0 or flank_distance < 0:
-        raise ValueError("downstream_distance and flank_distance must be non-negative")
-
-    model = gtf if isinstance(gtf, GeneAnnotation) else GeneAnnotation.from_gtf(gtf)
-    peaks_df = _normalise_peaks(peaks)
-    # Ensembl annotations use ``1``/``MT`` while BED files often use
-    # ``chr1``/``chrM``.  Harmonise the query names before the interval search
-    # so otherwise valid peaks are not silently dropped.
-    target_chroms = pd.unique(model.features(level)["chrom"].astype(str))
-    peaks_df, _chrom_map = harmonize_frame(
-        peaks_df, target_chroms, column="chrom", copy=False
-    )
-    if peaks_df.empty:
-        empty = pd.DataFrame(columns=_annotation_columns(level, assign_genomic_annotation))
-        detail = pd.DataFrame(columns=list(_DETAIL_KEYS.values()) + [
-            "genic", "Intergenic", "downstream", "distal_intergenic"
-        ])
-        return _finish_annotation(
-            PeakAnnotation(
-                peaks=peaks_df,
-                annotation=empty,
-                gene_annotation=model,
-                tss_region=tss_region,
-                level=level,
-                promoter_bins=bins,
-                genomic_annotation_priority=priority,
-                downstream_distance=downstream_distance,
-                detail_genomic_annotation=detail,
-                has_genomic_annotation=assign_genomic_annotation,
-                add_flank_gene_info=add_flank_gene_info,
-                flank_distance=flank_distance,
-            ),
-            anno_db,
-            anno_columns,
-        )
-
+    if total is None:
+        total = len(peaks_df)
     records: list[dict[str, object]] = []
     details: list[dict[str, bool]] = []
     dropped = 0
-    total = len(peaks_df)
 
     features = model.features(level)
     feature_columns = [
@@ -2016,6 +1889,295 @@ def annotate_peak(
 
         if verbose and total > 0 and i % 10000 == 0:
             print(f"annotated {i:,}/{total:,} peaks")
+
+    return records, details, dropped
+
+
+_PARALLEL_MIN_PEAKS = 2000
+
+_WORKER_MODEL: Optional[GeneAnnotation] = None
+_WORKER_CONFIG: Optional[dict[str, object]] = None
+
+
+def _annotation_worker_init(
+    model: GeneAnnotation, config: dict[str, object]
+) -> None:
+    global _WORKER_MODEL, _WORKER_CONFIG
+    _WORKER_MODEL = model
+    _WORKER_CONFIG = config
+
+
+def _load_annotation_model(source: tuple[str, str]) -> GeneAnnotation:
+    """Rebuild a model inside a worker from its GTF/npz origin."""
+
+    kind, path = source
+    if kind == "gtf":
+        return GeneAnnotation.from_gtf(path)
+    if kind == "npz":
+        from .genomes import _npz_model
+
+        return _npz_model(Path(path))
+    raise ValueError(f"unknown annotation source: {kind!r}")
+
+
+def _annotation_worker_init_from_source(
+    source: tuple[str, str], config: dict[str, object]
+) -> None:
+    global _WORKER_MODEL, _WORKER_CONFIG
+    _WORKER_MODEL = _load_annotation_model(source)
+    _WORKER_CONFIG = config
+
+
+def _annotation_worker(
+    chunk: pd.DataFrame,
+) -> tuple[list[dict[str, object]], list[dict[str, bool]], int]:
+    if _WORKER_MODEL is None or _WORKER_CONFIG is None:  # pragma: no cover
+        raise RuntimeError("annotation worker was not initialised")
+    return _annotate_rows(
+        _WORKER_MODEL, chunk, **_WORKER_CONFIG  # type: ignore[arg-type]
+    )
+
+
+def _annotate_peaks_frame(
+    model: GeneAnnotation,
+    peaks_df: pd.DataFrame,
+    config: dict[str, object],
+    *,
+    n_jobs: Optional[int],
+) -> tuple[list[dict[str, object]], list[dict[str, bool]], int]:
+    """Annotate every peak, splitting large inputs across processes.
+
+    Chunks are contiguous slices of the normalised peak table, so
+    concatenating the per-chunk records restores the input order even though
+    rows without a matching feature are dropped.
+    """
+
+    workers = effective_jobs(n_jobs, tasks=len(peaks_df))
+    if workers <= 1 or len(peaks_df) < _PARALLEL_MIN_PEAKS:
+        return _annotate_rows(
+            model, peaks_df, **config  # type: ignore[arg-type]
+        )
+
+    bounds = chunk_bounds(len(peaks_df), workers * 4)
+    chunks = [
+        peaks_df.iloc[chunk_start:chunk_stop].reset_index(drop=True)
+        for chunk_start, chunk_stop in bounds
+    ]
+    # Send the model's origin (a small path) when available; rebuilding the
+    # six annotation frames in each worker is far cheaper than pickling the
+    # several-hundred-megabyte object on every spawn.
+    source = getattr(model, "source", None)
+    if source is not None:
+        initializer = _annotation_worker_init_from_source
+        initargs: tuple[object, ...] = (source, config)
+    else:
+        initializer = _annotation_worker_init
+        initargs = (model, config)
+    results = parallel_map(
+        _annotation_worker,
+        chunks,
+        n_jobs=workers,
+        initializer=initializer,
+        initargs=initargs,
+    )
+    records = [
+        record for chunk_records, _, _ in results for record in chunk_records
+    ]
+    details = [
+        detail for _, chunk_details, _ in results for detail in chunk_details
+    ]
+    dropped = sum(chunk_dropped for _, _, chunk_dropped in results)
+    return records, details, dropped
+
+
+# ----------------------------------------------------------------------
+# main annotation API
+# ----------------------------------------------------------------------
+def annotate_peak(
+    peaks: Optional[Union[str, Path, pd.DataFrame]] = None,
+    gtf: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
+    tss_region: Sequence[int] = (-3000, 3000),
+    level: str = "transcript",
+    assign_genomic_annotation: bool = True,
+    genomic_annotation_priority: Sequence[str] = _DEFAULT_PRIORITY,
+    add_flank_gene_info: bool = False,
+    flank_distance: int = 5000,
+    same_strand: bool = False,
+    ignore_overlap: bool = False,
+    ignore_upstream: bool = False,
+    ignore_downstream: bool = False,
+    overlap: str = "TSS",
+    verbose: bool = False,
+    upstream: Optional[int] = None,
+    downstream: Optional[int] = None,
+    promoter_bins: Optional[Sequence[int]] = None,
+    downstream_distance: int = 300,
+    drop_unmapped: bool = True,
+    align_annotation_feature: bool = True,
+    n_jobs: Optional[int] = None,
+    TxDb: Optional[Union[str, Path, pd.DataFrame, GeneAnnotation]] = None,
+    **kwargs,
+) -> PeakAnnotation:
+    """Annotate peaks with ChIPSeeker-compatible genomic features.
+
+    Parameters mirror ``ChIPseeker::annotatePeak``.  ``upstream``/``downstream``
+    are kept as convenience aliases for an asymmetric ``tss_region``.
+    Coordinates are 0-based, half-open (BED).
+
+    ``annotatePeak`` is a bare alias of this function, so the R-style keyword
+    spellings (``tssRegion``, ``genomicAnnotationPriority``, ``peak``,
+    ``annotation``, ...) and the ``annoDb``/``columns`` gene-annotation
+    shortcut are handled here directly -- there is no separate wrapper.
+
+    ``n_jobs`` annotates large peak sets in parallel processes; ``-1`` uses
+    every available core and the default (``None``) stays sequential.
+
+    ``align_annotation_feature`` follows the ChIPseeker development fix for
+    issue #252: when a peak overlaps an exon/intron/UTR from one isoform but the
+    nearest TSS belongs to another isoform, report the gene/transcript and
+    distance of the isoform that supplied the genomic annotation.  Set it to
+    ``False`` to reproduce ChIPseeker 1.48 and earlier, where the annotation
+    text and transcript columns can refer to different isoforms.
+    """
+
+    # ChIPseeker-compatible keyword spellings.  ``annotatePeak`` is a bare
+    # alias of this function, so R-style names and the ``peak=`` /
+    # ``annotation=`` spellings are accepted here rather than in a wrapper.
+    if peaks is None:
+        peaks = kwargs.pop("peak", None)
+    if peaks is None:
+        raise ValueError("provide peaks=... (a BED-like path or peak DataFrame)")
+    annotation_source = kwargs.pop("annotation", None)
+    if annotation_source is not None:
+        if gtf is not None or TxDb is not None:
+            raise ValueError("provide only one of gtf=, TxDb= or annotation=")
+        gtf = annotation_source
+    tss_region = kwargs.pop("tssRegion", tss_region)
+    assign_genomic_annotation = kwargs.pop(
+        "assignGenomicAnnotation", assign_genomic_annotation
+    )
+    genomic_annotation_priority = kwargs.pop(
+        "genomicAnnotationPriority", genomic_annotation_priority
+    )
+    add_flank_gene_info = kwargs.pop("addFlankGeneInfo", add_flank_gene_info)
+    flank_distance = kwargs.pop("flankDistance", flank_distance)
+    same_strand = kwargs.pop("sameStrand", same_strand)
+    ignore_overlap = kwargs.pop("ignoreOverlap", ignore_overlap)
+    ignore_upstream = kwargs.pop("ignoreUpstream", ignore_upstream)
+    ignore_downstream = kwargs.pop("ignoreDownstream", ignore_downstream)
+    anno_db = kwargs.pop("annoDb", None)
+    anno_columns = kwargs.pop("columns", None)
+    if kwargs:
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(
+            f"annotate_peak() got unexpected keyword argument(s): {unexpected}"
+        )
+    if genomic_annotation_priority is None:
+        genomic_annotation_priority = _DEFAULT_PRIORITY
+
+    if level not in {"transcript", "gene"}:
+        raise ValueError("level must be 'transcript' or 'gene'")
+    if gtf is None:
+        gtf = TxDb
+    from .genomes import (
+        is_assembly_name,
+        is_genome_spec,
+        load_annotation,
+        load_genome,
+        supported_genomes,
+    )
+
+    if gtf is None:
+        raise ValueError(
+            "provide gtf=... or TxDb=..., or a bundled assembly name such as "
+            f"{', '.join(supported_genomes())}"
+        )
+
+    if isinstance(gtf, str) and gtf.strip().lower() == "auto":
+        from .genomes import detect_assembly
+
+        gtf = detect_assembly(peaks=peaks)
+    if is_assembly_name(gtf):
+        gtf = load_genome(gtf)
+    elif is_genome_spec(gtf):
+        gtf = load_annotation(gtf)
+    if str(overlap) not in {"TSS", "all"}:
+        raise ValueError("overlap must be 'TSS' or 'all'")
+
+    if upstream is not None or downstream is not None:
+        up = 3000 if upstream is None else int(upstream)
+        down = 3000 if downstream is None else int(downstream)
+        tss_region = (-up, down)
+    tss_region = (int(tss_region[0]), int(tss_region[1]))
+    if tss_region[1] < tss_region[0]:
+        raise ValueError("tss_region must be (upstream-negative, downstream-positive)")
+
+    if promoter_bins is None:
+        bins = _promoter_bins_from_region(tss_region)
+    else:
+        bins = tuple(int(x) for x in promoter_bins)
+        if any(b <= 0 for b in bins) or list(bins) != sorted(bins):
+            raise ValueError("promoter_bins must be increasing positive integers")
+
+    priority = _normalise_priority(genomic_annotation_priority)
+    downstream_distance = int(downstream_distance)
+    flank_distance = int(flank_distance)
+    if downstream_distance < 0 or flank_distance < 0:
+        raise ValueError("downstream_distance and flank_distance must be non-negative")
+
+    model = gtf if isinstance(gtf, GeneAnnotation) else GeneAnnotation.from_gtf(gtf)
+    peaks_df = _normalise_peaks(peaks)
+    # Ensembl annotations use ``1``/``MT`` while BED files often use
+    # ``chr1``/``chrM``.  Harmonise the query names before the interval search
+    # so otherwise valid peaks are not silently dropped.
+    target_chroms = pd.unique(model.features(level)["chrom"].astype(str))
+    peaks_df, _chrom_map = harmonize_frame(
+        peaks_df, target_chroms, column="chrom", copy=False
+    )
+    if peaks_df.empty:
+        empty = pd.DataFrame(columns=_annotation_columns(level, assign_genomic_annotation))
+        detail = pd.DataFrame(columns=list(_DETAIL_KEYS.values()) + [
+            "genic", "Intergenic", "downstream", "distal_intergenic"
+        ])
+        return _finish_annotation(
+            PeakAnnotation(
+                peaks=peaks_df,
+                annotation=empty,
+                gene_annotation=model,
+                tss_region=tss_region,
+                level=level,
+                promoter_bins=bins,
+                genomic_annotation_priority=priority,
+                downstream_distance=downstream_distance,
+                detail_genomic_annotation=detail,
+                has_genomic_annotation=assign_genomic_annotation,
+                add_flank_gene_info=add_flank_gene_info,
+                flank_distance=flank_distance,
+            ),
+            anno_db,
+            anno_columns,
+        )
+
+    config: dict[str, object] = {
+        "level": level,
+        "tss_region": tss_region,
+        "bins": bins,
+        "priority": priority,
+        "assign_genomic_annotation": assign_genomic_annotation,
+        "same_strand": same_strand,
+        "ignore_overlap": ignore_overlap,
+        "ignore_upstream": ignore_upstream,
+        "ignore_downstream": ignore_downstream,
+        "overlap": overlap,
+        "align_annotation_feature": align_annotation_feature,
+        "downstream_distance": downstream_distance,
+        "verbose": verbose,
+        "total": len(peaks_df),
+    }
+    total = len(peaks_df)
+    records, details, dropped = _annotate_peaks_frame(
+        model, peaks_df, config, n_jobs=n_jobs
+    )
 
     if dropped:
         warnings.warn(
