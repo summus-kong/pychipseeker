@@ -42,12 +42,14 @@ def small_bam(tmp_path) -> Path:
         ("chr1", 0, 50, 60, 0),
         ("chr1", 100, 50, 60, 0),
         ("chr1", 120, 50, 60, 0),
-        ("chr1", 400, 50, 60, 0),
         ("chr1", 130, 50, 60, 1024),
         ("chr1", 300, 50, 60, 256),
+        ("chr1", 400, 50, 60, 0),
         ("chr1", 500, 50, 5, 0),
         ("chr2", 0, 50, 60, 0),
     ]
+    # BAM indexes require coordinate-sorted records.
+    reads.sort(key=lambda row: (0 if row[0] == "chr1" else 1, row[1]))
     with pysam.AlignmentFile(str(path), "wb", header=header) as handle:
         for index, (chrom, start, length, mapq, flag) in enumerate(reads):
             read = pysam.AlignedSegment()
