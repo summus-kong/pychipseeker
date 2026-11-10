@@ -77,16 +77,29 @@ def fake_bundled_genome(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 def test_assembly_name_checks() -> None:
     assert is_assembly_name("hg38") and is_assembly_name("GRCh38")
     assert is_assembly_name(" mm10 ") and is_assembly_name("GRCm37")
-    assert not is_assembly_name("sacCer3")
+    assert is_assembly_name("sacCer3") and is_assembly_name("GRCm39")
+    assert not is_assembly_name("not_a_genome")
     assert not is_assembly_name(None) and not is_assembly_name(42)
 
 
 def test_canonical_assembly_and_errors() -> None:
     assert canonical_assembly("GRCh38") == "hg38"
     assert canonical_assembly("mm9") == "mm9"
-    assert supported_genomes() == ("hg38", "hg19", "mm10", "mm9")
-    with pytest.raises(ValueError, match="hg38.*hg19.*mm10.*mm9"):
-        canonical_assembly("sacCer3")
+    assert canonical_assembly("GRCm39") == "mm39"
+    assert canonical_assembly("BDGP6") == "dm6"
+    assert supported_genomes() == (
+        "hg38",
+        "hg19",
+        "mm10",
+        "mm9",
+        "dm6",
+        "danRer11",
+        "rn7",
+        "mm39",
+        "sacCer3",
+    )
+    with pytest.raises(ValueError, match="hg38.*sacCer3"):
+        canonical_assembly("not_a_genome")
     with pytest.raises(ValueError, match="TxDb must be"):
         canonical_assembly(None)  # type: ignore[arg-type]
 
@@ -155,6 +168,47 @@ def test_bundle_bases_prefer_env_then_release_then_raw(
         genomes_mod.RELEASE_BUNDLE_BASE,
         genomes_mod.RAW_BUNDLE_BASE,
     )
+
+
+def test_parse_genome_specs() -> None:
+    from pychipseeker.genomes import parse_genome_spec
+
+    mouse = parse_genome_spec("ensembl:mouse@111")
+    assert mouse["provider"] == "ensembl"
+    assert mouse["release"] == "111"
+    assert mouse["url"].endswith("Mus_musculus.GRCm39.111.gtf.gz")
+
+    human = parse_genome_spec("gencode:human@44")
+    assert human["url"].endswith("gencode.v44.annotation.gtf.gz")
+
+    direct = parse_genome_spec("url:https://example.org/genes.gtf.gz")
+    assert direct["url"] == "https://example.org/genes.gtf.gz"
+
+    with pytest.raises(ValueError, match="unknown Ensembl species"):
+        parse_genome_spec("ensembl:unicorn")
+    with pytest.raises(ValueError, match="must start with"):
+        parse_genome_spec("https://example.org/genes.gtf.gz")
+
+
+def test_load_annotation_caches_url_spec(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, example_model: GeneAnnotation
+) -> None:
+    from pychipseeker import genomes as genomes_mod
+
+    monkeypatch.setattr(genomes_mod, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(genomes_mod, "_loaded_specs", {})
+    spec = "url:" + EXAMPLE_GTF.resolve().as_uri()
+    model = genomes_mod.load_annotation(spec)
+    assert len(model.genes) == len(example_model.genes)
+
+    cache = tmp_path / "gtf"
+    assert list(cache.glob("spec_*.gtf"))
+    assert list(cache.glob("spec_*.npz"))
+    assert list(cache.glob("spec_*.json"))
+    # A fresh process only sees the npz bundle.
+    monkeypatch.setattr(genomes_mod, "_loaded_specs", {})
+    again = genomes_mod.load_annotation(spec)
+    assert len(again.genes) == len(example_model.genes)
 
 
 def test_lookup_skips_download_when_installed_exists(

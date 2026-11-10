@@ -57,7 +57,7 @@ def test_annotation_statistics_and_drop(annotation):
 
 
 def test_chipseeker_annotatepeak_wrapper(examples_dir):
-    from pychipseeker import annotatePeak, annotate_peak
+    from pychipseeker import annotate_peak, annotatePeak
 
     # A bare alias: the R-style keyword spellings live in the engine itself.
     assert annotatePeak is annotate_peak
@@ -306,7 +306,7 @@ def test_get_geo_info_missing_genome():
 
 
 def test_get_geo_info_bundled_snapshot():
-    from pychipseeker.compat import getGEOInfo, getGEOgenomeVersion, getGEOspecies
+    from pychipseeker.compat import getGEOgenomeVersion, getGEOInfo, getGEOspecies
 
     species = getGEOspecies()
     assert {"species", "Freq"}.issubset(species.columns)

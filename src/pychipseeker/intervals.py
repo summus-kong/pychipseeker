@@ -25,6 +25,19 @@ def _normalise_strand(value: object) -> str:
     return "*"
 
 
+def _normalise_strands(values: Iterable[object]) -> np.ndarray:
+    """Vectorised :func:`_normalise_strand` for a column of values."""
+
+    if hasattr(values, "to_numpy"):
+        arr = values.astype(str).to_numpy(dtype="U1", copy=False)
+    else:
+        arr = np.asarray([str(v) for v in values], dtype="U1")
+    out = np.full(arr.shape, "*", dtype="U1")
+    out[arr == "+"] = "+"
+    out[arr == "-"] = "-"
+    return out
+
+
 def _strand_compatible(
     query: str,
     subject: str,
@@ -93,21 +106,44 @@ class BinnedIntervalIndex:
         self._starts = starts
         self._ends = ends
         if strand_col in df.columns:
-            self._strands = np.asarray(
-                [_normalise_strand(v) for v in df[strand_col]],
-                dtype="U1",
-            )
+            self._strands = _normalise_strands(df[strand_col])
         else:
             self._strands = np.full(len(df), "*", dtype="U1")
         self._bins = {}
 
         chroms = df[chrom_col].astype(str).to_numpy()
-        for i, (chrom, start, end) in enumerate(zip(chroms, starts, ends)):
-            b0 = int(start) // self.bin_size
-            b1 = (int(end) - 1) // self.bin_size
-            chrom_bins = self._bins.setdefault(chrom, {})
-            for b in range(b0, b1 + 1):
-                chrom_bins.setdefault(b, []).append(i)
+        chrom_codes, chrom_names = pd.factorize(chroms, sort=False)
+
+        # Vectorised bin construction.  Most intervals touch one or two bins;
+        # long genes can span several, so expand the (row, bin) pairs first and
+        # group them with a single lexsort instead of a Python loop.
+        bin_starts = starts // self.bin_size
+        bin_ends = (ends - 1) // self.bin_size
+        counts = (bin_ends - bin_starts + 1).astype(np.int64)
+        total = int(counts.sum())
+        row_ids = np.repeat(np.arange(len(df), dtype=np.int64), counts)
+        first_bins = np.repeat(bin_starts, counts)
+        offsets = np.arange(total, dtype=np.int64) - np.repeat(
+            np.cumsum(counts) - counts, counts
+        )
+        bin_ids = first_bins + offsets
+
+        order = np.lexsort((row_ids, bin_ids, chrom_codes[row_ids]))
+        rows_sorted = row_ids[order]
+        bins_sorted = bin_ids[order]
+        codes_sorted = chrom_codes[rows_sorted]
+
+        change = np.empty(total, dtype=bool)
+        change[0] = True
+        np.not_equal(bins_sorted[1:], bins_sorted[:-1], out=change[1:])
+        change[1:] |= codes_sorted[1:] != codes_sorted[:-1]
+        starts_at = np.flatnonzero(change)
+        stops_at = np.append(starts_at[1:], total)
+
+        for lo, hi in zip(starts_at, stops_at):
+            chrom = chrom_names[int(codes_sorted[lo])]
+            bin_id = int(bins_sorted[lo])
+            self._bins.setdefault(str(chrom), {})[bin_id] = rows_sorted[lo:hi]
 
         return self
 
@@ -137,16 +173,16 @@ class BinnedIntervalIndex:
 
         b0 = int(start) // self.bin_size
         b1 = (int(end) - 1) // self.bin_size
-        candidates: set[int] = set()
-        for b in range(b0, b1 + 1):
-            vals = chrom_bins.get(b)
-            if vals:
-                candidates.update(vals)
-
-        if not candidates:
+        parts = [
+            chrom_bins[b] for b in range(b0, b1 + 1) if b in chrom_bins
+        ]
+        if not parts:
             return np.empty(0, dtype=np.int64)
 
-        idx = np.fromiter(candidates, dtype=np.int64, count=len(candidates))
+        if len(parts) == 1:
+            idx = parts[0]
+        else:
+            idx = np.unique(np.concatenate(parts))
         mask = (self._starts[idx] < int(end)) & (self._ends[idx] > int(start))
         if same_strand and strand is not None and self._strands is not None:
             q = _normalise_strand(strand)
@@ -164,10 +200,7 @@ class _SortedFeatureIndex:
         self._by_key: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
 
         chroms = self._features["chrom"].astype(str).to_numpy()
-        strands = np.asarray(
-            [_normalise_strand(v) for v in self._features["strand"]],
-            dtype="U1",
-        )
+        strands = _normalise_strands(self._features["strand"])
         rows = np.arange(len(self._features), dtype=np.int64)
         values = self._features[key].to_numpy(dtype=np.int64, copy=False)
 
@@ -370,10 +403,7 @@ class SpanIndex(_SortedFeatureIndex):
         self._by_end: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
 
         chroms = self._spans["chrom"].astype(str).to_numpy()
-        strands = np.asarray(
-            [_normalise_strand(v) for v in self._spans["strand"]],
-            dtype="U1",
-        )
+        strands = _normalise_strands(self._spans["strand"])
         rows = np.arange(len(self._spans), dtype=np.int64)
 
         for chrom in pd.unique(chroms):

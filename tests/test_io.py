@@ -1,5 +1,4 @@
 import gzip
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -70,4 +69,139 @@ def test_read_peaks_invalid(tmp_path):
     path = tmp_path / "bad.tsv"
     path.write_text("chrom\tfoo\tbar\nchr1\t1\t2\n", encoding="utf-8")
     with pytest.raises(ValueError):
+        read_peaks(path)
+
+
+def test_read_narrowpeak_columns(tmp_path):
+    path = tmp_path / "peaks.narrowPeak"
+    path.write_text(
+        "chr1\t100\t200\tp1\t500\t+\t10.5\t8.1\t7.2\t50\n"
+        "chr1\t300\t450\tp2\t400\t-\t9.5\t6.1\t5.2\t75\n",
+        encoding="utf-8",
+    )
+    df = read_peaks(path)
+    assert list(df.columns) == [
+        "chrom",
+        "start",
+        "end",
+        "name",
+        "score",
+        "strand",
+        "signalValue",
+        "pValue",
+        "qValue",
+        "peak",
+    ]
+    assert df.loc[0, "signalValue"] == 10.5
+    assert df.loc[1, "peak"] == 75
+
+
+def test_read_bed_header_and_track_lines(tmp_path):
+    path = tmp_path / "peaks.bed"
+    path.write_text(
+        "track name=test\n"
+        "browser position chr1\n"
+        "#chrom\tstart\tend\tname\tscore\tstrand\n"
+        "chr1\t5\t9\tn\t0\t+\n",
+        encoding="utf-8",
+    )
+    df = read_peaks(path)
+    assert list(df.columns[:6]) == [
+        "chrom",
+        "start",
+        "end",
+        "name",
+        "score",
+        "strand",
+    ]
+    assert df.loc[0, "start"] == 5
+
+
+def test_read_bigbed_with_pybigtools(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    from pychipseeker import io as io_mod
+
+    path = tmp_path / "peaks.bb"
+    path.write_bytes(b"fake bigBed")
+
+    class Handle:
+        def chroms(self):
+            return {"chr1": 1000}
+
+        def records(self, chrom, start, end):
+            assert chrom == "chr1"
+            return [(100, 200, "p1\t500\t+"), (300, 400, "p2\t100\t-")]
+
+        def close(self):
+            return None
+
+    fake = types.ModuleType("pybigtools")
+    fake.open = lambda _path: Handle()
+    monkeypatch.setitem(sys.modules, "pybigtools", fake)
+    monkeypatch.setattr(io_mod.shutil, "which", lambda _name: None)
+
+    df = read_peaks(path)
+    assert list(df.columns[:6]) == [
+        "chrom",
+        "start",
+        "end",
+        "name",
+        "score",
+        "strand",
+    ]
+    assert df.loc[1, "start"] == 300
+    assert df.loc[1, "name"] == "p2"
+
+
+def test_read_bam_with_pysam(monkeypatch, tmp_path):
+    import sys
+    import types
+
+    path = tmp_path / "reads.bam"
+    path.write_bytes(b"fake bam")
+
+    class Read:
+        is_unmapped = False
+        reference_start = 100
+        reference_end = 150
+        query_name = "read1"
+        mapping_quality = 60
+        is_reverse = False
+        reference_name = "chr1"
+
+    class Bam:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def fetch(self, until_eof=True):
+            assert until_eof
+            return [Read()]
+
+    fake = types.ModuleType("pysam")
+    fake.AlignmentFile = lambda _path, _mode: Bam()
+    monkeypatch.setitem(sys.modules, "pysam", fake)
+
+    df = read_peaks(path)
+    assert df.loc[0, "chrom"] == "chr1"
+    assert df.loc[0, "start"] == 100
+    assert df.loc[0, "end"] == 150
+    assert df.loc[0, "name"] == "read1"
+    assert df.loc[0, "strand"] == "+"
+
+
+def test_bigbed_requires_backend(monkeypatch, tmp_path):
+    import sys
+
+    from pychipseeker import io as io_mod
+
+    path = tmp_path / "peaks.bb"
+    path.write_bytes(b"fake bigBed")
+    monkeypatch.setattr(io_mod.shutil, "which", lambda _name: None)
+    monkeypatch.setitem(sys.modules, "pybigtools", None)
+    with pytest.raises(ImportError, match="bigBedToBed"):
         read_peaks(path)

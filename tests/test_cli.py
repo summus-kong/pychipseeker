@@ -1,4 +1,3 @@
-from pathlib import Path
 
 import pandas as pd
 
@@ -117,3 +116,95 @@ def test_cli_plot(tmp_path, examples_dir):
     assert (outdir / "test_annotation_pie.png").exists()
     assert (outdir / "test_annotation_bar.png").exists()
     assert (outdir / "test_distance_to_tss.png").exists()
+
+
+def test_cli_report(tmp_path, examples_dir):
+    output = tmp_path / "report.pdf"
+    rc = main(
+        [
+            "report",
+            "--peaks",
+            str(examples_dir / "example_peaks.bed"),
+            "--gtf",
+            str(examples_dir / "example.gtf"),
+            "--output",
+            str(output),
+            "--no-tag-matrix",
+        ]
+    )
+    assert rc == 0
+    assert output.read_bytes().startswith(b"%PDF")
+    assert output.stat().st_size > 10_000
+
+
+def test_cli_enrich_local(tmp_path, examples_dir):
+    annotated = tmp_path / "annotated.tsv"
+    main(
+        [
+            "annotate",
+            "--peaks",
+            str(examples_dir / "example_peaks.bed"),
+            "--gtf",
+            str(examples_dir / "example.gtf"),
+            "--output",
+            str(annotated),
+            "--quiet",
+        ]
+    )
+
+    gmt = tmp_path / "sets.gmt"
+    gmt.write_text(
+        "term A\tdescription\tGeneA\tGeneB\n"
+        "term B\tdescription\tGeneA\tGeneC\n",
+        encoding="utf-8",
+    )
+    background = tmp_path / "background.txt"
+    background.write_text("GeneA\nGeneB\nGeneC\nGeneD\nGeneE\n", encoding="utf-8")
+    outdir = tmp_path / "enrichment"
+    rc = main(
+        [
+            "enrich",
+            "--annotated",
+            str(annotated),
+            "--local",
+            "--gmt",
+            str(gmt),
+            "--background",
+            str(background),
+            "--outdir",
+            str(outdir),
+        ]
+    )
+    assert rc == 0
+    result = pd.read_csv(outdir / "enrichment.tsv", sep="\t")
+    assert {"Term", "PValue", "AdjustedPValue"} <= set(result.columns)
+    assert len(result) >= 1
+
+
+def test_cli_cache_list_and_clear(tmp_path, monkeypatch, capsys):
+    from pychipseeker import genomes as genomes_mod
+
+    monkeypatch.setattr(genomes_mod, "cache_dir", lambda: tmp_path)
+    (tmp_path / "genome_dm6.npz").write_bytes(b"npz")
+    (tmp_path / "genome_dm6.json").write_text(
+        '{"provider": "ensembl", "release": "110"}', encoding="utf-8"
+    )
+
+    assert main(["cache", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "dm6" in listed
+    assert "cache" in listed
+
+    assert main(["cache", "clear", "dm6"]) == 0
+    assert not (tmp_path / "genome_dm6.npz").exists()
+
+
+def test_cli_cache_download(tmp_path, monkeypatch, capsys):
+    from pychipseeker import genomes as genomes_mod
+
+    target = tmp_path / "genome_dm6.npz"
+    target.write_bytes(b"npz")
+    monkeypatch.setattr(genomes_mod, "download_genome", lambda _name: target)
+
+    assert main(["cache", "download", "dm6"]) == 0
+    assert "dm6" in capsys.readouterr().out

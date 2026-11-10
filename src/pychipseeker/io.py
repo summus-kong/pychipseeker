@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import bz2
+import gzip
+import lzma
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -237,6 +243,12 @@ def _normalise_peak_columns(df: pd.DataFrame) -> pd.DataFrame:
             target = "score"
         elif key == "strand":
             target = "strand"
+        elif key in {"signalvalue", "signal_value", "signal"}:
+            target = "signalValue"
+        elif key in {"pvalue", "p_value", "pval"}:
+            target = "pValue"
+        elif key in {"qvalue", "q_value", "qval", "fdr"}:
+            target = "qValue"
         if target is None:
             continue
         if target in reserved and target != col:
@@ -246,14 +258,249 @@ def _normalise_peak_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename)
 
 
+_PEAK_VARIANTS = {
+    "narrowpeak": ["signalValue", "pValue", "qValue", "peak"],
+    "broadpeak": ["signalValue", "pValue", "qValue"],
+    "gappedpeak": [
+        "thickStart",
+        "thickEnd",
+        "itemRgb",
+        "blockCount",
+        "blockSizes",
+        "blockStarts",
+        "signalValue",
+        "pValue",
+        "qValue",
+    ],
+}
+
+
+def _peak_variant(name: str) -> Optional[str]:
+    """Return the BED variant implied by a filename, if any."""
+
+    lower = name.lower()
+    for suffix in (".gz", ".bz2", ".xz"):
+        if lower.endswith(suffix):
+            lower = lower[: -len(suffix)]
+            break
+    for variant in _PEAK_VARIANTS:
+        if lower.endswith("." + variant) or lower.endswith("." + variant + "peak"):
+            return variant
+    if lower.endswith((".bed", ".bed6", ".bed12")):
+        return "bed"
+    return None
+
+
+def _is_bed_header(values: Sequence[object]) -> bool:
+    """True if the first BED row looks like a column header."""
+
+    if len(values) < 3:
+        return False
+    first = str(values[0]).strip().lower()
+    second = str(values[1]).strip().lower()
+    third = str(values[2]).strip().lower()
+    return first in {"chrom", "chr", "chromosome", "#chrom"} and second in {
+        "start",
+        "chromstart",
+    } and third in {"end", "chromend", "stop"}
+
+
+def _open_text(path: Path):
+    lower = path.name.lower()
+    if lower.endswith(".gz"):
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    if lower.endswith(".bz2"):
+        return bz2.open(path, "rt", encoding="utf-8", errors="replace")
+    if lower.endswith(".xz"):
+        return lzma.open(path, "rt", encoding="utf-8", errors="replace")
+    return open(path, encoding="utf-8", errors="replace")
+
+
+def _bed_header_info(path: Path) -> tuple[Optional[list[str]], int]:
+    """Return ``(header, skiprows)`` for a BED-like file.
+
+    The scan stops at the first non-comment/non-track line.  A header such as
+    ``chrom start end`` (optionally ``#chrom``) is recognised even when it has
+    fewer columns than the data rows, which pandas' CSV sniffer would
+    otherwise reject.
+    """
+
+    with _open_text(path) as fh:
+        for index, line in enumerate(fh):
+            text = line.strip()
+            if not text:
+                continue
+            lower = text.lower()
+            if lower.startswith(("track", "browser")):
+                continue
+            fields = text.split("\t")
+            if _is_bed_header(fields):
+                return [str(field).strip() for field in fields], index + 1
+            if text.startswith("#"):
+                continue
+            return None, index
+    return None, 0
+
+
+def _coerce_peaks(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise column names and coerce coordinates for a peak frame."""
+
+    df = _normalise_peak_columns(df)
+    required = {"chrom", "start", "end"}
+    missing = required - set(df.columns)
+    if missing:
+        # Last resort for BED-like files with unnamed first three columns.
+        if len(df.columns) >= 3 and not required.intersection(df.columns):
+            first = list(df.columns[:3])
+            df = df.rename(
+                columns={first[0]: "chrom", first[1]: "start", first[2]: "end"}
+            )
+        else:
+            raise ValueError(f"peak table is missing columns: {sorted(missing)}")
+
+    df = df.copy()
+    df["chrom"] = df["chrom"].astype(str)
+    df["start"] = pd.to_numeric(df["start"], errors="coerce")
+    df["end"] = pd.to_numeric(df["end"], errors="coerce")
+    if df["start"].isna().any() or df["end"].isna().any():
+        raise ValueError("peak start/end contain non-numeric values")
+
+    df["start"] = df["start"].astype(np.int64)
+    df["end"] = df["end"].astype(np.int64)
+    return df.reset_index(drop=True)
+
+
+def _bed_frame(rows: Sequence[Sequence[object]]) -> pd.DataFrame:
+    """Build a BED-like frame from ``(chrom, start, end, *fields)`` rows."""
+
+    if not rows:
+        raise ValueError("no peak records were found")
+    n_cols = max(len(row) for row in rows)
+    standard = [
+        "chrom",
+        "start",
+        "end",
+        "name",
+        "score",
+        "strand",
+        "thickStart",
+        "thickEnd",
+        "itemRgb",
+        "blockCount",
+        "blockSizes",
+        "blockStarts",
+    ]
+    columns = standard[: min(n_cols, len(standard))]
+    columns += [f"extra_{i + 1}" for i in range(n_cols - len(columns))]
+    padded = [list(row) + [None] * (n_cols - len(row)) for row in rows]
+    return pd.DataFrame(padded, columns=columns)
+
+
+def _read_bigbed(path: Path) -> pd.DataFrame:
+    """Read a bigBed file via ``bigBedToBed`` or the optional pybigtools."""
+
+    converter = shutil.which("bigBedToBed") or shutil.which("bigbedtobed")
+    if converter is not None:
+        tmpdir = tempfile.mkdtemp(prefix="pychipseeker_bigbed_")
+        try:
+            bed_path = Path(tmpdir) / "peaks.bed"
+            subprocess.run(
+                [converter, str(path), str(bed_path)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            return read_peaks(bed_path, fmt="bed")
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    try:
+        import pybigtools  # type: ignore
+    except ImportError as exc:
+        raise ImportError(
+            "reading .bb/.bigBed files requires the UCSC bigBedToBed utility "
+            "on PATH or the optional pybigtools package "
+            "(`pip install pychipseeker[bigbed]`)"
+        ) from exc
+
+    handle = pybigtools.open(str(path))
+    rows: list[list[object]] = []
+    try:
+        chroms = handle.chroms()
+        for chrom, size in chroms.items():
+            records = handle.records(str(chrom), 0, int(size))
+            if records is None:
+                continue
+            for record in records:
+                fields = list(record)
+                if len(fields) >= 3 and isinstance(fields[2], str):
+                    rest = [value for value in fields[2].split("\t") if value != ""]
+                else:
+                    rest = fields[2:]
+                rows.append([str(chrom), int(fields[0]), int(fields[1]), *rest])
+    finally:
+        close = getattr(handle, "close", None)
+        if close is not None:
+            close()
+
+    return _coerce_peaks(_bed_frame(rows))
+
+
+def _read_bam(path: Path) -> pd.DataFrame:
+    """Read aligned reads from a BAM/CRAM file with pysam."""
+
+    try:
+        import pysam  # type: ignore
+    except ImportError as exc:
+        raise ImportError(
+            "reading .bam/.cram files requires the optional pysam package "
+            "(`pip install pychipseeker[bam]`)"
+        ) from exc
+
+    rows: list[dict[str, object]] = []
+    with pysam.AlignmentFile(str(path), "rb") as bam:
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped or read.reference_start is None:
+                continue
+            start = int(read.reference_start)
+            end = read.reference_end
+            if end is None:
+                end = start + max(1, int(read.query_length or 1))
+            rows.append(
+                {
+                    "chrom": str(read.reference_name),
+                    "start": start,
+                    "end": int(end),
+                    "name": str(read.query_name or "."),
+                    "score": int(read.mapping_quality),
+                    "strand": "-" if read.is_reverse else "+",
+                }
+            )
+    if not rows:
+        raise ValueError(f"no aligned reads were found in {path}")
+    return _coerce_peaks(pd.DataFrame.from_records(rows))
+
+
 def read_peaks(
     path: Union[str, Path],
     fmt: Optional[str] = None,
 ) -> pd.DataFrame:
-    """Read peaks from BED, TSV or CSV.
+    """Read peaks from BED, narrowPeak/broadPeak/gappedPeak, bigBed, BAM,
+    TSV or CSV.
 
-    BED files are interpreted as 0-based, half-open.  For tabular files, the
-    columns ``chrom``/``start``/``end`` (case-insensitive) are required.
+    BED files are interpreted as 0-based, half-open.  The ENCODE peak
+    variants get their standard column names (``signalValue``, ``pValue``,
+    ``qValue``, ``peak``/``blockCount``/...); plain BED files keep extra
+    columns as ``extra_1`` ... ``extra_n``.  A header row such as
+    ``chrom start end`` is skipped, and ``track``/``browser`` lines are
+    ignored.
+
+    ``.bb``/``.bigBed`` files need either the UCSC ``bigBedToBed`` utility or
+    the optional ``pybigtools`` package; ``.bam``/``.cram`` files need the
+    optional ``pysam`` package.  For tabular files, the columns
+    ``chrom``/``start``/``end`` (case-insensitive) are required.  ``fmt`` may
+    be ``bed``, ``narrowpeak``, ``broadpeak``, ``gappedpeak``, ``bigbed``,
+    ``bam``, ``tsv`` or ``csv`` to override the suffix.
     """
 
     path = Path(path)
@@ -261,50 +508,108 @@ def read_peaks(
         raise FileNotFoundError(path)
 
     suffix = path.name.lower()
+    if fmt is not None and str(fmt).lower() in {"bam", "cram"}:
+        return _read_bam(path)
+    if fmt is not None and str(fmt).lower() in {"bigbed", "bb"}:
+        return _read_bigbed(path)
     if fmt is None:
-        if suffix.endswith((".bed", ".bed.gz")):
+        if suffix.endswith((".bam", ".cram")):
+            return _read_bam(path)
+        if suffix.endswith((".bb", ".bigbed")):
+            return _read_bigbed(path)
+
+    explicit = None if fmt is None else str(fmt).lower()
+    explicit_variant: Optional[str] = None
+    if explicit in _PEAK_VARIANTS:
+        explicit_variant = explicit
+        explicit = "bed"
+    elif explicit in {"bed", "csv", "tsv"}:
+        explicit_variant = None
+    elif explicit is not None:
+        raise ValueError(
+            "fmt must be one of bed, narrowpeak, broadpeak, gappedpeak, "
+            "bigbed, bam, tsv or csv"
+        )
+
+    variant = explicit_variant or _peak_variant(suffix)
+    if fmt is None:
+        if variant is not None:
             fmt = "bed"
         elif suffix.endswith((".csv", ".csv.gz")):
             fmt = "csv"
         else:
             fmt = "tsv"
+    elif explicit in {"tsv", "csv"}:
+        fmt = explicit
+    elif explicit == "bed":
+        fmt = "bed"
 
     if fmt == "bed":
+        header, skiprows = _bed_header_info(path)
         raw = pd.read_csv(
             path,
             sep="\t",
             header=None,
+            skiprows=skiprows,
             comment="#",
             compression="infer",
             dtype={0: "string"},
         )
         if raw.shape[1] >= 1:
-            first_col = raw.iloc[:, 0].astype(str).str.lower()
+            first_col = raw.iloc[:, 0].astype(str).str.strip().str.lower()
             raw = raw[~first_col.str.startswith(("track", "browser"))].copy()
         if raw.shape[1] < 3:
             raise ValueError(f"BED file must have at least 3 columns: {path}")
 
-        n_extra = max(0, raw.shape[1] - 6)
-        extra = raw.iloc[:, 6:].copy() if n_extra else None
-        cols = ["chrom", "start", "end", "name", "score", "strand"]
-        if raw.shape[1] < 6:
-            cols = cols[: raw.shape[1]]
-        raw = raw.iloc[:, :6].copy()
-        raw.columns = cols
-        if "name" not in raw:
-            raw["name"] = "."
-        if "score" not in raw:
-            raw["score"] = "."
-        if "strand" not in raw:
-            raw["strand"] = "."
-        if extra is not None:
-            # Preserve extra BED columns rather than silently dropping them.
-            extra.columns = [f"extra_{i + 1}" for i in range(n_extra)]
-            raw = pd.concat(
-                [raw.reset_index(drop=True), extra.reset_index(drop=True)],
-                axis=1,
-            )
+        n_cols = raw.shape[1]
+        base = ["chrom", "start", "end", "name", "score", "strand"]
+        tail = _PEAK_VARIANTS.get(variant or "", [])
+        standard = base + tail
+        if header is None:
+            columns = standard[: min(n_cols, len(standard))]
+            n_extra = max(0, n_cols - len(columns))
+            columns += [f"extra_{i + 1}" for i in range(n_extra)]
+        else:
+            columns = []
+            used: set[str] = set()
+            for column in header[:n_cols]:
+                key = column.strip().lower().lstrip("#")
+                if key in {"chr", "chrom", "chromosome", "seqnames"}:
+                    name = "chrom"
+                elif key in {"start", "chromstart"}:
+                    name = "start"
+                elif key in {"end", "chromend", "stop"}:
+                    name = "end"
+                elif key in {"name", "peak_id", "peakid"}:
+                    name = "name"
+                elif key == "score":
+                    name = "score"
+                elif key == "strand":
+                    name = "strand"
+                elif key in {"signalvalue", "signal_value", "signal"}:
+                    name = "signalValue"
+                elif key in {"pvalue", "p_value", "pval"}:
+                    name = "pValue"
+                elif key in {"qvalue", "q_value", "qval", "fdr"}:
+                    name = "qValue"
+                elif key in {"peak", "summit"}:
+                    name = "peak"
+                elif key:
+                    name = column
+                else:
+                    name = f"extra_{len(used) + 1}"
+                if name in used:
+                    name = f"extra_{len(used) + 1}"
+                used.add(name)
+                columns.append(name)
+            if len(columns) < n_cols:
+                columns += standard[len(columns) : n_cols]
+            columns += [
+                f"extra_{i + 1}" for i in range(n_cols - len(columns))
+            ]
 
+        raw.columns = columns
+        raw = raw.reset_index(drop=True)
         df = raw
     else:
         sep = "," if fmt == "csv" else "\t"
@@ -325,26 +630,7 @@ def read_peaks(
                     f"peak table must contain chrom/start/end columns: {path}"
                 )
 
-    df = _normalise_peak_columns(df)
-    required = {"chrom", "start", "end"}
-    missing = required - set(df.columns)
-    if missing:
-        # Last resort for BED-like files with unnamed first three columns.
-        if len(df.columns) >= 3 and not required.intersection(df.columns):
-            first = list(df.columns[:3])
-            df = df.rename(columns={first[0]: "chrom", first[1]: "start", first[2]: "end"})
-        else:
-            raise ValueError(f"peak table is missing columns: {sorted(missing)}")
-
-    df["chrom"] = df["chrom"].astype(str)
-    df["start"] = pd.to_numeric(df["start"], errors="coerce")
-    df["end"] = pd.to_numeric(df["end"], errors="coerce")
-    if df["start"].isna().any() or df["end"].isna().any():
-        raise ValueError("peak start/end contain non-numeric values")
-
-    df["start"] = df["start"].astype(np.int64)
-    df["end"] = df["end"].astype(np.int64)
-    return df.reset_index(drop=True)
+    return _coerce_peaks(df)
 
 
 def write_table(df: pd.DataFrame, path: Union[str, Path]) -> None:

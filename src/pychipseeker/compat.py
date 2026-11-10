@@ -8,11 +8,11 @@ returns ``(fig, ax)`` pairs from plotting functions, matching the rest of
 
 from __future__ import annotations
 
+import math
 from collections import Counter
 from itertools import product
-import math
 from pathlib import Path
-from typing import Iterable, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,6 @@ from .annotation import (
     get_genomic_anno_stat,
 )
 from .io import read_peaks
-from .tagmatrix import get_bio_region
 
 
 def _plt():
@@ -639,7 +638,7 @@ def shuffle(
     if n is not None:
         peaks = peaks.sample(n=int(n), replace=len(peaks) < int(n), random_state=seed).reset_index(drop=True)
     if chrom_sizes is None and TxDb is not None:
-        from .genomes import is_assembly_name
+        from .genomes import is_assembly_name, is_genome_spec
 
         if isinstance(TxDb, GeneAnnotation):
             model = TxDb
@@ -647,6 +646,10 @@ def shuffle(
             from .genomes import load_genome  # deferred: keep import graph flat
 
             model = load_genome(TxDb)
+        elif is_genome_spec(TxDb):
+            from .genomes import load_annotation
+
+            model = load_annotation(TxDb)
         else:
             model = GeneAnnotation.from_gtf(TxDb)
         chrom_sizes = model.genes.groupby("chrom")["end"].max().astype(int).to_dict()
@@ -885,10 +888,15 @@ def upsetplot(
     order_by: str = "freq",
     vennpie: bool = False,
     n_intersections: int = 20,
-    figsize: tuple[float, float] = (7.0, 4.0),
+    figsize: tuple[float, float] = (8.0, 4.8),
     ax=None,
 ):
-    """Approximate ChIPseeker's UpSet plot for detailed annotation flags."""
+    """Draw a real UpSet plot for ChIPseeker's detailed annotation flags.
+
+    The layout follows the usual UpSet convention: intersection sizes on top,
+    one row per annotation category, filled dots for members of each
+    intersection, and horizontal set-size bars on the left.
+    """
 
     if not isinstance(annotation, PeakAnnotation):
         raise TypeError("upsetplot expects a PeakAnnotation")
@@ -899,7 +907,7 @@ def upsetplot(
         c
         for c in detail.columns
         if pd.api.types.is_bool_dtype(detail[c])
-        or set(pd.unique(detail[c].dropna())).issubset({0, 1, True, False})
+        or set(pd.unique(detail[c].dropna())).issubset({0, 1})
     ]
     if not bool_cols:
         raise ValueError("no boolean annotation columns to plot")
@@ -914,27 +922,99 @@ def upsetplot(
     else:
         items.sort(key=lambda kv: (-kv[1], -len(kv[0])))
     items = items[: int(n_intersections)]
+    if not items:
+        raise ValueError("no non-empty annotation intersections")
 
     plt = _plt()
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
+        fig = plt.figure(figsize=figsize)
     else:
         fig = ax.figure
-    labels = [
-        " & ".join(parts) if parts else "None"
-        for parts, _ in items
-    ]
-    values = [value for _, value in items]
-    y = np.arange(len(items))
-    ax.barh(y, values, color="#3182bd", alpha=0.85)
-    ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=8)
-    ax.invert_yaxis()
-    ax.set_xlabel("Number of peaks")
-    ax.set_title("Annotation intersections")
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    return fig, ax
+        ax.remove()
+    grid = fig.add_gridspec(
+        2,
+        2,
+        width_ratios=(1.1, 4.0),
+        height_ratios=(1.6, 2.2),
+        wspace=0.55,
+        hspace=0.06,
+    )
+    top = fig.add_subplot(grid[0, 1])
+    matrix = fig.add_subplot(grid[1, 1], sharex=top)
+    sizes = fig.add_subplot(grid[1, 0], sharey=matrix)
+
+    n_items = len(items)
+    x = np.arange(n_items)
+    values = np.asarray([value for _, value in items], dtype=float)
+    top.bar(x, values, color="#3182bd", width=0.7)
+    top.set_ylabel("Intersection size", fontsize=9)
+    top.tick_params(axis="x", labelbottom=False, length=0)
+    top.set_title("Annotation intersections", fontsize=11)
+    for side in ("top", "right"):
+        top.spines[side].set_visible(False)
+    for xi, value in zip(x, values):
+        top.text(
+            xi,
+            value,
+            f"{int(value):,}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+        )
+
+    set_names = list(bool_cols)
+    n_sets = len(set_names)
+    y = np.arange(n_sets)[::-1]
+    memberships = np.zeros((n_items, n_sets), dtype=bool)
+    for column, (parts, _) in enumerate(items):
+        for part in parts:
+            memberships[column, set_names.index(part)] = True
+
+    # Light dots for every cell, black dots for members, connecting lines.
+    xx, yy = np.meshgrid(x, y)
+    matrix.scatter(xx.ravel(), yy.ravel(), s=34, color="#d9d9d9", zorder=1)
+    for column in range(n_items):
+        member_rows = y[memberships[column]]
+        matrix.scatter(
+            np.full(member_rows.shape, column),
+            member_rows,
+            s=42,
+            color="#252525",
+            zorder=3,
+        )
+        if member_rows.size > 1:
+            matrix.plot(
+                [column, column],
+                [member_rows.min(), member_rows.max()],
+                color="#252525",
+                linewidth=1.4,
+                zorder=2,
+            )
+    matrix.set_yticks(y)
+    matrix.set_yticklabels(set_names, fontsize=8)
+    matrix.set_xticks(x)
+    matrix.set_xticklabels([])
+    matrix.tick_params(axis="x", length=3, labelbottom=False)
+    matrix.tick_params(axis="y", length=0)
+    for spine in matrix.spines.values():
+        spine.set_visible(False)
+    matrix.set_xlim(-0.6, n_items - 0.4)
+    matrix.set_ylim(-0.6, n_sets - 0.4)
+
+    set_sizes = flags.sum(axis=0).to_numpy()
+    sizes.barh(y, set_sizes, color="#6baed6", height=0.55)
+    sizes.invert_xaxis()
+    sizes.tick_params(axis="y", labelleft=False, length=0)
+    sizes.tick_params(axis="x", labelsize=7)
+    sizes.set_xlabel("Set size", fontsize=8)
+    for spine in sizes.spines.values():
+        spine.set_visible(False)
+    sizes.set_ylim(matrix.get_ylim())
+
+    fig.subplots_adjust(
+        left=0.20, right=0.98, top=0.90, bottom=0.12, wspace=0.55, hspace=0.06
+    )
+    return fig, top
 
 
 # ----------------------------------------------------------------------

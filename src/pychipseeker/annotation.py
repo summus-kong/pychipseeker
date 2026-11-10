@@ -299,13 +299,30 @@ class GeneAnnotation:
         introns: pd.DataFrame,
         utr5: pd.DataFrame,
         utr3: pd.DataFrame,
+        *,
+        copy: bool = True,
     ) -> None:
-        self.genes = genes.reset_index(drop=True).copy()
-        self.transcripts = transcripts.reset_index(drop=True).copy()
-        self.exons = exons.reset_index(drop=True).copy()
-        self.introns = introns.reset_index(drop=True).copy()
-        self.utr5 = utr5.reset_index(drop=True).copy()
-        self.utr3 = utr3.reset_index(drop=True).copy()
+        if copy:
+            genes = genes.reset_index(drop=True).copy()
+            transcripts = transcripts.reset_index(drop=True).copy()
+            exons = exons.reset_index(drop=True).copy()
+            introns = introns.reset_index(drop=True).copy()
+            utr5 = utr5.reset_index(drop=True).copy()
+            utr3 = utr3.reset_index(drop=True).copy()
+        else:
+            genes = genes.reset_index(drop=True)
+            transcripts = transcripts.reset_index(drop=True)
+            exons = exons.reset_index(drop=True)
+            introns = introns.reset_index(drop=True)
+            utr5 = utr5.reset_index(drop=True)
+            utr3 = utr3.reset_index(drop=True)
+
+        self.genes = genes
+        self.transcripts = transcripts
+        self.exons = exons
+        self.introns = introns
+        self.utr5 = utr5
+        self.utr3 = utr3
 
         self._features: Dict[str, pd.DataFrame] = {
             "gene": self.genes,
@@ -347,6 +364,7 @@ class GeneAnnotation:
             "Exon": self.exon_index,
             "Intron": self.intron_index,
         }
+        self._array_cache: Dict[tuple[int, str], np.ndarray] = {}
 
     # ------------------------------------------------------------------
     # construction
@@ -408,6 +426,7 @@ class GeneAnnotation:
                 warnings.warn(
                     "exon records without transcript_id/gene_id will be ignored",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
             exon_rows.loc[missing_tx, "transcript_id"] = exon_rows.loc[
                 missing_tx, "gene_id"
@@ -737,6 +756,21 @@ class GeneAnnotation:
 
     def category_index(self, category: str) -> BinnedIntervalIndex:
         return self._category_indexes[category]
+
+    def _array(self, table: pd.DataFrame, column: str) -> np.ndarray:
+        """Cached raw NumPy view of one column.
+
+        Scalar ``DataFrame.iat`` access is surprisingly expensive for the
+        string-backed annotation columns; the annotation engine therefore
+        reads hot columns (``tss``/``strand``/ids) through these cached arrays.
+        """
+
+        key = (id(table), column)
+        arr = self._array_cache.get(key)
+        if arr is None:
+            arr = table[column].to_numpy(copy=False)
+            self._array_cache[key] = arr
+        return arr
 
     # ------------------------------------------------------------------
     # backwards-compatible gene helpers
@@ -1399,6 +1433,8 @@ def _nearest_feature(
 
     tss_index = model.tss_index_for(level)
     span_index = model.span_index_for(level)
+    feature_tss = model._array(features, "tss")
+    feature_strand = model._array(features, "strand")
     follow_idx, precede_idx = tss_index.follow_precede(
         chrom,
         start,
@@ -1410,8 +1446,13 @@ def _nearest_feature(
     def _dist(feature_idx: Optional[int], pos: int) -> float:
         if feature_idx is None:
             return float("inf")
-        row = features.iloc[int(feature_idx)]
-        return float(_signed_distance(pos, int(row["tss"]), str(row["strand"])))
+        return float(
+            _signed_distance(
+                pos,
+                int(feature_tss[int(feature_idx)]),
+                str(feature_strand[int(feature_idx)]),
+            )
+        )
 
     ps_d = _dist(follow_idx, start)
     pe_d = _dist(precede_idx, end - 1)
@@ -1443,9 +1484,13 @@ def _nearest_feature(
             )
             if len(hits):
                 feature_idx = int(hits[0])
-                row = features.iloc[feature_idx]
                 distance = float(
-                    _distance_to_tss(start, end, int(row["tss"]), str(row["strand"]))
+                    _distance_to_tss(
+                        start,
+                        end,
+                        int(feature_tss[feature_idx]),
+                        str(feature_strand[feature_idx]),
+                    )
                 )
         else:
             hits = tss_index.overlapping(
@@ -1490,18 +1535,19 @@ def _category_hit(
     )
     if len(rows) == 0:
         return None
-    row = table.iloc[int(rows[0])]
+    row = int(rows[0])
+    annotation_id = model._array(table, "annotation_id")[row]
 
     if category == "Exon":
         label = (
-            f"Exon ({row['annotation_id']}, exon {int(row['exon_rank'])} "
-            f"of {int(row['exon_total'])})"
+            f"Exon ({annotation_id}, exon {int(model._array(table, 'exon_rank')[row])} "
+            f"of {int(model._array(table, 'exon_total')[row])})"
         )
         detail_key = "Exon"
     elif category == "Intron":
         label = (
-            f"Intron ({row['annotation_id']}, intron {int(row['intron_rank'])} "
-            f"of {int(row['intron_total'])})"
+            f"Intron ({annotation_id}, intron {int(model._array(table, 'intron_rank')[row])} "
+            f"of {int(model._array(table, 'intron_total')[row])})"
         )
         detail_key = "Intron"
     elif category == "5UTR":
@@ -1513,8 +1559,8 @@ def _category_hit(
 
     return _CategoryHit(
         annotation=label,
-        feature_id=str(row["transcript_id"]),
-        gene_id=str(row["gene_id"]),
+        feature_id=str(model._array(table, "transcript_id")[row]),
+        gene_id=str(model._array(table, "gene_id")[row]),
         detail_key=detail_key,
     )
 
@@ -1541,11 +1587,12 @@ def _downstream_annotation(
     if follow_idx is None:
         return None, None
 
-    feature = model.features(level).iloc[int(follow_idx)]
-    if str(feature["strand"]) == "+":
-        dd = int(start) - (int(feature["end"]) - 1)
+    feature = model.features(level)
+    feature_idx = int(follow_idx)
+    if str(model._array(feature, "strand")[feature_idx]) == "+":
+        dd = int(start) - (int(model._array(feature, "end")[feature_idx]) - 1)
     else:
-        dd = (int(end) - 1) - int(feature["start"])
+        dd = (int(end) - 1) - int(model._array(feature, "start")[feature_idx])
 
     dsd = int(downstream_distance)
     if dd == 0 or abs(dd) > dsd:
@@ -1648,15 +1695,24 @@ def annotate_peak(
         raise ValueError("level must be 'transcript' or 'gene'")
     if gtf is None:
         gtf = TxDb
+    from .genomes import (
+        is_assembly_name,
+        is_genome_spec,
+        load_annotation,
+        load_genome,
+        supported_genomes,
+    )
+
     if gtf is None:
         raise ValueError(
             "provide gtf=... or TxDb=..., or a bundled assembly name such as "
             f"{', '.join(supported_genomes())}"
         )
-    from .genomes import is_assembly_name, load_genome, supported_genomes
 
     if is_assembly_name(gtf):
         gtf = load_genome(gtf)
+    elif is_genome_spec(gtf):
+        gtf = load_annotation(gtf)
     if str(overlap) not in {"TSS", "all"}:
         raise ValueError("overlap must be 'TSS' or 'all'")
 
@@ -1712,6 +1768,23 @@ def annotate_peak(
     dropped = 0
     total = len(peaks_df)
 
+    features = model.features(level)
+    feature_columns = [
+        "gene_id",
+        "gene_name",
+        "chrom",
+        "start",
+        "end",
+        "strand",
+        "length",
+        "gene_type",
+    ]
+    if level == "transcript":
+        feature_columns += ["transcript_id", "transcript_name", "transcript_type"]
+    feature_arrays = {
+        column: model._array(features, column) for column in feature_columns
+    }
+
     for i, row in enumerate(peaks_df.itertuples(index=False), start=1):
         chrom = str(row.chrom)
         start = int(row.start)
@@ -1735,7 +1808,6 @@ def annotate_peak(
             dropped += 1
             continue
 
-        nearest_row = model.features(level).iloc[nearest_idx]
         promoter_hit = (
             assign_genomic_annotation
             and tss_region[0] <= nearest_distance <= tss_region[1]
@@ -1845,26 +1917,26 @@ def annotate_peak(
                         )
                     )
 
-        feature = model.features(level).iloc[feature_idx]
-        nearest_feature = model.features(level).iloc[nearest_idx]
-        gene_id = str(feature["gene_id"])
-        gene_name = str(feature["gene_name"])
-        gene_chrom = str(feature["chrom"])
-        gene_start = int(feature["start"])
-        gene_end = int(feature["end"])
-        gene_strand = str(feature["strand"])
-        gene_length = int(feature["length"])
-        gene_type = None if pd.isna(feature.get("gene_type")) else str(feature.get("gene_type"))
+        gene_id = str(feature_arrays["gene_id"][feature_idx])
+        gene_name = str(feature_arrays["gene_name"][feature_idx])
+        gene_chrom = str(feature_arrays["chrom"][feature_idx])
+        gene_start = int(feature_arrays["start"][feature_idx])
+        gene_end = int(feature_arrays["end"][feature_idx])
+        gene_strand = str(feature_arrays["strand"][feature_idx])
+        gene_length = int(feature_arrays["length"][feature_idx])
+        gene_type_value = feature_arrays["gene_type"][feature_idx]
+        gene_type = None if pd.isna(gene_type_value) else str(gene_type_value)
         transcript_id = None
         transcript_name = None
         transcript_type = None
         if level == "transcript":
-            transcript_id = str(feature["transcript_id"])
-            transcript_name = str(feature["transcript_name"])
+            transcript_id = str(feature_arrays["transcript_id"][feature_idx])
+            transcript_name = str(feature_arrays["transcript_name"][feature_idx])
+            transcript_type_value = feature_arrays["transcript_type"][feature_idx]
             transcript_type = (
                 None
-                if pd.isna(feature.get("transcript_type"))
-                else str(feature.get("transcript_type"))
+                if pd.isna(transcript_type_value)
+                else str(transcript_type_value)
             )
 
         detail["genic"] = bool(detail["Exon"] or detail["Intron"])
@@ -1892,10 +1964,10 @@ def annotate_peak(
                 "transcript_name": transcript_name,
                 "transcript_type": transcript_type,
                 "distance_to_tss": distance,
-                "nearest_gene_id": str(nearest_feature["gene_id"]),
-                "nearest_gene_name": str(nearest_feature["gene_name"]),
+                "nearest_gene_id": str(feature_arrays["gene_id"][nearest_idx]),
+                "nearest_gene_name": str(feature_arrays["gene_name"][nearest_idx]),
                 "nearest_transcript_id": (
-                    str(nearest_feature["transcript_id"])
+                    str(feature_arrays["transcript_id"][nearest_idx])
                     if level == "transcript"
                     else None
                 ),
@@ -1912,6 +1984,7 @@ def annotate_peak(
             f"{dropped} of {total} peaks were dropped because no feature was "
             "found on their chromosome; check chromosome naming/seqlevels",
             RuntimeWarning,
+            stacklevel=2,
         )
     if not records:
         raise ValueError(

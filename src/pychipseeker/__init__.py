@@ -38,8 +38,8 @@ from .compat import (
     get_geo_species,
     get_sample_files,
     getAnnoStat,
-    getGEOInfo,
     getGEOgenomeVersion,
+    getGEOInfo,
     getGEOspecies,
     getSampleFiles,
     overlap,
@@ -51,8 +51,28 @@ from .compat import (
     vennplot,
     vennplot_peakfile,
 )
-from .enrichment import enrich_go, enrich_kegg, enrich_peak_genes, enrichr
+from .enrichment import (
+    enrich_go,
+    enrich_kegg,
+    enrich_peak_genes,
+    enrichr,
+    ora,
+    read_gmt,
+)
+from .genomes import (
+    cached_genomes,
+    clear_genome_cache,
+    download_genome,
+    download_gtf,
+    genome_provenance,
+    is_genome_spec,
+    load_annotation,
+    load_genome,
+    parse_genome_spec,
+    supported_genomes,
+)
 from .io import read_gtf, read_peaks, write_table
+from .peaks import call_peaks, call_peaks_macs, write_peaks
 from .plotting import (
     extract_tss_matrix,
     extract_tss_matrix_from_signal,
@@ -62,6 +82,7 @@ from .plotting import (
     plot_tss_heatmap,
     plot_tss_profile,
 )
+from .report import build_report
 from .tagmatrix import (
     TagMatrix,
     get_bio_region,
@@ -74,10 +95,10 @@ from .tagmatrix import (
     make_bio_region_from_granges,
     makeBioRegionFromGranges,
     peak_heatmap,
-    peak_profile_heatmap,
-    peak_Profile_Heatmap,
-    peakHeatmap,
     peak_heatmap_multiple_sets,
+    peak_Profile_Heatmap,
+    peak_profile_heatmap,
+    peakHeatmap,
     peakHeatmap_multiple_Sets,
     plot_avg_prof,
     plot_multi_prof,
@@ -113,6 +134,20 @@ __all__ = [
     "read_peak_file",
     "readPeakFile",
     "write_table",
+    "call_peaks",
+    "call_peaks_macs",
+    "write_peaks",
+    "load_genome",
+    "load_annotation",
+    "supported_genomes",
+    "is_genome_spec",
+    "parse_genome_spec",
+    "download_genome",
+    "download_gtf",
+    "cached_genomes",
+    "clear_genome_cache",
+    "genome_provenance",
+    "build_report",
     "as_granges",
     "asGRanges",
     "combine_cs_anno",
@@ -188,6 +223,8 @@ __all__ = [
     "peak_Profile_Heatmap",
     "enrichr",
     "enrich_go",
+    "ora",
+    "read_gmt",
     "enrich_kegg",
     "enrich_peak_genes",
 ]

@@ -1,7 +1,5 @@
 """Tests for the bundled ENCODE H3K4me3 demo signal bigWig."""
 
-import json
-import sys
 
 import pytest
 

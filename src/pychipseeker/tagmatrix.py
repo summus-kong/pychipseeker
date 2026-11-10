@@ -16,14 +16,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from statistics import NormalDist
-from typing import Iterable, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 
 from .annotation import GeneAnnotation, _normalise_peaks
 from .genomes import is_assembly_name
-from .io import read_peaks
 
 
 class TagMatrix(np.ndarray):
@@ -90,6 +89,10 @@ def _resolve_annotation(
         from .genomes import load_genome  # deferred: keep import graph flat
 
         return load_genome(source)
+    from .genomes import is_genome_spec, load_annotation
+
+    if is_genome_spec(source):
+        return load_annotation(source)
     if isinstance(source, (str, Path, pd.DataFrame)):
         return GeneAnnotation.from_gtf(source)
     raise TypeError("annotation must be a GTF path, DataFrame or GeneAnnotation")
@@ -639,7 +642,7 @@ def example_signal_provenance() -> dict:
     with as_file(
         files("pychipseeker").joinpath("data", "ENCODE_demo_signal.json")
     ) as path:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
 
 
