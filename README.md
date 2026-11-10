@@ -77,9 +77,9 @@ Optional features are split into extras:
 
 | Extra | Adds | Used for |
 |---|---|---|
-| `bigwig` | `pyBigWig` | direct `.bw`/`.bigWig` signal access and peak calling |
+| `bigwig` | `pyBigWig` (non-Windows) | direct `.bw`/`.bigWig` signal access and peak calling |
 | `bigbed` | `pybigtools` | reading bigBed peak files (or use UCSC `bigBedToBed`) |
-| `bam` | `pysam` | reading BAM/CRAM alignments |
+| `bam` | `pysam` (non-Windows) | reading BAM/CRAM alignments |
 | `enrich` | `gseapy` | online Enrichr analysis |
 | `all` | all of the above | full feature set |
 | `dev` | pytest, pytest-cov, ruff, mypy | development |
@@ -88,11 +88,14 @@ Optional features are split into extras:
 pip install "pychipseeker[all]"
 ```
 
-`pyBigWig` has no official Windows wheel for every Python version; use
-conda-forge (`conda install -c conda-forge pybigwig`) or install a C compiler
-if pip must build it from source.  Genome tables do not need `pyBigWig`; only
-direct signal-track access does.  R is not required for any Python
-functionality.
+Core installation and `[all]` are safe on Windows: `pyBigWig` and `pysam`
+are marked non-Windows because they do not have PyPI wheels for every
+Windows/Python combination.  Install them separately when signal or BAM
+support is needed (`conda install -c conda-forge pybigwig` and
+`conda install -c bioconda pysam`); everything else, including peak
+annotation, tag matrices, QC and reports, works without them.  Genome
+tables do not need `pyBigWig`; only direct signal-track access does.  R is
+not required for any Python functionality.
 
 ## Installation
 

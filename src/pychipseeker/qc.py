@@ -174,7 +174,8 @@ def _bigwig_handle(path: Union[str, Path]):
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pyBigWig is required for bigWig QC; install with "
-            "`pip install pychipseeker[bigwig]`"
+            "`pip install pychipseeker[bigwig]` (on Windows use "
+            "`conda install -c conda-forge pybigwig`)"
         ) from exc
     handle = pyBigWig.open(str(path))
     if handle is None:
@@ -188,7 +189,8 @@ def _bam_handle(path: Union[str, Path]):
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pysam is required for BAM/CRAM QC; install with "
-            "`pip install pychipseeker[bam]`"
+            "`pip install pychipseeker[bam]` (on Windows use "
+            "`conda install -c bioconda pysam`)"
         ) from exc
     return pysam.AlignmentFile(str(path), "rb")
 

@@ -37,14 +37,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-bigwig = ["pyBigWig>=0.3.22"]
+# pyBigWig and pysam have no PyPI wheels for every Windows/Python
+# combination.  Marking them non-Windows keeps
+# `pip install pychipseeker[all]` installable there; Windows users who need
+# signal or BAM support can install them via conda-forge/bioconda.
+bigwig = ["pyBigWig>=0.3.22; sys_platform != 'win32'"]
 bigbed = ["pybigtools>=0.1"]
-bam = ["pysam>=0.21"]
+bam = ["pysam>=0.21; sys_platform != 'win32'"]
 enrich = ["gseapy>=1.1"]
 all = [
-    "pyBigWig>=0.3.22",
+    "pyBigWig>=0.3.22; sys_platform != 'win32'",
     "pybigtools>=0.1",
-    "pysam>=0.21",
+    "pysam>=0.21; sys_platform != 'win32'",
     "gseapy>=1.1",
 ]
 dev = [

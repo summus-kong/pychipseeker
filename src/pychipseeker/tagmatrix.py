@@ -415,7 +415,8 @@ def _bigwig_matrix(
     except ImportError as exc:  # pragma: no cover - dependency installation issue
         raise ImportError(
             "pyBigWig is required for bigWig-backed tag matrices; install with "
-            "`pip install pychipseeker[bigwig]`"
+            "`pip install pychipseeker[bigwig]` (on Windows use "
+            "`conda install -c conda-forge pybigwig`)"
         ) from exc
 
     if str(value_type) not in {"sum", "mean", "max", "min", "coverage", "std"}:
@@ -636,7 +637,8 @@ def _bam_matrix(
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pysam is required for BAM-backed tag matrices; install with "
-            "`pip install pychipseeker[bam]`"
+            "`pip install pychipseeker[bam]` (on Windows use "
+            "`conda install -c bioconda pysam`)"
         ) from exc
 
     value_type = str(value_type)

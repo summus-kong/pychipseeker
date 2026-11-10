@@ -24,7 +24,7 @@ All notable changes to pychipseeker are documented here.  The format follows
   `get_tag_matrix_from_bam` and `.bam`/`.cram` auto-detection build coverage
   matrices with `pysam`, including strand handling and binning.
 - **Enrichment upgrades.**  Local ORA now reports odds ratios with 95%
-  confidence intervals; `gsea`/`gsea_peak_genes` wrap pranked GSEA through
+  confidence intervals; `gsea`/`gsea_peak_genes` wrap preranked GSEA through
   `gseapy`; `plot_enrichment` draws bar and clusterProfiler-style dot plots;
   the CLI gains `enrich --plot`.
 - **Peak workflow.**  `filter_peaks` removes blacklist, mitochondrial,
@@ -46,6 +46,13 @@ All notable changes to pychipseeker are documented here.  The format follows
   listing gains `--json`, and `report` accepts `--upstream`/`--downstream`.
 - The test suite adds real bigWig QC/BAM stubs, chromosome aliases, GFF3 and
   coverage gates (CI enforces 75% line coverage).
+- Windows installs are no longer blocked by optional signal/BAM dependencies:
+  the `bigwig`, `bam` and `all` extras skip `pyBigWig`/`pysam` on Windows,
+  where they have no wheel for every Python version.  Install them via
+  conda-forge/bioconda when needed.
+- CI adds a core-only test job (no optional extras) and a Windows wheel
+  install/smoke job; the optional `pyBigWig` install step always succeeds so
+  skipped bigWig tests never appear as errors.
 
 ### Fixed
 

@@ -797,7 +797,8 @@ def extract_tss_matrix(
     except ImportError as exc:  # pragma: no cover - dependency installation issue
         raise ImportError(
             "pyBigWig is required to read .bw/.bigWig files directly. "
-            "Install it with `pip install pychipseeker[bigwig]`, or use "
+            "Install it with `pip install pychipseeker[bigwig]` (on Windows "
+            "use `conda install -c conda-forge pybigwig`), or use "
             "extract_tss_matrix_from_signal() with a bedGraph table or pass "
             "matrix=... to plot_tss_profile/plot_tss_heatmap."
         ) from exc

@@ -25,7 +25,8 @@ def _open_bigwig(path: Union[str, Path]):
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pyBigWig is required to call peaks from a bigWig; install with "
-            "`pip install pychipseeker[bigwig]`"
+            "`pip install pychipseeker[bigwig]` (on Windows use "
+            "`conda install -c conda-forge pybigwig`)"
         ) from exc
     handle = pyBigWig.open(str(path))
     if handle is None:

@@ -10,9 +10,9 @@ Optional features are split into extras:
 
 | Extra | Adds | Used for |
 |---|---|---|
-| `bigwig` | `pyBigWig` | direct `.bw`/`.bigWig` TSS profiles, peak calling, FRiP |
+| `bigwig` | `pyBigWig` (non-Windows) | direct `.bw`/`.bigWig` TSS profiles, peak calling, FRiP |
 | `bigbed` | `pybigtools` | reading `.bb`/`.bigBed` peak files |
-| `bam` | `pysam` | BAM/CRAM tag matrices, FRiP and TSS QC |
+| `bam` | `pysam` (non-Windows) | BAM/CRAM tag matrices, FRiP and TSS QC |
 | `enrich` | `gseapy` | Enrichr and preranked GSEA |
 | `all` | all of the above | full feature set |
 | `dev` | pytest, pytest-cov, ruff, mypy | development |
@@ -30,7 +30,10 @@ pip install -e ".[dev,bigwig]"
 pytest -q
 ```
 
-`pyBigWig` has no official Windows wheel on every Python version; use
-conda-forge (`conda install -c conda-forge pybigwig`) or install a C compiler
-if pip must build it from source.  Genome tables do not need `pyBigWig`; only
-direct signal-track access does.
+`pyBigWig` and `pysam` have no PyPI wheels on every Windows/Python version,
+so the `bigwig`, `bam` and `all` extras skip them on Windows.  This keeps
+`pip install pychipseeker[all]` working there.  Install them separately with
+conda-forge (`conda install -c conda-forge pybigwig`) or bioconda
+(`conda install -c bioconda pysam`) if you need direct signal or BAM access;
+otherwise all annotation, tag-matrix, QC and report features work without
+them.  Genome tables do not need `pyBigWig`.

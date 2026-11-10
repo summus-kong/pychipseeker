@@ -562,7 +562,8 @@ def _read_bam(path: Path) -> pd.DataFrame:
     except ImportError as exc:
         raise ImportError(
             "reading .bam/.cram files requires the optional pysam package "
-            "(`pip install pychipseeker[bam]`)"
+            "(`pip install pychipseeker[bam]`; on Windows use "
+            "`conda install -c bioconda pysam`)"
         ) from exc
 
     rows: list[dict[str, object]] = []
