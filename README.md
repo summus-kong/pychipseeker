@@ -11,10 +11,11 @@ TSS distances.  The core annotation engine has been checked against
 common tag-matrix, profile, heatmap, overlap and summary helpers.
 
 It is **not** an official ChIPseeker port.  Bioconductor `OrgDb` classes and
-the GEO database are not bundled; instead `TxDb=` accepts either a GTF/GFF
-path, a `GeneAnnotation` object, or a bundled assembly name (`"hg38"`,
-`"hg19"`, `"mm10"`, `"mm9"`); see [PARITY.md](PARITY.md) for the exact
-coverage and the remaining gaps.
+the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
+`GeneAnnotation` object, a bundled assembly name (`"hg38"`, `"hg19"`,
+`"mm10"`, `"mm9"`), an on-demand assembly (`"dm6"`, `"danRer11"`, `"rn7"`,
+`"mm39"`, `"sacCer3"`), or an `ensembl:`/`gencode:`/`url:` download spec.  See
+[docs/genomes.md](docs/genomes.md) and [PARITY.md](PARITY.md).
 
 ## Features
 
@@ -28,35 +29,70 @@ coverage and the remaining gaps.
   `makeBioRegionFromGranges`).
 - Peak-coverage tag matrices (`getTagMatrix`), average profiles, heatmaps and
   multi-window profiles.
-- bigWig signal matrices and TSS profiles using `pyBigWig`.
-- Peak-set overlap, Venn/UpSet summaries, coverage plots and overlap
-  enrichment tests.
-- Thin Enrichr wrapper via optional `gseapy`.
+- bigWig signal matrices and TSS profiles (optional `[bigwig]` extra).
+- Peak-set overlap, true UpSet plots, coverage plots and overlap enrichment
+  tests.
+- Threshold peak calling from a bigWig (`call_peaks`) and an optional MACS2/3
+  wrapper.
+- **Input formats**: BED, narrowPeak/broadPeak/gappedPeak (including gzip),
+  TSV/CSV, bigBed (optional) and BAM/CRAM (optional).
+- **Multi-page PDF reports** and a `pychipseeker report` command.
+- **Enrichment**: Enrichr via optional `gseapy`, plus a dependency-free local
+  over-representation analysis with BH/Bonferroni correction and explicit
+  backgrounds.
+- **Genome cache**: bundled hg19/hg38/mm9/mm10 plus on-demand Ensembl
+  assemblies and arbitrary `ensembl:`/`gencode:`/`url:` GTFs.
+
+## Performance
+
+Measured on the committed real ENCODE H3K4me3/mm10 example (11,291 peaks,
+Windows, Python 3.11):
+
+| Operation | Before | Now |
+|---|---:|---:|
+| First 11k-peak annotation | 45.7 s | ~7.6 s |
+| Second annotation (warm genome) | ~45 s | ~8 s |
+| `load_genome("mm10")` | 36.9 s | ~1.7 s |
+| `extract_tss_matrix`, 81,540 TSS | ~54 min | ~11 s |
+
+The TSS matrix path reproduces `pyBigWig.stats` exactly for divisible and
+odd bin counts.  Run `python scripts/bench.py --txdb mm10` to reproduce the
+annotation numbers on your machine.
 
 ## Dependencies
 
-Core installation requires:
+Core installation requires only:
 
 - `numpy`
 - `pandas`
 - `matplotlib`
-- `pyBigWig` (declared dependency; used for direct `.bw`/`.bigWig` access)
 
-If a platform has no prebuilt `pyBigWig` wheel, install a C compiler or use a
-conda-forge binary.  On Windows, pip ships no native wheel, but the C
-extension builds from source with a MinGW toolchain (`NOCURL` disables
-remote-file access; local files work, including non-ASCII paths).  R is not
-required for any Python functionality.
+Optional features are split into extras:
 
-Optional:
+| Extra | Adds | Used for |
+|---|---|---|
+| `bigwig` | `pyBigWig` | direct `.bw`/`.bigWig` signal access and peak calling |
+| `bigbed` | `pybigtools` | reading bigBed peak files (or use UCSC `bigBedToBed`) |
+| `bam` | `pysam` | reading BAM/CRAM alignments |
+| `enrich` | `gseapy` | online Enrichr analysis |
+| `all` | all of the above | full feature set |
+| `dev` | pytest, pytest-cov, ruff, mypy | development |
 
-- `gseapy` for Enrichr integration: `pip install -e ".[enrich]"`
-- `pytest` for development: `pip install -e ".[dev]"`
+```bash
+pip install "pychipseeker[all]"
+```
+
+`pyBigWig` has no official Windows wheel for every Python version; use
+conda-forge (`conda install -c conda-forge pybigwig`) or install a C compiler
+if pip must build it from source.  Bundled genome tables do not need
+`pyBigWig`; only direct signal-track access does.  R is not required for any
+Python functionality.
 
 ## Installation
 
 ```bash
-pip install -e .
+pip install pychipseeker          # from PyPI when published
+pip install -e ".[dev,bigwig]"    # editable development install
 ```
 
 ## Quick start
@@ -82,9 +118,15 @@ ann2 = pcs.annotate_peak("peaks.bed", "genes.gtf", upstream=3000, downstream=300
 
 # Bundled genome lookup — TxDb="assembly", like ChIPseeker's TxDb= packages
 ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")   # also hg38, hg19, mm9
+# On-demand assemblies download once from Ensembl and are cached:
+ann = pcs.annotatePeak("peaks.bed", TxDb="dm6")    # also danRer11, rn7, mm39, sacCer3
+# Any Ensembl/GENCODE/URL GTF works through a spec:
+ann = pcs.annotatePeak("peaks.bed", TxDb="ensembl:mouse@110")
+ann = pcs.annotatePeak("peaks.bed", TxDb="gencode:human@44")
+ann = pcs.annotatePeak("peaks.bed", TxDb="url:https://example.org/genes.gtf.gz")
 # aliases (case-insensitive) work too: "GRCh38", "GRCh37", "GRCm38", "GRCm37"
-# bundles are fetched on demand into a local cache on first use; see
-# pychipseeker.genomes docs and NOTICE.md for provenance (GENCODE releases).
+# bundled tables ship with the wheel; downloaded bundles live in the cache and
+# `pychipseeker cache` manages them.  See docs/genomes.md and NOTICE.md.
 
 # ChIPseeker-style column names
 chip_df = ann.to_chipseeker()
@@ -249,12 +291,26 @@ hypergeometric tests; p-values are not expected to be byte-identical.
 
 ```bash
 pychipseeker annotate \
-    --peaks peaks.bed \
-    --gtf genes.gtf \
+    --peaks peaks.narrowPeak \
+    --txdb mm10 \
     --output peaks.annotated.tsv \
     --plot-dir plots \
     --summary
+
+pychipseeker report \
+    --peaks peaks.narrowPeak \
+    --txdb mm10 \
+    --bigwig signal.bw \
+    --output report.pdf
+
+pychipseeker cache list
+pychipseeker cache download dm6
 ```
+
+`--gtf` and `--txdb` are mutually exclusive; `--txdb` accepts the same names
+and specs as the Python API.  `report` builds the multi-page PDF described in
+[docs/cli.md](docs/cli.md), and `enrich` supports online Enrichr or offline
+ORA with `--local --gmt`.
 
 Plot from an existing annotation table:
 
@@ -372,25 +428,34 @@ python comparison/compare.py --no-r   # only re-check existing r_*/py_* files
   (see the script's docstring; the very large `GEOmetadb.sqlite` download is
   up to the user).
 - GFF3 support is best-effort; GTF is the primary annotation input.
-- Visualization is matplotlib-based.  Category labels, percentages and axis
-  directions follow ChIPseeker, but ggplot2 aesthetics are not reproduced
-  exactly.
+- Visualization is matplotlib-based.  The implemented plot types reproduce
+  ChIPseeker's ggplot2 `theme_grey` defaults (grey panel, white grid, matching
+  colours, labels and axis directions); custom `theme_*` settings from R are
+  not replicated.
 - `enrichPeakOverlap` / `enrichAnnoOverlap` implement the same statistical
   ideas with Python code; exact p-values, multiple-testing details and
   permutation counts can differ.
-- Peak annotation uses a bin-based interval index and Python loops.  It is
-  intended for typical peak sets, not whole-genome single-base processing.
-- `pyBigWig` is a declared dependency.  On platforms without a prebuilt wheel,
-  a C compiler or conda-forge is required.
+- Annotation and TSS matrices are optimised for typical peak sets (tens to
+  hundreds of thousands of peaks); whole-genome single-base processing is out
+  of scope.
+- Direct bigWig/bigBed/BAM access needs the corresponding optional extra (or
+  the UCSC/`samtools` command-line tools); the core annotation path has no
+  compiled dependencies.
 
 See [PARITY.md](PARITY.md) for the function-by-function status.
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,bigwig]"
 pytest -q
+python -m ruff check src tests examples
+python -m mypy
 ```
+
+`python scripts/bench.py --txdb mm10` reproduces the performance table.
+Documentation lives in [docs/](docs/index.md); release notes are in
+[CHANGELOG.md](CHANGELOG.md).
 
 The core test suite uses synthetic GTF/BED data.  Real bigWig tests use
 upstream pyBigWig's own `pyBigWigTest/test.bw` file (bundled as

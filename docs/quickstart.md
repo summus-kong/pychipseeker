@@ -1,0 +1,53 @@
+# Quick start
+
+```python
+import pychipseeker as pcs
+
+# Bundled genome tables: hg38, hg19, mm10, mm9
+ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")
+print(ann.annoStat)
+
+# A GTF/GFF file, DataFrame or GeneAnnotation object works too
+ann = pcs.annotate_peak("peaks.bed", "genes.gtf", tss_region=(-3000, 3000))
+
+# ChIPseeker-style result table and plots
+df = ann.to_chipseeker()
+fig, ax = ann.plot_anno_pie()
+fig, ax = ann.plot_anno_bar()
+fig, ax = ann.plot_dist_to_tss()
+```
+
+## Tag matrices
+
+```python
+promoters = pcs.getPromoters(TxDb=ann.gene_annotation,
+                             upstream=3000, downstream=2000)
+tag = pcs.getTagMatrix(ann.peaks, windows=promoters, nbin=100)
+fig, ax = pcs.plotAvgProf(tag, conf=0.95)
+fig, ax = pcs.tagHeatmap(tag)
+```
+
+## bigWig signal around TSS
+
+The `bigwig` extra is required.
+
+```python
+matrix = pcs.extract_tss_matrix(
+    "signal.bw",
+    ann.gene_annotation.features("transcript"),
+    window=2000,
+    n_bins=100,
+)
+fig, ax = pcs.plot_tss_profile(matrix, window=2000)
+fig, ax = pcs.plot_tss_heatmap(matrix, window=2000)
+```
+
+## One PDF report
+
+```bash
+pychipseeker report \
+    --peaks peaks.narrowPeak \
+    --txdb mm10 \
+    --bigwig signal.bw \
+    --output report.pdf
+```

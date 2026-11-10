@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pychipseeker"
-version = "0.3.0"
+version = "0.4.0"
 description = "A lightweight, ChIPseeker-compatible Python implementation of peak annotation and visualization"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,17 +28,39 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Typing :: Typed",
 ]
 dependencies = [
     "numpy>=1.23",
     "pandas>=1.5",
     "matplotlib>=3.6",
-    "pyBigWig>=0.3.22",
 ]
 
 [project.optional-dependencies]
+bigwig = ["pyBigWig>=0.3.22"]
+bigbed = ["pybigtools>=0.1"]
+bam = ["pysam>=0.21"]
 enrich = ["gseapy>=1.1"]
-dev = ["pytest>=7", "pytest-cov"]
+all = [
+    "pyBigWig>=0.3.22",
+    "pybigtools>=0.1",
+    "pysam>=0.21",
+    "gseapy>=1.1",
+]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/summus-kong/pychipseeker"
+Documentation = "https://github.com/summus-kong/pychipseeker/tree/main/docs"
+Source = "https://github.com/summus-kong/pychipseeker"
+Issues = "https://github.com/summus-kong/pychipseeker/issues"
+Changelog = "https://github.com/summus-kong/pychipseeker/blob/main/CHANGELOG.md"
+"Genome data" = "https://github.com/summus-kong/pychipseeker/releases/tag/genome-data-2026.10"
 
 [project.scripts]
 pychipseeker = "pychipseeker.cli:main"
@@ -48,6 +70,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 pychipseeker = [
+    "py.typed",
     "data/*.csv.gz",
     "data/*.json",
     "data/*.bw",
@@ -58,3 +81,50 @@ pychipseeker = [
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "examples/output",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501", # long comments/docstrings are kept readable in source
+    "B008", # argparse defaults and pandas idioms
+    "UP006", # keep typing.Dict/List for Python 3.9 compatibility
+    "UP007", # X | Y annotations are not enforced for Python 3.9
+    "UP035",
+    "UP037",
+    "UP045",
+    "UP031",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+"examples/*" = ["E402", "F401"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = false
+check_untyped_defs = false
+files = [
+    "src/pychipseeker/enrichment.py",
+    "src/pychipseeker/genomes.py",
+    "src/pychipseeker/io.py",
+    "src/pychipseeker/peaks.py",
+    "src/pychipseeker/report.py",
+]
+exclude = ["examples/output", "build", "dist"]
+
+[tool.coverage.run]
+source = ["pychipseeker"]
+omit = ["src/pychipseeker/data/*"]

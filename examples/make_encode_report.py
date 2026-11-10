@@ -73,7 +73,7 @@ def _title_page(ann, bigwig: Path, n_all: int) -> plt.Figure:
         ("Assembly / annotation", "mm10 (UCSC), bundled pychipseeker mm10 bundle"),
         ("Peaks", f"{n_all:,} threshold-called peaks (signal ≥ 3, ≥ 500 bp)"),
         ("Peak width", "median 958 bp, mean 1,119 bp, max 8.9 kb"),
-        ("Annotation", f"TxDb='mm10', promoter window −1 kb / +1 kb"),
+        ("Annotation", "TxDb='mm10', promoter window −1 kb / +1 kb"),
         ("Promoter (≤1 kb)", f"{ann.annoStat.loc[0, 'Frequency']:.1f}%"),
         ("Distal intergenic", f"{ann.annoStat.iloc[-1]['Frequency']:.2f}%"),
         ("pychipseeker", __version__),

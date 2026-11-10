@@ -33,8 +33,8 @@ def call_peaks(
 ):
     """Return a BED6-like ``DataFrame`` of threshold-called peaks."""
 
-    import pyBigWig
     import pandas as pd
+    import pyBigWig
 
     bw = pyBigWig.open(str(bigwig))
     try:
