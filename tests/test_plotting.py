@@ -32,6 +32,14 @@ def test_plot_anno_pie(annotation):
     plt.close(fig)
 
 
+def test_plot_anno_pie_without_autopct(annotation):
+    # Matplotlib returns a 2-tuple from ax.pie() when autopct is None.
+    fig, ax = plot_anno_pie(annotation, autopct=None, legend=False)
+    assert fig is not None
+    assert ax is not None
+    plt.close(fig)
+
+
 def test_plot_anno_bar(annotation):
     fig, ax = plot_anno_bar(annotation)
     assert fig is not None

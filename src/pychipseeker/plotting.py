@@ -221,7 +221,7 @@ def plot_anno_pie(
         "autopct", lambda pct: f"{pct:.{ndigit}f}%" if pct >= 3.0 else ""
     )
     kwargs.setdefault("radius", 0.97)
-    wedges, _texts, autotexts = ax.pie(
+    pie = ax.pie(
         values,
         labels=None,
         colors=colors,
@@ -231,6 +231,13 @@ def plot_anno_pie(
         wedgeprops=dict(edgecolor="white", linewidth=1.0),
         **kwargs,
     )
+    # Matplotlib returns a 2-value container when autopct is None
+    # (a 3-value container or tuple otherwise).
+    wedges = pie[0]
+    try:
+        autotexts = pie[2]
+    except IndexError:
+        autotexts = []
     # Percentage labels: white when drawn on top of a dark wedge.
     for autotext, wedge in zip(autotexts, wedges):
         autotext.set_fontsize(8.5)
