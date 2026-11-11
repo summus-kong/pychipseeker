@@ -4,6 +4,35 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-11-11
+
+### Changed
+
+- **Vectorised peak-coverage tag matrices.**  `get_tag_matrix(peak=...)` now
+  reduces each chromosome to a piecewise-constant coverage track and evaluates
+  every window as a difference of its cumulative integral.  Runtime scales with
+  the number of bins instead of the number of nearby peaks: 100,000 synthetic
+  6 kb windows drop from 157 s to 0.43 s, and the real mm10 promoter matrix on
+  the example ENCODE peaks drops from 16.5 s to 0.84 s with bit-identical
+  values.
+- Process parallelism for peak-coverage matrices now only activates for very
+  large window sets (50,000 windows per worker with `fork`, 400,000 with
+  `spawn`), because the vectorised sequential path is faster than pool start-up
+  below those thresholds.
+
+### Fixed
+
+- The peak-coverage overlap lookup no longer assumes peak end coordinates are
+  sorted.  Inputs whose ends were not monotone could lose coverage from a long
+  peak that started before a shorter one.
+- Peak-free gaps no longer accumulate floating-point residues from the coverage
+  track, so windows without signal are still dropped exactly.
+
+### Added
+
+- `scripts/bench_coverage.py`, a reproducible synthetic benchmark for the
+  peak-coverage path.
+
 ## [0.7.0] - 2026-11-11
 
 ### Added
