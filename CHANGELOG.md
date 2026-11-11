@@ -4,6 +4,22 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-11-11
+
+### Fixed
+
+- `plot_anno_pie(autopct=None)` no longer fails on Matplotlib 3.11, where
+  `Axes.pie()` returns a two-value `PieContainer` instead of a three-tuple.
+
+### Changed
+
+- Redesigned the real-ENCODE figure plate: an Okabe-Ito colourblind-safe
+  palette shared across panels, direct labels, a donut composition key,
+  peak-width and cumulative-distance panels that expose the non-promoter tail,
+  a single-hue tag heatmap, and a publication-style annotation table.
+- Added small-sample counts and medians to the peak-width legend, and a
+  method caption plus panel list to the plate footer.
+
 ## [0.8.0] - 2026-11-11
 
 ### Changed

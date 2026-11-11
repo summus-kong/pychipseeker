@@ -16,24 +16,134 @@ Outputs (``examples/output/encode``):
 - ``encode_figure_plate.pdf`` / ``.png`` -- one A3 portrait plate, panels A-F
 - ``encode_figures.pdf`` -- six pages, one figure each
 - ``figures/*.pdf`` / ``figures/*.png`` -- individual vector figures
+
+Design notes
+------------
+- Categorical colours use the Okabe-Ito palette, which stays distinguishable
+  under all common colour-vision deficiencies and in greyscale print
+  (Wong, *Nat. Methods* 2011; Okabe & Ito 2008).
+- Sequential data (tag heatmap) uses a single-hue, perceptually ordered map.
+- The layout follows the "Ten Simple Rules for Better Figures"
+  (Rougier et al., *PLoS Comput. Biol.* 2014): one message per panel,
+  direct labelling where possible, no decorative gridlines, and colour
+  used redundantly with text.
+- Panels B and C use bespoke matplotlib layouts.  The default single-sample
+  composition/distance bars are dominated by the 92% promoter fraction, so
+  a width histogram and a cumulative distance curve communicate the same
+  data without hiding the tail (and without the misleading 50/50 split of
+  zero-distance peaks).
 """
 
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 import matplotlib
 
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib import ticker
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.patches import Circle, Rectangle, Wedge
 
 import pychipseeker as pcs
 
 HERE = Path(__file__).resolve().parent
+
+#: Okabe-Ito colour-vision-deficiency-safe palette (Wong 2011).
+OKABE_ITO = {
+    "blue": "#0072B2",
+    "sky": "#56B4E9",
+    "green": "#009E73",
+    "yellow": "#F0E442",
+    "orange": "#E69F00",
+    "vermillion": "#D55E00",
+    "purple": "#CC79A7",
+    "grey": "#8C8C8C",
+    "light_grey": "#C8C8C8",
+    "ink": "#333333",
+}
+
+#: Semantic colour map shared by panels A, B and F.
+ANNO_COLORS = {
+    "Promoter (<=1kb)": OKABE_ITO["blue"],
+    "Promoter (1-2kb)": OKABE_ITO["sky"],
+    "Promoter (2-3kb)": OKABE_ITO["green"],
+    "5' UTR": OKABE_ITO["yellow"],
+    "3' UTR": OKABE_ITO["orange"],
+    "Other Exon": OKABE_ITO["purple"],
+    "1st Intron": OKABE_ITO["vermillion"],
+    "Other Intron": OKABE_ITO["grey"],
+    "Downstream (<=300)": OKABE_ITO["light_grey"],
+    "Distal Intergenic": OKABE_ITO["ink"],
+}
+
+INK = "#1A1A1A"
+MUTED = "#5F6B76"
+RULE = "#D5DCE3"
+
+
+@contextmanager
+def _no_tight_layout() -> Iterator[None]:
+    """Keep library helpers from overriding the plate's grid."""
+
+    original = Figure.tight_layout
+    Figure.tight_layout = lambda self, *args, **kwargs: None  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        Figure.tight_layout = original  # type: ignore[assignment]
+
+
+def _clean_axes(ax) -> None:
+    """Publication-style axes: no panel fill, no grid, two thin spines."""
+
+    ax.set_facecolor("white")
+    ax.grid(False)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_visible(True)
+        ax.spines[side].set_color("#8A949E")
+        ax.spines[side].set_linewidth(0.7)
+    ax.tick_params(
+        axis="both",
+        colors=MUTED,
+        labelcolor=INK,
+        length=3.0,
+        width=0.7,
+        direction="out",
+        labelsize=8.6,
+        pad=3.0,
+    )
+
+
+def _framed_axes(ax) -> None:
+    """Thin complete frame, used for raster-like panels (heatmaps)."""
+
+    ax.grid(False)
+    for side in ("top", "right", "bottom", "left"):
+        ax.spines[side].set_visible(True)
+        ax.spines[side].set_color("#8A949E")
+        ax.spines[side].set_linewidth(0.7)
+    ax.tick_params(
+        axis="both",
+        colors=MUTED,
+        labelcolor=INK,
+        length=2.6,
+        width=0.7,
+        direction="out",
+        labelsize=8.4,
+        pad=3.0,
+    )
 
 
 def _save_one(fig: plt.Figure, stem: str, figdir: Path) -> None:
@@ -42,83 +152,555 @@ def _save_one(fig: plt.Figure, stem: str, figdir: Path) -> None:
     fig.savefig(figdir / f"{stem}.png", dpi=220, bbox_inches="tight")
 
 
-def _stats_axes(ann, ax) -> None:
-    stat = ann.annoStat.copy()
+def _panel_header(fig, spec, letter: str, title: str):
+    """Reserve a slim header row and return the content subgridspec."""
+
+    sub = spec.subgridspec(2, 1, height_ratios=[0.11, 1.0], hspace=0.0)
+    head = fig.add_subplot(sub[0])
+    head.axis("off")
+    head.set_xlim(0, 1)
+    head.set_ylim(0, 1)
+    head.text(
+        0.0,
+        0.52,
+        letter,
+        fontsize=17,
+        fontweight="bold",
+        color=INK,
+        ha="left",
+        va="center",
+    )
+    head.annotate(
+        title,
+        xy=(0.0, 0.52),
+        xycoords="axes fraction",
+        xytext=(21, 0),
+        textcoords="offset points",
+        fontsize=12.2,
+        color=INK,
+        ha="left",
+        va="center",
+    )
+    return sub[1]
+
+
+def _anno_colors(stat: pd.DataFrame) -> list[str]:
+    return [ANNO_COLORS.get(str(f), OKABE_ITO["grey"]) for f in stat["Feature"]]
+
+
+def _draw_key(ax, stat: pd.DataFrame) -> None:
+    """A table-like colour key with exact percentages and counts."""
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.axis("off")
-    ax.set_title("Annotation statistics (annoStat)", loc="left", fontsize=11)
+    ax.plot([0, 1], [0.932, 0.932], color=RULE, linewidth=0.7, clip_on=False)
+    ax.text(0.0, 0.962, "Feature", fontsize=7.4, color=MUTED, weight="bold")
+    ax.text(0.78, 0.962, "%", fontsize=7.4, color=MUTED, weight="bold", ha="right")
+    ax.text(0.99, 0.962, "n", fontsize=7.4, color=MUTED, weight="bold", ha="right")
+
+    colors = _anno_colors(stat)
+    step = 0.085
+    for i, row in enumerate(stat.itertuples(index=False)):
+        y = 0.884 - i * step
+        ax.add_patch(
+            Rectangle(
+                (0.0, y - 0.011),
+                0.034,
+                0.022,
+                facecolor=colors[i],
+                edgecolor="none",
+                clip_on=False,
+            )
+        )
+        ax.text(0.058, y, str(row.Feature), fontsize=8.6, color=INK, va="center")
+        ax.text(
+            0.78,
+            y,
+            f"{float(row.Frequency):.2f}",
+            fontsize=8.2,
+            color=INK,
+            va="center",
+            ha="right",
+        )
+        ax.text(
+            0.99,
+            y,
+            f"{int(row.Count):,}",
+            fontsize=8.2,
+            color=MUTED,
+            va="center",
+            ha="right",
+        )
+
+
+def _draw_pie(ann, ax, key_ax) -> None:
+    stat = ann.annoStat
+    with _no_tight_layout():
+        ann.plot_anno_pie(
+            ax=ax,
+            colors=_anno_colors(stat),
+            legend=False,
+            title="",
+            autopct=None,
+        )
+
+    # Turn the pie into a donut and drop the ggplot-style grey backing disc.
+    for patch in list(ax.patches):
+        if isinstance(patch, Circle):
+            patch.remove()
+    for patch in ax.patches:
+        if isinstance(patch, Wedge):
+            patch.set_width(0.37)
+            patch.set_edgecolor("white")
+            patch.set_linewidth(1.3)
+
+    promoter = float(stat.loc[0, "Frequency"])
+    ax.text(
+        0.0,
+        0.10,
+        f"{promoter:.1f}%",
+        ha="center",
+        va="center",
+        fontsize=25,
+        fontweight="bold",
+        color=OKABE_ITO["blue"],
+    )
+    ax.text(
+        0.0,
+        -0.10,
+        "promoter \u2264 1 kb",
+        ha="center",
+        va="center",
+        fontsize=9.2,
+        color=INK,
+    )
+    _draw_key(key_ax, stat)
+
+
+def _panel_pie(fig, spec, ann):
+    sub = spec.subgridspec(1, 2, width_ratios=[1.0, 1.06], wspace=0.02)
+    ax = fig.add_subplot(sub[0])
+    key_ax = fig.add_subplot(sub[1])
+    _draw_pie(ann, ax, key_ax)
+    return ax
+
+
+def _draw_width(ax, df: pd.DataFrame) -> None:
+    width = (df["end"] - df["start"]).to_numpy(dtype=float)
+    promoter = df["annotation"].astype(str).str.startswith("Promoter").to_numpy()
+    edges = np.geomspace(500.0, 8200.0, 39)
+
+    groups = [
+        (width[promoter], OKABE_ITO["blue"], "Promoter", True, "-"),
+        (width[~promoter], OKABE_ITO["vermillion"], "Other", False, (0, (4, 2))),
+    ]
+    top = 0.0
+    for values, color, name, filled, linestyle in groups:
+        counts, _ = np.histogram(values, bins=edges)
+        frac = counts / max(counts.sum(), 1)
+        if filled:
+            ax.stairs(
+                frac,
+                edges,
+                baseline=0.0,
+                fill=True,
+                color=color,
+                alpha=0.22,
+                linewidth=0,
+            )
+        ax.stairs(
+            frac,
+            edges,
+            baseline=0.0,
+            color=color,
+            linewidth=1.7,
+            linestyle=linestyle,
+        )
+        top = max(top, float(frac.max()))
+        median = float(np.median(values))
+        ax.plot(
+            [],
+            [],
+            color=color,
+            linewidth=1.7,
+            linestyle=linestyle,
+            label=f"{name} (n = {values.size:,}; median {median:,.0f} bp)",
+        )
+
+    ax.set_xscale("log")
+    ax.set_xlim(500, 8200)
+    ax.set_ylim(0, top * 1.28)
+    ax.set_xticks([500, 1000, 2000, 5000, 8000])
+    ax.set_xticklabels(["0.5", "1", "2", "5", "8"])
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xlabel("Peak width (kb, log scale)")
+    ax.set_ylabel("Fraction of peaks")
+    ax.legend(
+        loc="upper right",
+        fontsize=7.9,
+        frameon=False,
+        handlelength=1.5,
+        handletextpad=0.6,
+        labelspacing=0.35,
+        borderaxespad=0.2,
+    )
+    _clean_axes(ax)
+
+
+def _draw_distance(ax, df: pd.DataFrame) -> None:
+    dist = np.abs(df["distance_to_tss"].to_numpy(dtype=float))
+    dist = np.sort(dist[np.isfinite(dist)])
+    cumulative = np.arange(1, dist.size + 1) / dist.size * 100.0
+
+    ax.axvspan(0, 1000, color="#F1F7FC", zorder=0, linewidth=0)
+    ax.fill_between(
+        dist,
+        cumulative,
+        step="post",
+        color=OKABE_ITO["sky"],
+        alpha=0.18,
+        linewidth=0,
+        zorder=1,
+    )
+    ax.step(
+        dist,
+        cumulative,
+        where="post",
+        color=OKABE_ITO["blue"],
+        linewidth=1.9,
+        zorder=3,
+    )
+    ax.axvline(1000, color="#9FB6C9", linewidth=0.8, linestyle=(0, (4, 3)), zorder=2)
+
+    ax.set_xscale("symlog", linthresh=100, linscale=0.8)
+    ax.set_xlim(0, 3e6)
+    ax.set_ylim(0, 102)
+    ax.set_xticks([0, 100, 1000, 10000, 100000, 1000000])
+    ax.set_xticklabels(["0", "100", "1 kb", "10 kb", "100 kb", "1 Mb"])
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_yticks([0, 20, 40, 60, 80, 100])
+    ax.set_xlabel("Distance to TSS (bp, symlog)")
+    ax.set_ylabel("Cumulative peaks (%)")
+
+    def pct_within(limit: float) -> float:
+        return float(np.searchsorted(dist, limit, side="right")) / dist.size * 100.0
+
+    marks = [(1000, pct_within(1000)), (10000, pct_within(10000)), (100000, pct_within(100000))]
+    for x, y in marks:
+        ax.plot([x], [y], "o", markersize=4.2, color=OKABE_ITO["blue"], zorder=4)
+
+    ax.annotate(
+        f"{marks[0][1]:.1f}% within 1 kb",
+        xy=(1000, marks[0][1]),
+        xytext=(2.6e3, 63),
+        fontsize=9.2,
+        color=OKABE_ITO["blue"],
+        fontweight="bold",
+        arrowprops=dict(arrowstyle="-", color=OKABE_ITO["blue"], linewidth=0.8, shrinkA=2, shrinkB=3),
+        zorder=5,
+    )
+    ax.text(
+        1.15e4,
+        marks[1][1] - 4.0,
+        f"{marks[1][1]:.1f}% \u2264 10 kb",
+        fontsize=8.0,
+        color=MUTED,
+        ha="left",
+        va="center",
+    )
+    ax.text(
+        1.1e5,
+        marks[2][1] - 4.0,
+        f"{marks[2][1]:.1f}% \u2264 100 kb",
+        fontsize=8.0,
+        color=MUTED,
+        ha="left",
+        va="center",
+    )
+    zero_pct = float(np.mean(dist == 0)) * 100.0
+    ax.text(
+        0.02,
+        0.055,
+        f"{zero_pct:.1f}% of peaks at d = 0",
+        transform=ax.transAxes,
+        fontsize=7.6,
+        color=MUTED,
+        ha="left",
+        va="bottom",
+    )
+    _clean_axes(ax)
+
+
+def _draw_profile(ax, tag) -> None:
+    pcs.plot_avg_prof(tag, conf=0.95, color=OKABE_ITO["blue"], ax=ax, label=None)
+    ax.set_title("")
+    if ax.collections:
+        ax.collections[0].set_facecolor(OKABE_ITO["sky"])
+        ax.collections[0].set_alpha(0.28)
+        ax.collections[0].set_edgecolor("none")
+    if ax.lines:
+        ax.lines[0].set_linewidth(1.9)
+
+    ax.set_xlim(-3000, 3000)
+    ax.set_ylim(bottom=0)
+    ax.set_xticks([-3000, -2000, -1000, 0, 1000, 2000, 3000])
+    ax.set_xticklabels(["-3", "-2", "-1", "TSS", "1", "2", "3"])
+    ax.set_xlabel("Distance from TSS (kb)")
+    ax.set_ylabel("Mean tag density")
+    rows = int(np.asarray(tag, dtype=float).shape[0])
+    ax.text(
+        0.02,
+        0.96,
+        f"n = {rows:,} promoters",
+        transform=ax.transAxes,
+        fontsize=8.0,
+        color=MUTED,
+        ha="left",
+        va="top",
+    )
+    _clean_axes(ax)
+
+
+def _draw_heatmap(fig, ax, tag) -> None:
+    pcs.tag_heatmap(tag, ax=ax, palette="Blues")
+    ax.set_title("")
+
+    # Replace the library's space-stealing colorbar with a slim inset bar.
+    for other in list(fig.axes):
+        if other is not ax and getattr(other, "_colorbar", None) is not None:
+            other.remove()
+    image = ax.images[0]
+    image.set_interpolation("nearest")
+    cax = ax.inset_axes([1.022, 0.0, 0.032, 1.0])
+    cbar = fig.colorbar(image, cax=cax)
+    cbar.outline.set_visible(False)
+    cbar.ax.tick_params(labelsize=7.4, length=2.0, width=0.6, colors=MUTED)
+    cbar.set_label("Tag density", fontsize=8.2, color=INK, labelpad=5)
+
+    rows = int(np.asarray(tag, dtype=float).shape[0])
+    ax.set_xticks([-3000, -2000, -1000, 0, 1000, 2000, 3000])
+    ax.set_xticklabels(["-3", "-2", "-1", "TSS", "1", "2", "3"])
+    ax.set_yticks([])
+    ax.set_xlabel("Distance from TSS (kb)")
+    ax.set_ylabel(f"Promoters (n = {rows:,}, sorted)")
+    for line in ax.lines:
+        line.set_color("#1A1A1A")
+        line.set_linewidth(0.7)
+        line.set_alpha(0.75)
+    _framed_axes(ax)
+
+
+def _draw_table(ax, ann, used: int) -> None:
+    stat = ann.annoStat.reset_index(drop=True)
+    colors = _anno_colors(stat)
+    rows = [
+        ["\u25a0", str(row.Feature), f"{float(row.Frequency):.2f}", f"{int(row.Count):,}"]
+        for row in stat.itertuples(index=False)
+    ]
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    promoter = float(stat.loc[0, "Frequency"])
+    ax.text(
+        0.0,
+        0.985,
+        f"{used:,} peaks  \u00b7  {promoter:.1f}% promoter \u2264 1 kb  \u00b7  "
+        f"{len(stat)} annotation classes",
+        fontsize=8.8,
+        color=MUTED,
+        ha="left",
+        va="top",
+    )
+
     table = ax.table(
-        cellText=stat[["Feature", "Frequency", "Count"]].round(2).astype(str).values,
-        colLabels=["Feature", "Frequency (%)", "Count"],
-        loc="center",
+        cellText=rows,
+        colLabels=["", "Feature", "% peaks", "Count"],
+        colWidths=[0.06, 0.50, 0.22, 0.22],
         cellLoc="center",
+        loc="center",
+        bbox=[0.0, 0.045, 1.0, 0.855],
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(8)
-    table.scale(0.92, 1.5)
-    for cell in table.get_celld().values():
-        cell.set_edgecolor("white")
+    table.set_fontsize(8.5)
+    table.scale(1.0, 1.22)
+
+    for (r, c), cell in table.get_celld().items():
+        cell.set_edgecolor("none")
+        cell.set_linewidth(0)
+        if r == 0:
+            cell.set_facecolor("#E8EEF4")
+            ha = "left" if c == 1 else ("right" if c in (2, 3) else "center")
+            cell.set_text_props(weight="bold", color=INK, ha=ha)
+            cell.visible_edges = "B"
+            cell.set_edgecolor("#8A949E")
+            cell.set_linewidth(0.9)
+            continue
+        cell.set_facecolor("#F6F9FB" if r % 2 == 0 else "white")
+        if c == 0:
+            cell.get_text().set_color(colors[r - 1])
+            cell.get_text().set_fontsize(10.0)
+        elif c in (2, 3):
+            cell.get_text().set_ha("right")
+            cell.get_text().set_color(INK if c == 2 else MUTED)
+        else:
+            cell.get_text().set_ha("left")
+            cell.get_text().set_color(INK)
+
+    ax.text(
+        0.0,
+        0.005,
+        "Percentages follow ChIPseeker's annoStat categories.",
+        fontsize=7.4,
+        color=MUTED,
+        ha="left",
+        va="bottom",
+    )
 
 
-def _panel_figures(ann, tag):
-    yield ann.plot_anno_pie()[0], "A_annotation_pie", "A"
-    yield ann.plot_anno_bar()[0], "B_annotation_bar", "B"
-    yield ann.plot_dist_to_tss()[0], "C_distance_to_tss", "C"
-    yield pcs.plot_avg_prof(tag, conf=None)[0], "D_tag_profile", "D"
-    yield pcs.tag_heatmap(tag)[0], "E_tag_heatmap", "E"
-    yield pcs.covplot(ann.peaks, title="Peak coverage")[0], "F_peak_coverage", "F"
+def _standalone(letter: str, title: str, figsize: tuple[float, float]):
+    fig = plt.figure(figsize=figsize)
+    outer = fig.add_gridspec(1, 1, left=0.07, right=0.955, top=0.96, bottom=0.105)
+    content = _panel_header(fig, outer[0], letter, title)
+    return fig, content
 
 
-def _composite_plate(ann, tag, caption: str) -> plt.Figure:
-    original = Figure.tight_layout
-    Figure.tight_layout = lambda self, *args, **kwargs: None  # type: ignore[assignment]
-    try:
-        fig = plt.figure(figsize=(12.0, 15.5))
+def _figure_pie(ann) -> plt.Figure:
+    fig, content = _standalone("A", "Annotation composition", (7.4, 4.6))
+    _panel_pie(fig, content, ann)
+    return fig
+
+
+def _figure_width(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("B", "Peak width distribution", (6.8, 4.3))
+    ax = fig.add_subplot(content)
+    _draw_width(ax, df)
+    return fig
+
+
+def _figure_distance(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("C", "Distance to TSS", (6.8, 4.3))
+    ax = fig.add_subplot(content)
+    _draw_distance(ax, df)
+    return fig
+
+
+def _figure_profile(tag) -> plt.Figure:
+    fig, content = _standalone("D", "Average H3K4me3 profile", (6.8, 4.2))
+    ax = fig.add_subplot(content)
+    _draw_profile(ax, tag)
+    return fig
+
+
+def _figure_heatmap(tag) -> plt.Figure:
+    fig, content = _standalone("E", "Promoter-centered tag density", (6.9, 4.8))
+    ax = fig.add_subplot(content)
+    _draw_heatmap(fig, ax, tag)
+    return fig
+
+
+def _figure_table(ann, used: int) -> plt.Figure:
+    fig, content = _standalone("F", "Annotation statistics", (7.1, 4.8))
+    ax = fig.add_subplot(content)
+    _draw_table(ax, ann, used)
+    return fig
+
+
+def _panel_figures(ann, tag, df) -> Iterator[tuple[plt.Figure, str]]:
+    used = len(ann.peaks)
+    yield _figure_pie(ann), "A_annotation_composition"
+    yield _figure_width(df), "B_peak_width"
+    yield _figure_distance(df), "C_distance_to_tss"
+    yield _figure_profile(tag), "D_tag_profile"
+    yield _figure_heatmap(tag), "E_tag_heatmap"
+    yield _figure_table(ann, used), "F_annotation_stats"
+
+
+def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
+    with _no_tight_layout():
+        fig = plt.figure(figsize=(11.69, 16.54))
         gs = fig.add_gridspec(
             3,
             2,
-            left=0.05,
-            right=0.93,
-            top=0.90,
-            bottom=0.09,
-            hspace=0.42,
-            wspace=0.78,
+            left=0.055,
+            right=0.945,
+            top=0.912,
+            bottom=0.105,
+            height_ratios=[1.0, 1.02, 1.18],
+            width_ratios=[1.0, 1.0],
+            hspace=0.28,
+            wspace=0.24,
         )
-        axes = [fig.add_subplot(gs[i, j]) for i in range(3) for j in range(2)]
 
-        ann.plot_anno_pie(ax=axes[0])
-        legend = axes[0].get_legend()
-        if legend is not None:
-            legend.set_frame_on(False)
-            for text in legend.get_texts():
-                text.set_fontsize(8)
-        ann.plot_anno_bar(ax=axes[1])
-        ann.plot_dist_to_tss(ax=axes[2])
-        pcs.plot_avg_prof(tag, conf=None, ax=axes[3])
-        pcs.tag_heatmap(tag, ax=axes[4])
-        _stats_axes(ann, axes[5])
+        _panel_pie(fig, _panel_header(fig, gs[0, 0], "A", "Annotation composition"), ann)
 
-        for letter, ax in zip("ABCDEF", axes):
-            ax.text(
-                -0.06,
-                1.045,
-                letter,
-                transform=ax.transAxes,
-                fontsize=19,
-                weight="bold",
-                ha="right",
-                va="bottom",
+        ax_b = fig.add_subplot(
+            _panel_header(fig, gs[0, 1], "B", "Peak width distribution")
+        )
+        _draw_width(ax_b, df)
+
+        ax_c = fig.add_subplot(_panel_header(fig, gs[1, 0], "C", "Distance to TSS"))
+        _draw_distance(ax_c, df)
+
+        ax_d = fig.add_subplot(
+            _panel_header(fig, gs[1, 1], "D", "Average H3K4me3 profile")
+        )
+        _draw_profile(ax_d, tag)
+
+        ax_e = fig.add_subplot(
+            _panel_header(fig, gs[2, 0], "E", "Promoter-centered tag density")
+        )
+        _draw_heatmap(fig, ax_e, tag)
+
+        ax_f = fig.add_subplot(
+            _panel_header(fig, gs[2, 1], "F", "Annotation statistics")
+        )
+        _draw_table(ax_f, ann, len(ann.peaks))
+
+        fig.text(
+            0.055,
+            0.972,
+            "pychipseeker \u2014 H3K4me3 promoter landscape in mouse ENCODE",
+            fontsize=19,
+            fontweight="bold",
+            color=INK,
+            ha="left",
+            va="top",
+        )
+        fig.text(
+            0.055,
+            0.949,
+            f"{len(ann.peaks):,} peaks  \u00b7  "
+            f"{float(ann.annoStat.loc[0, 'Frequency']):.1f}% within \u00b11 kb of a TSS  \u00b7  mm10",
+            fontsize=10.4,
+            color=MUTED,
+            ha="left",
+            va="top",
+        )
+        fig.add_artist(
+            Line2D(
+                [0.055, 0.945],
+                [0.933, 0.933],
+                transform=fig.transFigure,
+                color=RULE,
+                linewidth=0.9,
             )
-
-        fig.suptitle(
-            "pychipseeker — real ENCODE H3K4me3 peaks (mm10)",
-            fontsize=18,
-            weight="bold",
-            y=0.975,
         )
-        fig.text(0.5, 0.022, caption, ha="center", fontsize=8.5, color="0.4")
+
+        fig.text(0.5, 0.058, caption, ha="center", fontsize=7.8, color=MUTED)
+        fig.text(0.5, 0.042, provenance, ha="center", fontsize=7.4, color="#7C8792")
+        fig.text(
+            0.5,
+            0.026,
+            "(A) Annotation composition \u00b7 (B) Peak widths \u00b7 "
+            "(C) Cumulative distance to TSS \u00b7 (D) Mean profile \u00b1 95% CI \u00b7 "
+            "(E) Tag heatmap \u00b7 (F) Annotation statistics",
+            ha="center",
+            fontsize=7.4,
+            color="#7C8792",
+        )
         return fig
-    finally:
-        Figure.tight_layout = original  # type: ignore[assignment]
 
 
 def main() -> int:
@@ -137,6 +719,9 @@ def main() -> int:
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
     figdir = out / "figures"
+    figdir.mkdir(parents=True, exist_ok=True)
+    for stale in list(figdir.glob("*.pdf")) + list(figdir.glob("*.png")):
+        stale.unlink()
 
     ann = pcs.annotate_peak(peaks=args.peaks, TxDb=args.txdb, verbose=False)
     used = len(ann.peaks)
@@ -146,6 +731,8 @@ def main() -> int:
         ann = pcs.annotate_peak(peaks=peaks, TxDb=args.txdb, verbose=False)
         used = len(ann.peaks)
 
+    df = ann.to_dataframe(include_peak_metadata=True)
+
     promoters = pcs.get_promoters(
         TxDb=ann.gene_annotation,
         upstream=args.upstream,
@@ -154,17 +741,23 @@ def main() -> int:
     tag = pcs.get_tag_matrix(peak=ann.peaks, windows=promoters, nbin=60)
 
     caption = (
-        f"ENCODE ENCSR000CDQ · H3K4me3 · mm10 · {used:,} peaks "
-        f"(signal ≥ 3, 500 bp–8.9 kb) · promoter window ±{args.upstream / 1000:g} kb"
+        "ENCODE H3K4me3 peaks (ENCSR000CDQ, mm10) called at signal \u2265 3, "
+        "merged over 1 kb gaps and \u2265 500 bp; promoter windows "
+        f"\u00b1{args.upstream / 1000:g} kb around mm10 TSSs."
+    )
+    provenance = (
+        f"pychipseeker {pcs.__version__}  \u00b7  annotation: mm10 TxDb  "
+        "\u00b7  data: ENCODE ENCFF893ZGR"
     )
 
     with PdfPages(str(out / "encode_figures.pdf")) as pdf:
-        for fig, stem, _letter in _panel_figures(ann, tag):
-            _save_one(fig, stem, figdir)
-            pdf.savefig(fig, bbox_inches="tight")
-            plt.close(fig)
+        with _no_tight_layout():
+            for fig, stem in _panel_figures(ann, tag, df):
+                _save_one(fig, stem, figdir)
+                pdf.savefig(fig, bbox_inches="tight")
+                plt.close(fig)
 
-    plate = _composite_plate(ann, tag, caption)
+    plate = _composite_plate(ann, tag, df, caption, provenance)
     plate.savefig(out / "encode_figure_plate.pdf", bbox_inches="tight")
     plate.savefig(out / "encode_figure_plate.png", dpi=220, bbox_inches="tight")
     plt.close(plate)
