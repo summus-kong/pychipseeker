@@ -21,6 +21,16 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from ._bigwig import (
+    VECTORISED_VALUE_TYPES,
+    WINDOW_MODE,
+    BlockJob,
+    IntervalIntegrator,
+    plan_blocks,
+    run_blocks,
+    stats_matrix,
+    window_matrix,
+)
 from .annotation import GeneAnnotation, _normalise_peaks
 from .genomes import is_assembly_name
 from .parallel import chunk_bounds, effective_jobs, parallel_map
@@ -332,27 +342,17 @@ def _peak_arrays(peaks: pd.DataFrame) -> dict[str, tuple[np.ndarray, np.ndarray,
     return out
 
 
-def _coverage_matrix(
-    peaks: pd.DataFrame,
+def _coverage_rows(
+    by_chrom: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
     windows: pd.DataFrame,
     *,
     n_bins: Optional[int],
     ignore_strand: bool,
-) -> tuple[np.ndarray, pd.DataFrame, bool]:
-    if windows.empty:
-        raise ValueError("windows is empty")
-    widths = (windows["end"] - windows["start"]).to_numpy(dtype=np.int64)
-    if n_bins is None and len(np.unique(widths)) != 1:
-        raise ValueError(
-            "windows must have equal widths when nbin is not supplied; "
-            "use nbin=... for variable-width regions"
-        )
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Build peak-coverage rows for one block of windows."""
 
-    by_chrom = _peak_arrays(peaks)
     rows: list[np.ndarray] = []
     kept: list[pd.Series] = []
-    is_binning = n_bins is not None
-
     for _, window in windows.iterrows():
         chrom = str(window["chrom"])
         start = int(window["start"])
@@ -397,10 +397,89 @@ def _coverage_matrix(
         kept.append(window)
 
     if not rows:
+        width = int(n_bins) if n_bins is not None else 0
+        return np.empty((0, width), dtype=float), pd.DataFrame(
+            columns=windows.columns
+        )
+    return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True)
+
+
+_COVERAGE_MIN_WINDOWS = 8000
+_COVERAGE_WORKER: Optional[tuple[dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]], Optional[int], bool]] = None
+
+
+def _coverage_worker_init(
+    by_chrom: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
+    n_bins: Optional[int],
+    ignore_strand: bool,
+) -> None:
+    global _COVERAGE_WORKER
+    _COVERAGE_WORKER = (by_chrom, n_bins, bool(ignore_strand))
+
+
+def _coverage_worker(windows: pd.DataFrame) -> tuple[np.ndarray, pd.DataFrame]:
+    if _COVERAGE_WORKER is None:  # pragma: no cover - pool guard
+        raise RuntimeError("coverage matrix worker was not initialised")
+    by_chrom, n_bins, ignore_strand = _COVERAGE_WORKER
+    return _coverage_rows(
+        by_chrom,
+        windows,
+        n_bins=n_bins,
+        ignore_strand=ignore_strand,
+    )
+
+
+def _coverage_matrix(
+    peaks: pd.DataFrame,
+    windows: pd.DataFrame,
+    *,
+    n_bins: Optional[int],
+    ignore_strand: bool,
+    n_jobs: Optional[int] = None,
+) -> tuple[np.ndarray, pd.DataFrame, bool]:
+    if windows.empty:
+        raise ValueError("windows is empty")
+    widths = (windows["end"] - windows["start"]).to_numpy(dtype=np.int64)
+    if n_bins is None and len(np.unique(widths)) != 1:
+        raise ValueError(
+            "windows must have equal widths when nbin is not supplied; "
+            "use nbin=... for variable-width regions"
+        )
+
+    by_chrom = _peak_arrays(peaks)
+    workers = effective_jobs(n_jobs, tasks=len(windows))
+    if workers > 1 and len(windows) >= _COVERAGE_MIN_WINDOWS * workers:
+        chunks = [
+            windows.iloc[start:stop].reset_index(drop=True)
+            for start, stop in chunk_bounds(len(windows), workers * 4)
+        ]
+        results = parallel_map(
+            _coverage_worker,
+            chunks,
+            n_jobs=workers,
+            initializer=_coverage_worker_init,
+            initargs=(by_chrom, n_bins, bool(ignore_strand)),
+        )
+        matrices = [block for block, _ in results if block.size]
+        kept_frames = [frame for _, frame in results if len(frame)]
+        if not matrices:
+            raise ValueError("no windows overlap any peak")
+        matrix = np.vstack(matrices)
+        row_frame = pd.concat(kept_frames, ignore_index=True)
+        return matrix, row_frame, n_bins is not None
+
+    matrix, row_frame = _coverage_rows(
+        by_chrom,
+        windows,
+        n_bins=n_bins,
+        ignore_strand=ignore_strand,
+    )
+    if matrix.size == 0:
         raise ValueError("no windows overlap any peak")
-    matrix = np.vstack(rows)
-    row_frame = pd.DataFrame(kept).reset_index(drop=True)
-    return matrix, row_frame, is_binning
+    return matrix, row_frame, n_bins is not None
+
+
+_BIGWIG_MATRIX_MIN_WINDOWS = 4000
 
 
 def _bigwig_matrix(
@@ -410,6 +489,7 @@ def _bigwig_matrix(
     n_bins: Optional[int],
     ignore_strand: bool,
     value_type: str = "sum",
+    n_jobs: Optional[int] = None,
 ) -> tuple[np.ndarray, pd.DataFrame, bool]:
     try:
         import pyBigWig
@@ -485,98 +565,70 @@ def _bigwig_matrix(
         matrix = np.zeros((rows_idx.size, n_bins_eff), dtype=float)
 
         intervals_fn = getattr(bw, "intervals", None)
-        vectorised = intervals_fn is not None and str(value_type) in {
-            "sum",
-            "mean",
-            "coverage",
-        }
-        if vectorised:
-            # Read each chromosome once and integrate the intervals at the
-            # bin edges.  This replaces one bw.stats() call per window, which
-            # dominates the runtime for transcript-scale matrices.
-            for chrom in pd.unique(chroms[rows_idx]):
-                index = rows_idx[chroms[rows_idx] == chrom]
-                intervals = intervals_fn(str(chrom))
-                if not intervals:
-                    continue
-                table = np.asarray(intervals, dtype=np.float64)
-                if table.ndim != 2 or table.shape[0] == 0:
-                    continue
-                order = np.argsort(table[:, 0], kind="mergesort")
-                table = table[order]
-                starts_i = table[:, 0].astype(np.int64)
-                ends_i = table[:, 1].astype(np.int64)
-                values_i = table[:, 2]
-                lengths = (ends_i - starts_i).astype(np.float64)
-                cum_len = np.concatenate([[0.0], np.cumsum(lengths)])
-                cum_val = np.concatenate([[0.0], np.cumsum(values_i * lengths)])
-                n_intervals = len(starts_i)
-                last = n_intervals - 1
-
-                def _cumulative(
-                    points: np.ndarray,
-                    *,
-                    starts_i: np.ndarray = starts_i,
-                    ends_i: np.ndarray = ends_i,
-                    lengths: np.ndarray = lengths,
-                    values_i: np.ndarray = values_i,
-                    cum_len: np.ndarray = cum_len,
-                    cum_val: np.ndarray = cum_val,
-                    n_intervals: int = n_intervals,
-                    last: int = last,
-                ):
-                    i = np.searchsorted(ends_i, points, side="right")
-                    j = np.minimum(i, last)
-                    part = np.where(
-                        i < n_intervals,
-                        np.clip(points - starts_i[j], 0.0, lengths[j]),
-                        0.0,
-                    )
-                    return cum_len[i] + part, cum_val[i] + part * values_i[j]
-
-                group_starts = starts[index]
-                group_ends = ends[index]
-                group_widths = (group_ends - group_starts).astype(np.int64)
-                edge_offsets = (
-                    np.arange(n_bins_eff + 1, dtype=np.int64)[None, :]
-                    * group_widths[:, None]
-                ) // n_bins_eff
-                edges = group_starts[:, None] + edge_offsets
-                covered, integral = _cumulative(edges.ravel())
-                covered = covered.reshape(len(index), n_bins_eff + 1)
-                integral = integral.reshape(len(index), n_bins_eff + 1)
-                bin_len = np.diff(covered, axis=1)
-                bin_val = np.diff(integral, axis=1)
-                if str(value_type) == "sum":
-                    arr = bin_val
-                elif str(value_type) == "mean":
-                    with np.errstate(invalid="ignore", divide="ignore"):
-                        arr = np.where(bin_len > 0, bin_val / bin_len, np.nan)
-                else:  # coverage
-                    bin_width = np.diff(edges, axis=1)
-                    with np.errstate(invalid="ignore", divide="ignore"):
-                        arr = np.where(bin_width > 0, bin_len / bin_width, np.nan)
-                matrix[np.searchsorted(rows_idx, index)] = arr
-            matrix = np.nan_to_num(matrix, nan=0.0)
+        workers = effective_jobs(n_jobs, tasks=len(rows_idx))
+        if (
+            workers > 1
+            and len(rows_idx) >= _BIGWIG_MATRIX_MIN_WINDOWS * workers
+            and intervals_fn is not None
+        ):
+            tasks = plan_blocks(
+                chroms,
+                starts,
+                starts,
+                ends,
+                rows_idx,
+                n_blocks=workers * 8,
+            )
+            job = BlockJob(
+                kind=WINDOW_MODE,
+                bigwig=str(bigwig),
+                n_bins=n_bins_eff,
+                value_type=str(value_type),
+                ignore_strand=ignore_strand,
+                starts=starts,
+                ends=ends,
+                strands=strands,
+            )
+            for block_rows, block in run_blocks(job, tasks, workers):
+                if block is not None:
+                    matrix[np.searchsorted(rows_idx, block_rows)] = block
         else:
-            # max/min/std need per-bin extrema and are not expressible as a
-            # simple integral.  Keep the exact bw.stats fallback for them, and
-            # for minimal pyBigWig stand-ins without intervals().
-            for out_row, idx in enumerate(rows_idx):
-                vals = bw.stats(
-                    str(chroms[idx]),
-                    int(starts[idx]),
-                    int(ends[idx]),
-                    nBins=n_bins_eff,
-                    type=str(value_type),
-                )
-                if vals is None:
-                    continue
-                values = np.asarray(
-                    [np.nan if v is None else float(v) for v in vals],
-                    dtype=float,
-                )
-                matrix[out_row] = np.nan_to_num(values, nan=0.0)
+            vectorised = intervals_fn is not None and str(
+                value_type
+            ) in VECTORISED_VALUE_TYPES
+            if vectorised:
+                # Read each chromosome once and integrate the intervals at the
+                # bin edges.  This replaces one bw.stats() call per window,
+                # which dominates the runtime for transcript-scale matrices.
+                for chrom in pd.unique(chroms[rows_idx]):
+                    index = rows_idx[chroms[rows_idx] == chrom]
+                    intervals = intervals_fn(str(chrom))
+                    if not intervals:
+                        continue
+                    integrator = IntervalIntegrator(intervals)
+                    arr = window_matrix(
+                        integrator,
+                        starts[index],
+                        ends[index],
+                        n_bins_eff,
+                        str(value_type),
+                    )
+                    matrix[np.searchsorted(rows_idx, index)] = np.nan_to_num(
+                        arr, nan=0.0
+                    )
+            else:
+                # max/min/std need per-bin extrema and are not expressible as
+                # a simple integral.  Keep the exact bw.stats fallback for
+                # them, and for minimal pyBigWig stand-ins without intervals().
+                for out_row, idx in enumerate(rows_idx):
+                    matrix[out_row] = stats_matrix(
+                        bw,
+                        str(chroms[idx]),
+                        starts[idx : idx + 1],
+                        ends[idx : idx + 1],
+                        n_bins_eff,
+                        str(value_type),
+                    )[0]
 
         if not ignore_strand:
             minus = strands[rows_idx] == "-"
@@ -847,6 +899,9 @@ def get_tag_matrix(
 
     If ``windows`` is omitted, a bioregion is built from ``TxDb``/``gtf``/
     ``annotation`` using ``upstream``, ``downstream``, ``by`` and ``type``.
+
+    ``n_jobs`` splits peak-coverage windows or bigWig chromosome blocks across
+    processes; ``-1`` uses every core and results match the sequential run.
     """
 
     if bigwig is None and isinstance(peak, (str, Path)):
@@ -926,6 +981,7 @@ def get_tag_matrix(
             n_bins=nbin,
             ignore_strand=ignore_strand,
             value_type=value_type,
+            n_jobs=n_jobs,
         )
     elif bam is not None:
         matrix, kept, is_binning = _bam_matrix(
@@ -953,6 +1009,7 @@ def get_tag_matrix(
             windows_df,
             n_bins=nbin,
             ignore_strand=ignore_strand,
+            n_jobs=n_jobs,
         )
 
     if verbose:
@@ -975,6 +1032,7 @@ def get_tag_matrix_from_bigwig(
     nbin: Optional[int] = None,
     ignore_strand: bool = False,
     value_type: str = "sum",
+    n_jobs: Optional[int] = None,
 ) -> TagMatrix:
     """Convenience wrapper for a bigWig-backed :class:`TagMatrix`."""
 
@@ -985,6 +1043,7 @@ def get_tag_matrix_from_bigwig(
         n_bins=nbin,
         ignore_strand=ignore_strand,
         value_type=value_type,
+        n_jobs=n_jobs,
     )
     return TagMatrix(
         matrix,

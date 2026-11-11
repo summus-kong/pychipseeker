@@ -1212,6 +1212,7 @@ class PeakAnnotation:
         min_value: Optional[float] = 0.0,
         upstream: Optional[int] = None,
         downstream: Optional[int] = None,
+        n_jobs: Optional[int] = None,
     ) -> np.ndarray:
         """Resolve a precomputed matrix, bedGraph signal, or bigWig."""
 
@@ -1251,6 +1252,7 @@ class PeakAnnotation:
             min_value=0.0 if min_value is None else float(min_value),
             upstream=upstream,
             downstream=downstream,
+            n_jobs=n_jobs,
         )
 
     def plot_tss_profile(
@@ -1268,6 +1270,7 @@ class PeakAnnotation:
         min_value = kwargs.pop("min_value", 0.0)
         upstream = kwargs.pop("upstream", None)
         downstream = kwargs.pop("downstream", None)
+        n_jobs = kwargs.pop("n_jobs", None)
         matrix = self._tss_matrix(
             bigwig,
             matrix=matrix,
@@ -1277,6 +1280,7 @@ class PeakAnnotation:
             min_value=min_value,
             upstream=upstream,
             downstream=downstream,
+            n_jobs=n_jobs,
         )
         return plot_tss_profile(
             matrix,
@@ -1301,6 +1305,7 @@ class PeakAnnotation:
         min_value = kwargs.pop("min_value", 0.0)
         upstream = kwargs.pop("upstream", None)
         downstream = kwargs.pop("downstream", None)
+        n_jobs = kwargs.pop("n_jobs", None)
         matrix = self._tss_matrix(
             bigwig,
             matrix=matrix,
@@ -1310,6 +1315,7 @@ class PeakAnnotation:
             min_value=min_value,
             upstream=upstream,
             downstream=downstream,
+            n_jobs=n_jobs,
         )
         return plot_tss_heatmap(
             matrix,
@@ -1465,7 +1471,7 @@ def _nearest_feature(
     """
 
     features = model.features(level)
-    if features.empty:
+    if len(features) == 0:
         return None, float("nan")
 
     tss_index = model.tss_index_for(level)
@@ -1560,7 +1566,7 @@ def _category_hit(
     same_strand: bool,
 ) -> Optional[_CategoryHit]:
     table = model.category_table(category)
-    if table.empty:
+    if len(table) == 0:
         return None
     index = model.category_index(category)
     rows = index.query(
@@ -1689,6 +1695,7 @@ def _annotate_rows(
         "strand",
         "length",
         "gene_type",
+        "tss",
     ]
     if level == "transcript":
         feature_columns += ["transcript_id", "transcript_name", "transcript_type"]
@@ -1813,20 +1820,17 @@ def _annotate_rows(
             else:
                 alignment_id = annotation_gene_id
         if alignment_id is not None:
-            aligned_row = model.feature_by_id(level, alignment_id)
-            if aligned_row is not None:
-                id_col = "transcript_id" if level == "transcript" else "gene_id"
-                pos = model._positions[level].get(str(aligned_row[id_col]))
-                if pos is not None:
-                    feature_idx = int(pos)
-                    distance = float(
-                        _distance_to_tss(
-                            start,
-                            end,
-                            int(aligned_row["tss"]),
-                            str(aligned_row["strand"]),
-                        )
+            pos = model._positions[level].get(str(alignment_id))
+            if pos is not None:
+                feature_idx = int(pos)
+                distance = float(
+                    _distance_to_tss(
+                        start,
+                        end,
+                        int(feature_arrays["tss"][feature_idx]),
+                        str(feature_arrays["strand"][feature_idx]),
                     )
+                )
 
         gene_id = str(feature_arrays["gene_id"][feature_idx])
         gene_name = str(feature_arrays["gene_name"][feature_idx])
@@ -1895,6 +1899,11 @@ def _annotate_rows(
 
 _PARALLEL_MIN_PEAKS = 2000
 
+# Annotation workers each hold a full genome model (roughly 300 MB for mm10
+# when rebuilt from the cached npz), so ``n_jobs=-1`` is capped to keep memory
+# use and disk contention sane.  Explicit positive values are honoured.
+_ANNOTATION_MAX_AUTO_WORKERS = 8
+
 _WORKER_MODEL: Optional[GeneAnnotation] = None
 _WORKER_CONFIG: Optional[dict[str, object]] = None
 
@@ -1953,6 +1962,8 @@ def _annotate_peaks_frame(
     """
 
     workers = effective_jobs(n_jobs, tasks=len(peaks_df))
+    if n_jobs == -1:
+        workers = min(workers, _ANNOTATION_MAX_AUTO_WORKERS)
     if workers <= 1 or len(peaks_df) < _PARALLEL_MIN_PEAKS:
         return _annotate_rows(
             model, peaks_df, **config  # type: ignore[arg-type]
@@ -1963,16 +1974,24 @@ def _annotate_peaks_frame(
         peaks_df.iloc[chunk_start:chunk_stop].reset_index(drop=True)
         for chunk_start, chunk_stop in bounds
     ]
+    worker_config = dict(config)
+    if worker_config.get("verbose"):
+        # Per-worker counters would interleave and report block-local indices;
+        # print one parent-side progress line instead.
+        worker_config["verbose"] = False
+        print(
+            f"annotating {len(peaks_df):,} peaks with {workers} workers"
+        )
     # Send the model's origin (a small path) when available; rebuilding the
     # six annotation frames in each worker is far cheaper than pickling the
     # several-hundred-megabyte object on every spawn.
     source = getattr(model, "source", None)
     if source is not None:
         initializer = _annotation_worker_init_from_source
-        initargs: tuple[object, ...] = (source, config)
+        initargs: tuple[object, ...] = (source, worker_config)
     else:
         initializer = _annotation_worker_init
-        initargs = (model, config)
+        initargs = (model, worker_config)
     results = parallel_map(
         _annotation_worker,
         chunks,

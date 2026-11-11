@@ -106,3 +106,103 @@ def test_bam_tss_enrichment_parallel_matches_sequential(small_bam: Path) -> None
     parallel = tss_enrichment(genes, n_jobs=2, **options)
     for key, value in sequential.items():
         assert parallel[key] == pytest.approx(value)
+
+
+def _bigwig_fixture() -> Path:
+    pytest.importorskip("pyBigWig")
+    path = Path(__file__).parent / "data" / "test.bw"
+    if not path.exists():  # pragma: no cover - packaging guard
+        pytest.skip("tests/data/test.bw is missing")
+    return path
+
+
+def test_bigwig_tss_matrix_parallel_matches_sequential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pychipseeker import plotting
+
+    path = _bigwig_fixture()
+    monkeypatch.setattr(plotting, "_TSS_MATRIX_MIN_FEATURES", 1)
+
+    rng = np.random.default_rng(11)
+    n = 300
+    genes = pd.DataFrame(
+        {
+            "chrom": np.array(["1", "10"])[rng.integers(0, 2, n)],
+            "tss": rng.integers(1000, 100_000_000, n),
+            "strand": np.array(["+", "-"])[rng.integers(0, 2, n)],
+        }
+    )
+    sequential = plotting.extract_tss_matrix(
+        path, genes, window=100, n_bins=8, n_jobs=1
+    )
+    parallel = plotting.extract_tss_matrix(
+        path, genes, window=100, n_bins=8, n_jobs=2
+    )
+    np.testing.assert_allclose(sequential, parallel, equal_nan=True)
+    assert sequential.shape == (n, 8)
+
+
+def test_bigwig_tag_matrix_parallel_matches_sequential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pychipseeker import tagmatrix
+
+    path = _bigwig_fixture()
+    monkeypatch.setattr(tagmatrix, "_BIGWIG_MATRIX_MIN_WINDOWS", 1)
+
+    rng = np.random.default_rng(12)
+    n = 300
+    starts = rng.integers(1000, 100_000_000, n)
+    windows = pd.DataFrame(
+        {
+            "chrom": np.array(["1", "10"])[rng.integers(0, 2, n)],
+            "start": starts,
+            "end": starts + 200,
+            "strand": np.array(["+", "-"])[rng.integers(0, 2, n)],
+        }
+    )
+    sequential = tagmatrix.get_tag_matrix_from_bigwig(
+        path, windows, nbin=8, value_type="mean", n_jobs=1
+    )
+    parallel = tagmatrix.get_tag_matrix_from_bigwig(
+        path, windows, nbin=8, value_type="mean", n_jobs=2
+    )
+    np.testing.assert_allclose(sequential, parallel)
+
+
+def test_peak_coverage_tag_matrix_parallel_matches_sequential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pychipseeker import tagmatrix
+
+    monkeypatch.setattr(tagmatrix, "_COVERAGE_MIN_WINDOWS", 1)
+
+    rng = np.random.default_rng(13)
+    n_peaks, n_windows = 800, 300
+    pstarts = rng.integers(0, 50_000, n_peaks)
+    peaks = pd.DataFrame(
+        {
+            "chrom": np.repeat("chr1", n_peaks),
+            "start": pstarts,
+            "end": pstarts + rng.integers(50, 500, n_peaks),
+        }
+    )
+    wstarts = rng.integers(0, 50_000, n_windows)
+    windows = pd.DataFrame(
+        {
+            "chrom": np.repeat("chr1", n_windows),
+            "start": wstarts,
+            "end": wstarts + 1000,
+            "strand": np.array(["+", "-"])[rng.integers(0, 2, n_windows)],
+        }
+    )
+    sequential, kept_seq, _ = tagmatrix._coverage_matrix(
+        peaks, windows, n_bins=10, ignore_strand=False, n_jobs=1
+    )
+    parallel, kept_par, _ = tagmatrix._coverage_matrix(
+        peaks, windows, n_bins=10, ignore_strand=False, n_jobs=2
+    )
+    np.testing.assert_allclose(sequential, parallel)
+    pd.testing.assert_frame_equal(kept_seq, kept_par)
+

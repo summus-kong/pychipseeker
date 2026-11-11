@@ -75,17 +75,24 @@ identical to the sequential run.
 | Operation | Work unit | Parallel threshold |
 |---|---|---|
 | `annotate_peak` | contiguous peak chunks | 2,000 peaks |
+| `extract_tss_matrix` / bigWig tag matrix | chromosome blocks | 4,000 regions per worker |
+| peak-coverage tag matrix | window chunks | 8,000 windows per worker |
 | BAM tag matrix / TSS enrichment | feature/window chunks | 500 regions |
 | `call_peaks` (bigWig) | one task per chromosome | 2+ chromosomes |
 
-On 100,000 mm10 peaks annotation takes 75.9 s sequentially and 21.7 s with
-four jobs (~3.5x).  Annotation workers rebuild the genome model from its GTF or
+On 100,000 mm10 peaks annotation takes 45.9 s sequentially, 14.9 s with four
+jobs and 16.2 s with eight (~3x).  The 0.7 interval indexes use binary search
+instead of whole-chromosome scans, so the sequential path is itself about twice
+as fast as 0.6.  Annotation workers rebuild the genome model from its GTF or
 cached `.npz` instead of pickling the 280 MB object, so memory per worker stays
-flat.  The BAM FRiP calculation uses the C-level `pysam` counter (one streaming
-pass plus one indexed query per merged peak) and no longer inspects every
-alignment in Python.  On Windows, scripts that use `n_jobs > 1` must guard
-their entry point with `if __name__ == "__main__":`, as required by the
-`spawn` start method.
+flat; `n_jobs=-1` is capped at eight annotation processes because each worker
+still holds a full model.  The BAM FRiP calculation uses the C-level `pysam`
+counter (one streaming pass plus one indexed query per merged peak) and no
+longer inspects every alignment in Python.  See
+[docs/performance.md](docs/performance.md) for the benchmark details and the
+parallel bigWig/tag-matrix measurements.  On Windows, scripts that use
+`n_jobs > 1` must guard their entry point with `if __name__ == "__main__":`, as
+required by the `spawn` start method.
 
 ## Dependencies
 

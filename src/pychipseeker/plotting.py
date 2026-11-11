@@ -19,7 +19,16 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from ._bigwig import (
+    TSS_MODE,
+    BlockJob,
+    IntervalIntegrator,
+    plan_blocks,
+    run_blocks,
+    tss_matrix,
+)
 from .annotation import get_genomic_anno_stat
+from .parallel import effective_jobs
 from .seqlevels import harmonize_frame
 
 # ChIPseeker's getCols() palette (Set3-like).
@@ -761,6 +770,9 @@ def _resolve_tss_window(
     return up, down
 
 
+_TSS_MATRIX_MIN_FEATURES = 4000
+
+
 def extract_tss_matrix(
     bigwig: Union[str, Path],
     genes: pd.DataFrame,
@@ -773,6 +785,7 @@ def extract_tss_matrix(
     drop_empty: bool = False,
     return_mask: bool = False,
     dtype: type = np.float64,
+    n_jobs: Optional[int] = None,
 ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
     """Extract a features x bins TSS-centered signal matrix from a bigWig file.
 
@@ -780,6 +793,11 @@ def extract_tss_matrix(
     much faster than issuing one ``bw.stats`` call per feature.  ``upstream``
     and ``downstream`` optionally define an asymmetric window; otherwise
     ``window`` is used on both sides.
+
+    ``n_jobs`` splits the work into chromosome blocks processed by separate
+    processes, each opening its own ``pyBigWig`` handle.  The sequential path
+    is used for small inputs because process start-up costs more than the
+    extraction itself.
 
     Rows without any covered signal are kept by default so row order remains
     aligned with ``genes``.  Pass ``drop_empty=True`` for the old behaviour, or
@@ -849,88 +867,71 @@ def extract_tss_matrix(
         # issuing one bw.stats call per feature.
         row_chroms = chroms[rows]
         intervals_fn = getattr(bw, "intervals", None)
-        # pyBigWig's stats() uses integer bin edges; floor division reproduces
-        # its binning exactly (verified against bw.stats for odd bin counts).
-        edge_offsets = (
-            np.arange(n_bins + 1, dtype=np.int64) * (up + down)
-        ) // n_bins
-        for chrom in pd.unique(row_chroms):
-            index = rows[row_chroms == chrom]
-            if intervals_fn is None:
-                # Minimal pyBigWig stand-ins (and older bindings) may not
-                # expose intervals(); fall back to the per-feature API.
-                for row_idx in index:
-                    pos = int(tss[row_idx])
-                    vals = bw.stats(
-                        str(chrom),
-                        pos - up,
-                        pos + down,
-                        nBins=n_bins,
-                        type="mean",
-                    )
-                    if vals is None:
-                        continue
-                    arr = np.asarray(
-                        [np.nan if v is None else float(v) for v in vals],
-                        dtype=float,
-                    )
-                    if min_value is not None:
-                        arr = np.where(arr < float(min_value), 0.0, arr)
-                    if strands[row_idx] == "-":
-                        arr = arr[::-1]
-                    matrix[row_idx] = arr
-                continue
-
-            intervals = intervals_fn(str(chrom))
-            if not intervals:
-                continue
-            table = np.asarray(intervals, dtype=np.float64)
-            starts_i = table[:, 0].astype(np.int64)
-            ends_i = table[:, 1].astype(np.int64)
-            values_i = table[:, 2]
-            lengths = (ends_i - starts_i).astype(np.float64)
-            cum_len = np.concatenate([[0.0], np.cumsum(lengths)])
-            cum_val = np.concatenate([[0.0], np.cumsum(values_i * lengths)])
-            n_intervals = len(starts_i)
-            last = n_intervals - 1
-
-            def _cumulative(
-                points: np.ndarray,
-                *,
-                starts_i: np.ndarray = starts_i,
-                ends_i: np.ndarray = ends_i,
-                lengths: np.ndarray = lengths,
-                values_i: np.ndarray = values_i,
-                cum_len: np.ndarray = cum_len,
-                cum_val: np.ndarray = cum_val,
-                n_intervals: int = n_intervals,
-                last: int = last,
-            ):
-                i = np.searchsorted(ends_i, points, side="right")
-                j = np.minimum(i, last)
-                part = np.where(
-                    i < n_intervals,
-                    np.clip(points - starts_i[j], 0.0, lengths[j]),
-                    0.0,
+        workers = effective_jobs(n_jobs, tasks=len(rows))
+        if (
+            workers > 1
+            and rows.size >= _TSS_MATRIX_MIN_FEATURES * workers
+            and intervals_fn is not None
+        ):
+            tasks = plan_blocks(
+                chroms,
+                tss,
+                starts,
+                ends,
+                rows,
+                n_blocks=workers * 8,
+            )
+            job = BlockJob(
+                kind=TSS_MODE,
+                bigwig=str(bigwig),
+                n_bins=n_bins,
+                up=up,
+                down=down,
+                min_value=min_value,
+                dtype=np.dtype(dtype).name,
+                tss=tss,
+                strands=strands,
+            )
+            for block_rows, block in run_blocks(job, tasks, workers):
+                if block is not None:
+                    matrix[block_rows] = block
+        elif intervals_fn is None:
+            # Minimal pyBigWig stand-ins (and older bindings) may not expose
+            # intervals(); fall back to the per-feature API.
+            for row_idx in rows:
+                pos = int(tss[row_idx])
+                vals = bw.stats(
+                    str(chroms[row_idx]),
+                    pos - up,
+                    pos + down,
+                    nBins=n_bins,
+                    type="mean",
                 )
-                return cum_len[i] + part, cum_val[i] + part * values_i[j]
-
-            window_starts = tss[index] - up
-            edges = window_starts[:, None] + edge_offsets[None, :]
-            covered, integral = _cumulative(edges.ravel())
-            covered = covered.reshape(len(index), n_bins + 1)
-            integral = integral.reshape(len(index), n_bins + 1)
-            bin_len = np.diff(covered, axis=1)
-            bin_val = np.diff(integral, axis=1)
-            with np.errstate(invalid="ignore", divide="ignore"):
-                arr = np.where(bin_len > 0, bin_val / bin_len, np.nan)
-
-            if min_value is not None:
-                arr = np.where(arr < float(min_value), 0.0, arr)
-            minus = strands[index] == "-"
-            if minus.any():
-                arr[minus] = arr[minus][:, ::-1]
-            matrix[index] = arr
+                if vals is None:
+                    continue
+                arr = np.asarray(
+                    [np.nan if v is None else float(v) for v in vals],
+                    dtype=float,
+                )
+                if min_value is not None:
+                    arr = np.where(arr < float(min_value), 0.0, arr)
+                if strands[row_idx] == "-":
+                    arr = arr[::-1]
+                matrix[row_idx] = arr
+        else:
+            for chrom in pd.unique(row_chroms):
+                index = rows[row_chroms == chrom]
+                intervals = intervals_fn(str(chrom))
+                if not intervals:
+                    continue
+                integrator = IntervalIntegrator(intervals)
+                arr = tss_matrix(
+                    integrator, tss[index], up, down, n_bins, min_value
+                )
+                minus = strands[index] == "-"
+                if minus.any():
+                    arr[minus] = arr[minus][:, ::-1]
+                matrix[index] = arr
     finally:
         bw.close()
 

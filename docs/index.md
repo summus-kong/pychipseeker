@@ -8,6 +8,7 @@ annotation, summarization and visualization.
 - [Command line](cli.md)
 - [Genomes and TxDb](genomes.md)
 - [Enrichment](enrichment.md)
+- [Performance](performance.md)
 
 The API mirrors the R package where practical: `annotatePeak`, `readPeakFile`,
 `getPromoters`, `getTagMatrix`, `plotAnnoPie`, `plotAnnoBar`, `plotDistToTSS`,

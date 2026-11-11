@@ -4,6 +4,35 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-11-11
+
+### Added
+
+- **Parallel bigWig TSS and tag matrices.**  `extract_tss_matrix(n_jobs=...)`,
+  `get_tag_matrix(n_jobs=...)` for `bigwig=...` inputs and
+  `get_tag_matrix_from_bigwig(n_jobs=...)` process chromosome blocks with one
+  `pyBigWig` handle per worker.  Peak-coverage tag matrices are chunked across
+  workers as well; results are identical to the sequential run.
+- **`docs/performance.md`** with the reproducible benchmark tables, parallel
+  thresholds and the note that `n_jobs=-1` is capped at eight annotation
+  workers because each process holds a full genome model.
+- `scripts/bench.py --jobs` (plus `--tagmatrix`) benchmarks the parallel paths.
+
+### Changed
+
+- **Annotation hot paths use binary search.**  `TSSIndex.follow_precede` /
+  `within` and `SpanIndex.follow_precede` / `overlapping` no longer build
+  whole-chromosome masks, and the alignment pass reads cached arrays instead of
+  constructing a pandas `Series` per peak.  Sequential annotation improves from
+  15.6 s to 7.7 s at 20k peaks and from 81.2 s to 45.9 s at 100k peaks; 4 jobs
+  annotate 100k peaks in 14.9 s (was 21.7 s).  Tie-breaking still returns the
+  smallest subject row index.
+- bigWig interval integration is shared by the plotting and tag-matrix code in
+  `pychipseeker._bigwig`, removing duplicated cumulative-sum implementations.
+- Parallel annotation prints one parent-side progress line instead of
+  interleaved per-worker counters.
+- CI adds Python 3.13 to the test matrix.
+
 ## [0.6.0] - 2026-11-10
 
 ### Added

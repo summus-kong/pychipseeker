@@ -32,13 +32,11 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, Optional, Sequence
 
-import numpy as np
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from pychipseeker.annotation import GeneAnnotation  # noqa: E402
-from pychipseeker.genomes import TABLES, SUPPORTED_GENOMES, save_bundle  # noqa: E402
+from pychipseeker.genomes import SUPPORTED_GENOMES, TABLES, save_bundle  # noqa: E402
 
 #: GENCODE release used per assembly (kept explicit for reproducibility).
 DEFAULT_RELEASES: Dict[str, str] = {

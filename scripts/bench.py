@@ -1,13 +1,14 @@
-"""Small benchmark for annotation and bigWig TSS matrix extraction.
+"""Small benchmark for annotation, tag matrices and bigWig extraction.
 
 Run from the repository root::
 
     python scripts/bench.py
     python scripts/bench.py --txdb mm10 --peaks examples/encode_peaks.bed
     python scripts/bench.py --txdb mm10 --bigwig signal.bw --sample 2000
+    python scripts/bench.py --jobs -1 --repeat 3
 
 The script intentionally measures end-to-end calls, not micro-operations, so
-the numbers can be compared with the figures in the README.
+the numbers can be compared with the figures in ``docs/performance.md``.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ def _timed(label: str, func) -> float:
     start = time.perf_counter()
     value = func()
     elapsed = time.perf_counter() - start
-    print(f"{label:<36} {elapsed:8.2f} s")
+    print(f"{label:<44} {elapsed:8.2f} s")
     return elapsed, value
 
 
@@ -50,6 +51,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--window", type=int, default=2000)
     parser.add_argument("--bins", type=int, default=100)
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="worker processes for annotation/tag matrices (-1 = all cores)",
+    )
+    parser.add_argument(
+        "--tagmatrix",
+        action="store_true",
+        help="also time peak-coverage tag matrices over promoters",
+    )
     args = parser.parse_args(argv)
 
     print(f"pychipseeker {pcs.__version__}")
@@ -58,28 +70,45 @@ def main(argv: list[str] | None = None) -> int:
     annotation = None
     for index in range(1, max(1, args.repeat) + 1):
         _, annotation = _timed(
-            f"annotate_peak #{index}",
+            f"annotate_peak #{index} (jobs={args.jobs})",
             lambda: pcs.annotate_peak(
-                peaks=args.peaks, TxDb=args.txdb, verbose=False
+                peaks=args.peaks,
+                TxDb=args.txdb,
+                verbose=False,
+                n_jobs=args.jobs,
             ),
         )
     if annotation is not None:
-        print(f"{'peaks annotated':<36} {len(annotation.peaks):8,}")
+        print(f"{'peaks annotated':<44} {len(annotation.peaks):8,}")
+
+    if args.tagmatrix:
+        promoters = pcs.get_promoters(TxDb=model, upstream=3000, downstream=3000)
+        _, matrix = _timed(
+            f"get_tag_matrix(peak) ({len(promoters):,} windows)",
+            lambda: pcs.get_tag_matrix(
+                peak=args.peaks,
+                windows=promoters,
+                nbin=100,
+                n_jobs=args.jobs,
+            ),
+        )
+        print(f"{'tag matrix shape':<44} {matrix.shape}")
 
     if args.bigwig:
         transcripts = model.features("transcript")
         if args.sample and args.sample < len(transcripts):
             transcripts = transcripts.sample(n=args.sample, random_state=20261026)
         _, matrix = _timed(
-            f"extract_tss_matrix({len(transcripts):,} TSS)",
+            f"extract_tss_matrix({len(transcripts):,} TSS, jobs={args.jobs})",
             lambda: pcs.extract_tss_matrix(
                 args.bigwig,
                 transcripts,
                 window=args.window,
                 n_bins=args.bins,
+                n_jobs=args.jobs,
             ),
         )
-        print(f"{'matrix shape':<36} {matrix.shape}")
+        print(f"{'matrix shape':<44} {matrix.shape}")
     return 0
 
 

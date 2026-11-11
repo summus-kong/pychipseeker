@@ -560,8 +560,8 @@ def tss_enrichment(
     divided by the mean signal in the outer flanks of the window.  Supply
     exactly one of ``bigwig`` or ``bam``; BAM coverage is counted per base with
     ``pysam``.  A reproducible subsample of ``sample`` features is used unless
-    ``sample=None``.  ``n_jobs`` parallelises the BAM coverage matrix across
-    processes (``-1`` uses every core).
+    ``sample=None``.  ``n_jobs`` parallelises the bigWig or BAM coverage matrix
+    across processes (``-1`` uses every core).
     """
 
     if (bigwig is None) == (bam is None):
@@ -594,6 +594,7 @@ def tss_enrichment(
             downstream=int(downstream),
             drop_empty=False,
             return_mask=False,
+            n_jobs=n_jobs,
         )
     else:
         handle = _bam_handle(bam)

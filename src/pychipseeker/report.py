@@ -331,6 +331,7 @@ def build_report(
             n_bins=100,
             upstream=signal_up,
             downstream=signal_down,
+            n_jobs=n_jobs,
         )
         assert isinstance(matrix, np.ndarray)
         pages.append(

@@ -92,8 +92,8 @@ The PDF contains title/summary, pie, bar, TSS distance, coverage, tag-matrix
 profile/heatmap, optional bigWig TSS profile/heatmap, optional QC, `annoStat`,
 and methods pages.  `--no-tag-matrix` skips the tag-matrix pages.
 `--upstream`/`--downstream` define an asymmetric signal window and default to
-the `--tss-region` values.  `--jobs N` forwards the worker count to annotation
-and QC (`-1` = all cores).
+the `--tss-region` values.  `--jobs N` forwards the worker count to annotation,
+QC and the bigWig/tag-matrix extraction (`-1` = all cores).
 
 ## cache
 

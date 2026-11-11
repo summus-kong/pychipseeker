@@ -30,6 +30,10 @@ fig, ax = pcs.plotAvgProf(tag, conf=0.95)
 fig, ax = pcs.tagHeatmap(tag)
 ```
 
+Pass `n_jobs=-1` to `getTagMatrix`/`getPromoters`-based pipelines to process
+large window sets in parallel.  Peak-coverage matrices switch to processes once
+there are enough windows per worker; see [Performance](performance.md).
+
 ## bigWig signal around TSS
 
 The `bigwig` extra is required.
@@ -41,6 +45,7 @@ matrix = pcs.extract_tss_matrix(
     upstream=2000,
     downstream=4000,
     n_bins=100,
+    n_jobs=-1,
 )
 fig, ax = pcs.plot_tss_profile(matrix, upstream=2000, downstream=4000)
 fig, ax = pcs.plot_tss_heatmap(matrix, upstream=2000, downstream=4000)

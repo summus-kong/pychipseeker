@@ -52,6 +52,44 @@ def _strand_compatible(
     return query == subject
 
 
+def _min_row_for_value(
+    vals: np.ndarray, rows: np.ndarray, value: int
+) -> int:
+    """Smallest row index among entries equal to ``value``.
+
+    ``vals`` is sorted but may contain ties; GenomicRanges tie-breaking uses
+    the first feature in subject order, i.e. the smallest row index.
+    """
+
+    lo = int(np.searchsorted(vals, value, side="left"))
+    hi = int(np.searchsorted(vals, value, side="right"))
+    if hi - lo == 1:
+        return int(rows[lo])
+    return int(rows[lo:hi].min())
+
+
+def _first_greater(
+    vals: np.ndarray, rows: np.ndarray, threshold: int
+) -> Optional[int]:
+    """Row index of the smallest value strictly above ``threshold``."""
+
+    i = int(np.searchsorted(vals, threshold, side="right"))
+    if i >= len(vals):
+        return None
+    return _min_row_for_value(vals, rows, int(vals[i]))
+
+
+def _last_smaller(
+    vals: np.ndarray, rows: np.ndarray, threshold: int
+) -> Optional[int]:
+    """Row index of the largest value strictly below ``threshold``."""
+
+    j = int(np.searchsorted(vals, threshold, side="left")) - 1
+    if j < 0:
+        return None
+    return _min_row_for_value(vals, rows, int(vals[j]))
+
+
 class BinnedIntervalIndex:
     """A simple bin-based interval index for overlap queries.
 
@@ -256,26 +294,6 @@ class _SortedFeatureIndex:
         order = np.argsort(vals, kind="mergesort")
         return vals[order], rows[order], strands[order]
 
-    @staticmethod
-    def _pick(
-        vals: np.ndarray,
-        rows: np.ndarray,
-        mask: np.ndarray,
-        choose_max: bool,
-    ) -> Optional[int]:
-        if not mask.any():
-            return None
-        candidates = rows[mask]
-        candidate_vals = vals[mask]
-        if choose_max:
-            best_val = candidate_vals.max()
-        else:
-            best_val = candidate_vals.min()
-        # GenomicRanges returns the first feature in subject order when there
-        # are ties.  ``rows`` is that order.
-        return int(candidates[candidate_vals == best_val].min())
-
-
 class TSSIndex(_SortedFeatureIndex):
     """Sorted transcription-start-site index for nearest-TSS queries."""
 
@@ -327,11 +345,16 @@ class TSSIndex(_SortedFeatureIndex):
             return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
 
         arr, rows, strands = entry
-        mask = (arr >= int(start)) & (arr < int(end))
+        lo = int(np.searchsorted(arr, int(start), side="left"))
+        hi = int(np.searchsorted(arr, int(end), side="left"))
+        arr = arr[lo:hi]
+        rows = rows[lo:hi]
         if same_strand and strand is not None:
             q = _normalise_strand(strand)
-            mask &= (q == "*") | (strands == "*") | (strands == q)
-        return rows[mask], arr[mask]
+            mask = (q == "*") | (strands[lo:hi] == "*") | (strands[lo:hi] == q)
+            rows = rows[mask]
+            arr = arr[mask]
+        return rows, arr
 
     def follow_precede(
         self,
@@ -363,16 +386,14 @@ class TSSIndex(_SortedFeatureIndex):
         # IRanges semantics: ``follow`` is the subject interval directly
         # *followed by* the query, i.e. the upstream neighbour; ``precede`` is
         # the downstream neighbour.  On a minus-strand query the 5'->3'
-        # direction is reversed.
+        # direction is reversed.  The TSS array is sorted, so binary search
+        # replaces the previous full-chromosome masks.
         if q == "-":
-            follow_mask = vals > end_inclusive
-            precede_mask = vals < start
+            follow_idx = _first_greater(vals, rows, end_inclusive)
+            precede_idx = _last_smaller(vals, rows, start)
         else:
-            follow_mask = vals < start
-            precede_mask = vals > end_inclusive
-
-        follow_idx = self._pick(vals, rows, follow_mask, choose_max=(q != "-"))
-        precede_idx = self._pick(vals, rows, precede_mask, choose_max=(q == "-"))
+            follow_idx = _last_smaller(vals, rows, start)
+            precede_idx = _first_greater(vals, rows, end_inclusive)
         return follow_idx, precede_idx
 
     def overlapping(
@@ -479,42 +500,29 @@ class SpanIndex(_SortedFeatureIndex):
         start = int(peak_start)
         end_inclusive = int(peak_end) - 1
 
-        if q == "-":
-            # Upstream is to the right; downstream is to the left.
-            start_entry = self._view(chrom, strand, same_strand, by_end=False)
-            end_entry = self._view(chrom, strand, same_strand, by_end=True)
-            follow_idx = None
-            precede_idx = None
-            if start_entry is not None:
-                vals, rows, _ = start_entry
-                mask = vals > end_inclusive
-                if mask.any():
-                    best = vals[mask].min()
-                    follow_idx = int(rows[mask][vals[mask] == best].min())
-            if end_entry is not None:
-                vals, rows, _ = end_entry
-                mask = vals < start
-                if mask.any():
-                    best = vals[mask].max()
-                    precede_idx = int(rows[mask][vals[mask] == best].min())
-            return follow_idx, precede_idx
-
+        # ``_by_key`` is sorted by start and ``_by_end`` by end, so both
+        # nearest-neighbour lookups are binary searches rather than full
+        # chromosome masks.
         start_entry = self._view(chrom, strand, same_strand, by_end=False)
         end_entry = self._view(chrom, strand, same_strand, by_end=True)
         follow_idx = None
         precede_idx = None
+        if q == "-":
+            # Upstream is to the right; downstream is to the left.
+            if start_entry is not None:
+                vals, rows, _ = start_entry
+                follow_idx = _first_greater(vals, rows, end_inclusive)
+            if end_entry is not None:
+                vals, rows, _ = end_entry
+                precede_idx = _last_smaller(vals, rows, start)
+            return follow_idx, precede_idx
+
         if end_entry is not None:
             vals, rows, _ = end_entry
-            mask = vals < start
-            if mask.any():
-                best = vals[mask].max()
-                follow_idx = int(rows[mask][vals[mask] == best].min())
+            follow_idx = _last_smaller(vals, rows, start)
         if start_entry is not None:
             vals, rows, _ = start_entry
-            mask = vals > end_inclusive
-            if mask.any():
-                best = vals[mask].min()
-                precede_idx = int(rows[mask][vals[mask] == best].min())
+            precede_idx = _first_greater(vals, rows, end_inclusive)
         return follow_idx, precede_idx
 
     def overlapping(
@@ -527,14 +535,22 @@ class SpanIndex(_SortedFeatureIndex):
     ) -> np.ndarray:
         """Return feature rows overlapping ``[start, end)``."""
 
-        view = self._view(chrom, strand, same_strand, by_end=False)
-        if view is None:
+        start_view = self._view(chrom, strand, same_strand, by_end=False)
+        end_view = self._view(chrom, strand, same_strand, by_end=True)
+        if start_view is None or end_view is None:
             return np.empty(0, dtype=np.int64)
-        starts, rows, _ = view
-        # A feature can start before ``end``; filter the corresponding end for
-        # each row.  Chromosome feature counts are modest, so this is fine.
-        candidates = rows[starts < int(end)]
-        if len(candidates) == 0:
-            return candidates
-        mask = self._ends[candidates] > int(start)
+        starts, start_rows, _ = start_view
+        ends, end_rows, _ = end_view
+        n_rows = len(start_rows)
+
+        # Features starting before ``end`` and features ending after ``start``
+        # must both be filtered.  Scan whichever side is shorter.
+        before_end = int(np.searchsorted(starts, int(end), side="left"))
+        after_start = int(np.searchsorted(ends, int(start), side="right"))
+        if before_end <= n_rows - after_start:
+            candidates = start_rows[:before_end]
+            mask = self._ends[candidates] > int(start)
+        else:
+            candidates = end_rows[after_start:]
+            mask = self._starts[candidates] < int(end)
         return np.sort(candidates[mask])
