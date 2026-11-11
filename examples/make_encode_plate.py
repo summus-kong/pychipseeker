@@ -13,9 +13,10 @@ signal >= 3, bridged over 1 kb gaps and at least 500 bp wide.
 
 Outputs (``examples/output/encode``):
 
-- ``encode_figure_plate.pdf`` / ``.png`` -- one A3 portrait plate, panels A-F
+- ``encode_figure_plate.*`` -- one A3 portrait plate, panels A-F, written as
+  PNG (220 dpi), PDF, SVG, EPS and TIFF (400 dpi), plus a 600 dpi PNG
 - ``encode_figures.pdf`` -- six pages, one figure each
-- ``figures/*.pdf`` / ``figures/*.png`` -- individual vector figures
+- ``figures/<panel>.*`` -- individual figures in PNG/PDF/SVG/EPS/TIFF
 
 Design notes
 ------------
@@ -32,6 +33,9 @@ Design notes
   a width histogram and a cumulative distance curve communicate the same
   data without hiding the tail (and without the misleading 50/50 split of
   zero-distance peaks).
+- The tag matrix is normalised to the percentage of each bin covered by a
+  peak, so the profile height and the heatmap colour bar share one unit
+  (0-100%).
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 
 import matplotlib
 
@@ -57,6 +61,21 @@ from matplotlib.patches import Circle, Rectangle, Wedge
 import pychipseeker as pcs
 
 HERE = Path(__file__).resolve().parent
+
+# Embed TrueType fonts and keep SVG text editable, so the exported vector
+# files open cleanly in Illustrator/Inkscape and in journal production.
+matplotlib.rcParams.update(
+    {
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+        "svg.fonttype": "none",
+        "figure.facecolor": "white",
+        "savefig.facecolor": "white",
+    }
+)
+
+#: Formats written for the plate and for every panel.
+FORMATS = ("png", "pdf", "svg", "eps", "tif")
 
 #: Okabe-Ito colour-vision-deficiency-safe palette (Wong 2011).
 OKABE_ITO = {
@@ -89,6 +108,17 @@ ANNO_COLORS = {
 INK = "#1A1A1A"
 MUTED = "#5F6B76"
 RULE = "#D5DCE3"
+
+
+def _tint(color: str, alpha: float, base: str = "#FFFFFF") -> str:
+    """Blend ``color`` over ``base`` into an opaque tint (EPS-safe)."""
+
+    def channels(hex_color: str) -> np.ndarray:
+        text = hex_color.lstrip("#")
+        return np.array([int(text[i : i + 2], 16) for i in (0, 2, 4)], dtype=float)
+
+    mixed = alpha * channels(color) + (1.0 - alpha) * channels(base)
+    return "#" + "".join(f"{int(round(value)):02X}" for value in mixed)
 
 
 @contextmanager
@@ -146,10 +176,55 @@ def _framed_axes(ax) -> None:
     )
 
 
-def _save_one(fig: plt.Figure, stem: str, figdir: Path) -> None:
-    figdir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir / f"{stem}.pdf", bbox_inches="tight")
-    fig.savefig(figdir / f"{stem}.png", dpi=220, bbox_inches="tight")
+def _flatten_rgb(path: Path, compression: str | None = None) -> None:
+    """Convert a raster figure to RGB, which journals prefer over RGBA."""
+
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow ships with matplotlib
+        return
+    with Image.open(path) as image:
+        if image.mode == "RGB":
+            return
+        rgb = image.convert("RGB")
+        dpi = image.info.get("dpi", (300.0, 300.0))
+    options: dict[str, object] = {"dpi": dpi}
+    if compression:
+        options["compression"] = compression
+    rgb.save(path, **options)
+
+
+def _save_formats(
+    fig: plt.Figure,
+    stem: str,
+    outdir: Path,
+    *,
+    formats: Sequence[str] = FORMATS,
+    png_dpi: int = 220,
+    print_dpi: int = 400,
+) -> list[Path]:
+    """Write one figure in every requested format and return the paths."""
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for fmt in formats:
+        fmt = fmt.lower()
+        path = outdir / f"{stem}.{fmt}"
+        if fmt == "tif":
+            fig.savefig(
+                path,
+                dpi=print_dpi,
+                bbox_inches="tight",
+                pil_kwargs={"compression": "tiff_lzw"},
+            )
+            _flatten_rgb(path, compression="tiff_lzw")
+        elif fmt == "png":
+            fig.savefig(path, dpi=png_dpi, bbox_inches="tight")
+            _flatten_rgb(path)
+        else:
+            fig.savefig(path, bbox_inches="tight")
+        written.append(path)
+    return written
 
 
 def _panel_header(fig, spec, letter: str, title: str):
@@ -196,7 +271,7 @@ def _draw_key(ax, stat: pd.DataFrame) -> None:
     ax.axis("off")
     ax.plot([0, 1], [0.932, 0.932], color=RULE, linewidth=0.7, clip_on=False)
     ax.text(0.0, 0.962, "Feature", fontsize=7.4, color=MUTED, weight="bold")
-    ax.text(0.78, 0.962, "%", fontsize=7.4, color=MUTED, weight="bold", ha="right")
+    ax.text(0.8, 0.962, "%", fontsize=7.4, color=MUTED, weight="bold", ha="right")
     ax.text(0.99, 0.962, "n", fontsize=7.4, color=MUTED, weight="bold", ha="right")
 
     colors = _anno_colors(stat)
@@ -213,12 +288,12 @@ def _draw_key(ax, stat: pd.DataFrame) -> None:
                 clip_on=False,
             )
         )
-        ax.text(0.058, y, str(row.Feature), fontsize=8.6, color=INK, va="center")
+        ax.text(0.058, y, str(row.Feature), fontsize=8.0, color=INK, va="center")
         ax.text(
-            0.78,
+            0.8,
             y,
             f"{float(row.Frequency):.2f}",
-            fontsize=8.2,
+            fontsize=8.0,
             color=INK,
             va="center",
             ha="right",
@@ -227,7 +302,7 @@ def _draw_key(ax, stat: pd.DataFrame) -> None:
             0.99,
             y,
             f"{int(row.Count):,}",
-            fontsize=8.2,
+            fontsize=8.0,
             color=MUTED,
             va="center",
             ha="right",
@@ -279,7 +354,7 @@ def _draw_pie(ann, ax, key_ax) -> None:
 
 
 def _panel_pie(fig, spec, ann):
-    sub = spec.subgridspec(1, 2, width_ratios=[1.0, 1.06], wspace=0.02)
+    sub = spec.subgridspec(1, 2, width_ratios=[1.2, 1.0], wspace=0.02)
     ax = fig.add_subplot(sub[0])
     key_ax = fig.add_subplot(sub[1])
     _draw_pie(ann, ax, key_ax)
@@ -289,7 +364,7 @@ def _panel_pie(fig, spec, ann):
 def _draw_width(ax, df: pd.DataFrame) -> None:
     width = (df["end"] - df["start"]).to_numpy(dtype=float)
     promoter = df["annotation"].astype(str).str.startswith("Promoter").to_numpy()
-    edges = np.geomspace(500.0, 8200.0, 39)
+    edges = np.geomspace(500.0, 8200.0, 33)
 
     groups = [
         (width[promoter], OKABE_ITO["blue"], "Promoter", True, "-"),
@@ -305,8 +380,7 @@ def _draw_width(ax, df: pd.DataFrame) -> None:
                 edges,
                 baseline=0.0,
                 fill=True,
-                color=color,
-                alpha=0.22,
+                color=_tint(color, 0.16),
                 linewidth=0,
             )
         ax.stairs(
@@ -353,13 +427,12 @@ def _draw_distance(ax, df: pd.DataFrame) -> None:
     dist = np.sort(dist[np.isfinite(dist)])
     cumulative = np.arange(1, dist.size + 1) / dist.size * 100.0
 
-    ax.axvspan(0, 1000, color="#F1F7FC", zorder=0, linewidth=0)
+    ax.axvspan(0, 1000, color="#F2F7FC", zorder=0, linewidth=0)
     ax.fill_between(
         dist,
         cumulative,
         step="post",
-        color=OKABE_ITO["sky"],
-        alpha=0.18,
+        color=_tint(OKABE_ITO["sky"], 0.13),
         linewidth=0,
         zorder=1,
     )
@@ -386,42 +459,36 @@ def _draw_distance(ax, df: pd.DataFrame) -> None:
     def pct_within(limit: float) -> float:
         return float(np.searchsorted(dist, limit, side="right")) / dist.size * 100.0
 
-    marks = [(1000, pct_within(1000)), (10000, pct_within(10000)), (100000, pct_within(100000))]
+    marks = [
+        (1000, pct_within(1000)),
+        (10000, pct_within(10000)),
+        (100000, pct_within(100000)),
+    ]
     for x, y in marks:
-        ax.plot([x], [y], "o", markersize=4.2, color=OKABE_ITO["blue"], zorder=4)
+        ax.plot([x], [y], "o", markersize=4.4, color=OKABE_ITO["blue"], zorder=4)
 
     ax.annotate(
         f"{marks[0][1]:.1f}% within 1 kb",
         xy=(1000, marks[0][1]),
-        xytext=(2.6e3, 63),
-        fontsize=9.2,
+        xytext=(1.3e3, 66),
+        fontsize=9.4,
         color=OKABE_ITO["blue"],
         fontweight="bold",
-        arrowprops=dict(arrowstyle="-", color=OKABE_ITO["blue"], linewidth=0.8, shrinkA=2, shrinkB=3),
+        ha="left",
+        va="center",
+        arrowprops=dict(
+            arrowstyle="-",
+            color=OKABE_ITO["blue"],
+            linewidth=0.9,
+            shrinkA=4,
+            shrinkB=4,
+        ),
         zorder=5,
-    )
-    ax.text(
-        1.15e4,
-        marks[1][1] - 4.0,
-        f"{marks[1][1]:.1f}% \u2264 10 kb",
-        fontsize=8.0,
-        color=MUTED,
-        ha="left",
-        va="center",
-    )
-    ax.text(
-        1.1e5,
-        marks[2][1] - 4.0,
-        f"{marks[2][1]:.1f}% \u2264 100 kb",
-        fontsize=8.0,
-        color=MUTED,
-        ha="left",
-        va="center",
     )
     zero_pct = float(np.mean(dist == 0)) * 100.0
     ax.text(
         0.02,
-        0.055,
+        0.045,
         f"{zero_pct:.1f}% of peaks at d = 0",
         transform=ax.transAxes,
         fontsize=7.6,
@@ -429,25 +496,43 @@ def _draw_distance(ax, df: pd.DataFrame) -> None:
         ha="left",
         va="bottom",
     )
+    ax.text(
+        0.97,
+        0.045,
+        f"{marks[1][1]:.1f}% \u2264 10 kb  \u00b7  {marks[2][1]:.1f}% \u2264 100 kb",
+        transform=ax.transAxes,
+        fontsize=7.2,
+        color=MUTED,
+        ha="right",
+        va="bottom",
+    )
     _clean_axes(ax)
 
 
 def _draw_profile(ax, tag) -> None:
-    pcs.plot_avg_prof(tag, conf=0.95, color=OKABE_ITO["blue"], ax=ax, label=None)
+    pcs.plot_avg_prof(tag, conf=None, color=OKABE_ITO["blue"], ax=ax, label=None)
     ax.set_title("")
-    if ax.collections:
-        ax.collections[0].set_facecolor(OKABE_ITO["sky"])
-        ax.collections[0].set_alpha(0.28)
-        ax.collections[0].set_edgecolor("none")
     if ax.lines:
-        ax.lines[0].set_linewidth(1.9)
+        line = ax.lines[0]
+        line.set_linewidth(1.9)
+        line.set_zorder(3)
+        x = np.asarray(line.get_xdata(), dtype=float)
+        y = np.asarray(line.get_ydata(), dtype=float)
+        ax.fill_between(
+            x,
+            0.0,
+            y,
+            color=_tint(OKABE_ITO["sky"], 0.30),
+            linewidth=0,
+            zorder=1,
+        )
 
     ax.set_xlim(-3000, 3000)
     ax.set_ylim(bottom=0)
     ax.set_xticks([-3000, -2000, -1000, 0, 1000, 2000, 3000])
     ax.set_xticklabels(["-3", "-2", "-1", "TSS", "1", "2", "3"])
     ax.set_xlabel("Distance from TSS (kb)")
-    ax.set_ylabel("Mean tag density")
+    ax.set_ylabel("Mean peak coverage (%)")
     rows = int(np.asarray(tag, dtype=float).shape[0])
     ax.text(
         0.02,
@@ -463,7 +548,7 @@ def _draw_profile(ax, tag) -> None:
 
 
 def _draw_heatmap(fig, ax, tag) -> None:
-    pcs.tag_heatmap(tag, ax=ax, palette="Blues")
+    pcs.tag_heatmap(tag, ax=ax, palette="Blues", vmin=0.0, vmax=100.0)
     ax.set_title("")
 
     # Replace the library's space-stealing colorbar with a slim inset bar.
@@ -475,19 +560,20 @@ def _draw_heatmap(fig, ax, tag) -> None:
     cax = ax.inset_axes([1.022, 0.0, 0.032, 1.0])
     cbar = fig.colorbar(image, cax=cax)
     cbar.outline.set_visible(False)
+    cbar.set_ticks([0, 25, 50, 75, 100])
     cbar.ax.tick_params(labelsize=7.4, length=2.0, width=0.6, colors=MUTED)
-    cbar.set_label("Tag density", fontsize=8.2, color=INK, labelpad=5)
+    cbar.set_label("Peak coverage (%)", fontsize=8.2, color=INK, labelpad=5)
 
     rows = int(np.asarray(tag, dtype=float).shape[0])
     ax.set_xticks([-3000, -2000, -1000, 0, 1000, 2000, 3000])
     ax.set_xticklabels(["-3", "-2", "-1", "TSS", "1", "2", "3"])
     ax.set_yticks([])
     ax.set_xlabel("Distance from TSS (kb)")
-    ax.set_ylabel(f"Promoters (n = {rows:,}, sorted)")
+    ax.set_ylabel(f"Promoters (n = {rows:,}, strongest first)")
     for line in ax.lines:
-        line.set_color("#1A1A1A")
+        line.set_color("#4A4A4A")
         line.set_linewidth(0.7)
-        line.set_alpha(0.75)
+        line.set_alpha(1.0)
     _framed_axes(ax)
 
 
@@ -520,11 +606,11 @@ def _draw_table(ax, ann, used: int) -> None:
         colWidths=[0.06, 0.50, 0.22, 0.22],
         cellLoc="center",
         loc="center",
-        bbox=[0.0, 0.045, 1.0, 0.855],
+        bbox=[0.0, 0.10, 1.0, 0.78],
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(8.5)
-    table.scale(1.0, 1.22)
+    table.set_fontsize(8.8)
+    table.scale(1.0, 1.0)
 
     for (r, c), cell in table.get_celld().items():
         cell.set_edgecolor("none")
@@ -550,7 +636,7 @@ def _draw_table(ax, ann, used: int) -> None:
 
     ax.text(
         0.0,
-        0.005,
+        0.045,
         "Percentages follow ChIPseeker's annoStat categories.",
         fontsize=7.4,
         color=MUTED,
@@ -594,7 +680,7 @@ def _figure_profile(tag) -> plt.Figure:
 
 
 def _figure_heatmap(tag) -> plt.Figure:
-    fig, content = _standalone("E", "Promoter-centered tag density", (6.9, 4.8))
+    fig, content = _standalone("E", "Promoter-centered peak coverage", (6.9, 4.8))
     ax = fig.add_subplot(content)
     _draw_heatmap(fig, ax, tag)
     return fig
@@ -649,7 +735,7 @@ def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
         _draw_profile(ax_d, tag)
 
         ax_e = fig.add_subplot(
-            _panel_header(fig, gs[2, 0], "E", "Promoter-centered tag density")
+            _panel_header(fig, gs[2, 0], "E", "Promoter-centered peak coverage")
         )
         _draw_heatmap(fig, ax_e, tag)
 
@@ -694,8 +780,8 @@ def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
             0.5,
             0.026,
             "(A) Annotation composition \u00b7 (B) Peak widths \u00b7 "
-            "(C) Cumulative distance to TSS \u00b7 (D) Mean profile \u00b1 95% CI \u00b7 "
-            "(E) Tag heatmap \u00b7 (F) Annotation statistics",
+            "(C) Cumulative distance to TSS \u00b7 (D) Mean coverage profile \u00b7 "
+            "(E) Coverage heatmap \u00b7 (F) Annotation statistics",
             ha="center",
             fontsize=7.4,
             color="#7C8792",
@@ -714,14 +800,27 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261026)
     parser.add_argument("--upstream", type=int, default=3000)
     parser.add_argument("--downstream", type=int, default=3000)
+    parser.add_argument(
+        "--formats",
+        default=",".join(FORMATS),
+        help="comma-separated export formats: " + ", ".join(FORMATS),
+    )
     args = parser.parse_args()
+
+    formats = [item.strip().lower() for item in args.formats.split(",") if item.strip()]
+    unknown = sorted(set(formats) - set(FORMATS))
+    if unknown:
+        parser.error(f"unsupported format(s): {', '.join(unknown)}")
+    if not formats:
+        parser.error("at least one export format is required")
 
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
     figdir = out / "figures"
     figdir.mkdir(parents=True, exist_ok=True)
-    for stale in list(figdir.glob("*.pdf")) + list(figdir.glob("*.png")):
-        stale.unlink()
+    for fmt in FORMATS:
+        for stale in figdir.glob(f"*.{fmt}"):
+            stale.unlink()
 
     ann = pcs.annotate_peak(peaks=args.peaks, TxDb=args.txdb, verbose=False)
     used = len(ann.peaks)
@@ -738,7 +837,18 @@ def main() -> int:
         upstream=args.upstream,
         downstream=args.downstream,
     )
-    tag = pcs.get_tag_matrix(peak=ann.peaks, windows=promoters, nbin=60)
+    nbin = 120
+    coverage = pcs.get_tag_matrix(peak=ann.peaks, windows=promoters, nbin=nbin)
+    # Peak coverage is measured in base pairs per bin; dividing by the bin
+    # width turns it into a 0-100 % scale that is independent of ``nbin``.
+    bin_bp = (args.upstream + args.downstream) / nbin
+    tag = pcs.TagMatrix(
+        np.asarray(coverage, dtype=float) * 100.0 / bin_bp,
+        upstream=args.upstream,
+        downstream=args.downstream,
+        is_binning=True,
+        rows=coverage.rows,
+    )
 
     caption = (
         "ENCODE H3K4me3 peaks (ENCSR000CDQ, mm10) called at signal \u2265 3, "
@@ -753,21 +863,25 @@ def main() -> int:
     with PdfPages(str(out / "encode_figures.pdf")) as pdf:
         with _no_tight_layout():
             for fig, stem in _panel_figures(ann, tag, df):
-                _save_one(fig, stem, figdir)
+                _save_formats(fig, stem, figdir, formats=formats)
                 pdf.savefig(fig, bbox_inches="tight")
                 plt.close(fig)
 
     plate = _composite_plate(ann, tag, df, caption, provenance)
-    plate.savefig(out / "encode_figure_plate.pdf", bbox_inches="tight")
-    plate.savefig(out / "encode_figure_plate.png", dpi=220, bbox_inches="tight")
+    plate_written = _save_formats(plate, "encode_figure_plate", out, formats=formats)
+    plate.savefig(out / "encode_figure_plate_600dpi.png", dpi=600, bbox_inches="tight")
+    _flatten_rgb(out / "encode_figure_plate_600dpi.png")
+    plate_written.append(out / "encode_figure_plate_600dpi.png")
     plt.close(plate)
 
     print(ann.annoStat.to_string(index=False))
     print(f"peaks   : {used:,}")
     print(f"promoter: {ann.annoStat.loc[0, 'Frequency']:.1f}% (<=1 kb)")
-    print(f"plate   : {out / 'encode_figure_plate.pdf'}")
+    print(f"plate   : {out}")
+    for path in plate_written:
+        print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
     print(f"figures : {out / 'encode_figures.pdf'}")
-    print(f"singles : {figdir}")
+    print(f"singles : {figdir} ({len(formats)} formats x 6 panels)")
     return 0
 
 

@@ -217,9 +217,14 @@ turn them into a single-page A3 plate and a multi-page PDF report:
 export ENCODE_BIGWIG=/path/to/ENCFF893ZGR.bigWig   # H3K4me3, mm10, ENCSR000CDQ
 python examples/call_encode_peaks.py --bigwig "$ENCODE_BIGWIG" \
     --out examples/encode_peaks.bed --threshold 3
-python examples/make_encode_plate.py    # encode_figure_plate.pdf + 6 figures
+python examples/make_encode_plate.py    # A3 plate + 6 panels, 6 formats each
 python examples/make_encode_report.py   # 11-page encode_report.pdf
 ```
+
+The plate and every panel are written as PNG, PDF, SVG, EPS and TIFF
+(plus a 600 dpi PNG of the plate), so the same artwork can go straight into
+slides, Illustrator/Inkscape, or a journal submission.  Use
+`--formats png,pdf` to keep only what you need.
 
 The committed `examples/encode_peaks.bed` holds the resulting 11,291 peaks
 (92% within 1 kb of a TSS, median width 958 bp).  The track is a

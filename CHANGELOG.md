@@ -4,6 +4,24 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.2] - 2026-11-11
+
+### Fixed
+
+- `tag_heatmap()` now sorts rows by decreasing mean signal, so the most
+  enriched regions are drawn at the top of the map.  Previously the weakest
+  rows were on top, which contradicted `plot_tss_heatmap(sort_rows=True)`
+  and the usual genome-browser convention.
+
+### Changed
+
+- `examples/make_encode_plate.py` now exports the plate and every individual
+  panel as PNG, PDF, SVG, EPS and TIFF, plus a 600 dpi PNG.  Vector files use
+  Type 42 fonts and editable SVG text; rasters are flattened to RGB.
+- Refined the plate: a larger donut, peak-coverage values normalised to a
+  shared 0-100 % scale for the profile and heatmap, a lighter ECDF fill, and
+  a fixed annotation-table footnote.
+
 ## [0.8.1] - 2026-11-11
 
 ### Fixed
