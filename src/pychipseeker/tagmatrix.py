@@ -1538,7 +1538,11 @@ def tag_heatmap(
     figsize: tuple[float, float] = (6.0, 4.0),
     **kwargs,
 ):
-    """Heatmap of a tag matrix, centered on the TSS/region anchor."""
+    """Heatmap of a tag matrix, centered on the TSS/region anchor.
+
+    Rows are sorted by mean signal so the most enriched regions are drawn at
+    the top of the map.
+    """
 
     plt = _plt()
     arr, upstream, downstream = _as_matrix(tagMatrix)
@@ -1549,10 +1553,11 @@ def tag_heatmap(
     else:
         fig = ax.figure
 
-    # ChIPseeker's heatmap is row-sorted by signal strength (ascending: strong
-    # rows near the bottom).  Sorting here also makes the visual pattern stable
-    # across input orders.
-    order = np.argsort(np.nanmean(arr, axis=1))
+    # Row-sort by signal strength, strongest first.  This matches
+    # ``plot_tss_heatmap(sort_rows=True)`` and the convention used by genome
+    # browsers and deepTools, where the most enriched rows sit at the top.
+    # Sorting also makes the visual pattern stable across input orders.
+    order = np.argsort(-np.nanmean(arr, axis=1), kind="stable")
     data = arr[order]
     extent = (
         -int(upstream) if upstream is not None else 0,

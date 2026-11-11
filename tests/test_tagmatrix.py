@@ -255,6 +255,18 @@ def test_profile_and_heatmap_plots(annotation):
     plt.close(fig)
 
 
+def test_tag_heatmap_draws_strongest_rows_on_top():
+    matrix = np.zeros((5, 12), dtype=float)
+    matrix[:, 5:7] = np.arange(1, 6, dtype=float)[:, None]
+    fig, ax = tag_heatmap(matrix)
+    drawn = np.asarray(ax.images[0].get_array(), dtype=float)
+    row_means = drawn.mean(axis=1)
+    assert row_means[0] > row_means[-1]
+    # The top row must be the strongest input row, not merely any reordering.
+    assert np.isclose(row_means[0], 10.0 / 12.0)
+    plt.close(fig)
+
+
 def test_peak_heatmap(annotation):
     fig, ax = peak_heatmap(
         annotation.peaks,
