@@ -572,7 +572,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--jobs",
         type=int,
         default=1,
-        help="worker processes for the BAM TSS matrix (-1 = all cores)",
+        help="worker processes for the BAM/bigWig TSS matrix (-1 = all cores)",
     )
     p_qc.set_defaults(func=_cmd_qc)
 
@@ -619,7 +619,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--jobs",
         type=int,
         default=1,
-        help="worker processes for annotation/QC (-1 = all cores)",
+        help="worker processes for annotation, QC and signal matrices (-1 = all cores)",
     )
     p_report.set_defaults(func=_cmd_report)
 

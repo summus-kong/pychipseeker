@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -54,6 +55,46 @@ def test_cli_callpeak_and_filter(tmp_path):
     )
     assert rc == 0
     assert len(read_peaks(filtered)) <= len(called)
+
+
+def test_cli_annotate_jobs(tmp_path, examples_dir):
+    rng = np.random.default_rng(21)
+    n = 2200
+    starts = rng.integers(700, 2900, n)
+    peaks = pd.DataFrame(
+        {
+            "chrom": "chr1",
+            "start": starts,
+            "end": starts + 80,
+            "name": [f"peak{i}" for i in range(n)],
+            "score": 0,
+            "strand": "+",
+        }
+    )
+    bed = tmp_path / "peaks.bed"
+    peaks.to_csv(bed, sep="\t", header=False, index=False)
+
+    outputs = []
+    for jobs in (1, 2):
+        out = tmp_path / f"annotated_{jobs}.tsv"
+        rc = main(
+            [
+                "annotate",
+                "--peaks",
+                str(bed),
+                "--gtf",
+                str(examples_dir / "example.gtf"),
+                "--jobs",
+                str(jobs),
+                "--quiet",
+                "--output",
+                str(out),
+            ]
+        )
+        assert rc == 0
+        outputs.append(pd.read_csv(out, sep="\t"))
+
+    pd.testing.assert_frame_equal(outputs[0], outputs[1])
 
 
 def test_cli_qc_and_cache_json(tmp_path, examples_dir, monkeypatch, capsys):
