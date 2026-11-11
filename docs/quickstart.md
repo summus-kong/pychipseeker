@@ -31,8 +31,9 @@ fig, ax = pcs.tagHeatmap(tag)
 ```
 
 Pass `n_jobs=-1` to `getTagMatrix`/`getPromoters`-based pipelines to process
-large window sets in parallel.  Peak-coverage matrices switch to processes once
-there are enough windows per worker; see [Performance](performance.md).
+large window sets in parallel.  Peak-coverage matrices are vectorised per
+chromosome in 0.8 and only switch to processes for very large window sets; see
+[Performance](performance.md).
 
 ## bigWig signal around TSS
 

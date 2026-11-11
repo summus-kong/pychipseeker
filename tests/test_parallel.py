@@ -177,6 +177,7 @@ def test_peak_coverage_tag_matrix_parallel_matches_sequential(
     from pychipseeker import tagmatrix
 
     monkeypatch.setattr(tagmatrix, "_COVERAGE_MIN_WINDOWS", 1)
+    monkeypatch.setattr(tagmatrix, "_COVERAGE_SPAWN_MIN_WINDOWS", 1)
 
     rng = np.random.default_rng(13)
     n_peaks, n_windows = 800, 300

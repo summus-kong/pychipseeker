@@ -76,23 +76,26 @@ identical to the sequential run.
 |---|---|---|
 | `annotate_peak` | contiguous peak chunks | 2,000 peaks |
 | `extract_tss_matrix` / bigWig tag matrix | chromosome blocks | 4,000 regions per worker |
-| peak-coverage tag matrix | window chunks | 8,000 windows per worker |
+| peak-coverage tag matrix | window chunks | 50,000 windows per worker (400,000 with `spawn`) |
 | BAM tag matrix / TSS enrichment | feature/window chunks | 500 regions |
 | `call_peaks` (bigWig) | one task per chromosome | 2+ chromosomes |
 
 On 100,000 mm10 peaks annotation takes 45.9 s sequentially, 14.9 s with four
 jobs and 16.2 s with eight (~3x).  The 0.7 interval indexes use binary search
 instead of whole-chromosome scans, so the sequential path is itself about twice
-as fast as 0.6.  Annotation workers rebuild the genome model from its GTF or
-cached `.npz` instead of pickling the 280 MB object, so memory per worker stays
-flat; `n_jobs=-1` is capped at eight annotation processes because each worker
-still holds a full model.  The BAM FRiP calculation uses the C-level `pysam`
-counter (one streaming pass plus one indexed query per merged peak) and no
-longer inspects every alignment in Python.  See
-[docs/performance.md](docs/performance.md) for the benchmark details and the
-parallel bigWig/tag-matrix measurements.  On Windows, scripts that use
-`n_jobs > 1` must guard their entry point with `if __name__ == "__main__":`, as
-required by the `spawn` start method.
+as fast as 0.6.  Peak-coverage tag matrices are vectorised per chromosome in
+0.8: 100,000 synthetic 6 kb windows take 0.43 s instead of 157 s, and a real
+mm10 promoter matrix drops from 16.5 s to 0.84 s, so that path now stays
+in-process unless the window set is very large.  Annotation workers rebuild the
+genome model from its GTF or cached `.npz` instead of pickling the 280 MB
+object, so memory per worker stays flat; `n_jobs=-1` is capped at eight
+annotation processes because each worker still holds a full model.  The BAM FRiP
+calculation uses the C-level `pysam` counter (one streaming pass plus one
+indexed query per merged peak) and no longer inspects every alignment in
+Python.  See [docs/performance.md](docs/performance.md) for the benchmark
+details and the parallel bigWig/tag-matrix measurements.  On Windows, scripts
+that use `n_jobs > 1` must guard their entry point with
+`if __name__ == "__main__":`, as required by the `spawn` start method.
 
 ## Dependencies
 

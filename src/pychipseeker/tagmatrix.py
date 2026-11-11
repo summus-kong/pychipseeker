@@ -33,7 +33,12 @@ from ._bigwig import (
 )
 from .annotation import GeneAnnotation, _normalise_peaks
 from .genomes import is_assembly_name
-from .parallel import chunk_bounds, effective_jobs, parallel_map
+from .parallel import (
+    chunk_bounds,
+    effective_jobs,
+    parallel_map,
+    process_start_method,
+)
 from .seqlevels import harmonize_frame
 
 
@@ -327,10 +332,17 @@ def _window_frame(windows: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
     return out
 
 
-def _peak_arrays(peaks: pd.DataFrame) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+def _peak_arrays(
+    peaks: pd.DataFrame,
+) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return ``(starts, ends, weights)`` arrays per chromosome.
+
+    The arrays are left in input order: the coverage builder turns them into a
+    piecewise-constant track and does not need pre-sorted intervals.
+    """
+
     out: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
     for chrom, group in peaks.groupby("chrom", sort=False):
-        group = group.sort_values("start", kind="mergesort")
         starts = group["start"].to_numpy(dtype=np.int64)
         ends = group["end"].to_numpy(dtype=np.int64)
         weights = (
@@ -342,6 +354,78 @@ def _peak_arrays(peaks: pd.DataFrame) -> dict[str, tuple[np.ndarray, np.ndarray,
     return out
 
 
+_CoverageTrack = tuple[np.ndarray, np.ndarray, np.ndarray]
+
+
+def _coverage_track(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    weights: np.ndarray,
+) -> Optional[_CoverageTrack]:
+    """Turn peak intervals into a coverage track and its running integral.
+
+    ``levels[k]`` is the summed peak weight on ``[coords[k], coords[k + 1])``
+    and ``integral[k]`` is the integral of the coverage from ``coords[0]`` to
+    ``coords[k]``.  A bin's coverage is then a difference of two integrals, so
+    every window can be evaluated with a few vectorised lookups instead of a
+    Python loop over overlapping peaks and bins.
+    """
+
+    valid = ends > starts
+    if not np.any(valid):
+        return None
+    starts = starts[valid]
+    ends = ends[valid]
+    weights = weights[valid]
+    if starts.size == 0:
+        return None
+    coords, inverse = np.unique(
+        np.concatenate([starts, ends]), return_inverse=True
+    )
+    if coords.size < 2:
+        return None
+    changes = np.concatenate([weights, -weights])
+    deltas = np.bincount(
+        inverse, weights=changes, minlength=coords.size
+    ).astype(float, copy=False)
+    # Track how many peaks are active in each segment so rounding residues in
+    # the cumulative weight cannot leak phantom coverage into peak-free gaps.
+    active_changes = np.concatenate(
+        [
+            np.ones(starts.size, dtype=np.int64),
+            -np.ones(starts.size, dtype=np.int64),
+        ]
+    )
+    active = np.cumsum(
+        np.bincount(inverse, weights=active_changes, minlength=coords.size).astype(
+            np.int64
+        )
+    )[:-1]
+    levels = np.cumsum(deltas)[:-1]
+    levels[active == 0] = 0.0
+    integral = np.zeros(coords.size, dtype=float)
+    integral[1:] = np.cumsum(levels * np.diff(coords))
+    return coords, levels, integral
+
+
+def _integral_at(track: _CoverageTrack, queries: np.ndarray) -> np.ndarray:
+    """Evaluate the running coverage integral at arbitrary genomic positions."""
+
+    coords, levels, integral = track
+    position = np.asarray(queries, dtype=float)
+    idx = np.searchsorted(coords, position, side="right") - 1
+    np.clip(idx, 0, coords.size - 2, out=idx)
+    values = integral[idx] + levels[idx] * (position - coords[idx])
+    values[position <= coords[0]] = 0.0
+    values[position >= coords[-1]] = integral[-1]
+    return values
+
+
+# Cap the number of coverage values computed in one vectorised batch so that
+# per-base windows (nbin=None) do not allocate an enormous edge matrix.
+_COVERAGE_BLOCK_ELEMENTS = 2_000_000
+
+
 def _coverage_rows(
     by_chrom: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
     windows: pd.DataFrame,
@@ -349,62 +433,102 @@ def _coverage_rows(
     n_bins: Optional[int],
     ignore_strand: bool,
 ) -> tuple[np.ndarray, pd.DataFrame]:
-    """Build peak-coverage rows for one block of windows."""
+    """Build peak-coverage rows for one block of windows.
 
-    rows: list[np.ndarray] = []
-    kept: list[pd.Series] = []
-    for _, window in windows.iterrows():
-        chrom = str(window["chrom"])
-        start = int(window["start"])
-        end = int(window["end"])
-        width = end - start
-        if width <= 0:
-            continue
-        bins = int(n_bins) if n_bins is not None else int(width)
-        if bins <= 1:
+    Each chromosome is reduced once to a piecewise-constant coverage track;
+    windows are then evaluated as differences of the track's cumulative
+    integral.  This keeps the per-window cost proportional to the number of
+    bins and independent of the number of peaks.
+    """
+
+    empty_width = int(n_bins) if n_bins is not None else 0
+    empty = np.empty((0, empty_width), dtype=float)
+    if windows.empty:
+        return empty, pd.DataFrame(columns=windows.columns)
+
+    chroms = windows["chrom"].astype(str).to_numpy()
+    starts = windows["start"].to_numpy(dtype=np.int64)
+    ends = windows["end"].to_numpy(dtype=np.int64)
+    strands = windows["strand"].astype(str).to_numpy()
+    widths = ends - starts
+    positive = widths > 0
+
+    if n_bins is None:
+        if np.any(widths[positive] <= 1):
             raise ValueError("nbin must be > 1")
+        bins_per_row = widths
+    else:
+        if int(n_bins) <= 1 and bool(np.any(positive)):
+            raise ValueError("nbin must be > 1")
+        bins_per_row = np.full(len(windows), int(n_bins), dtype=np.int64)
+
+    valid = positive & (bins_per_row > 1)
+
+    # Group by chromosome *and* bin count: one integral lookup serves a whole
+    # batch of windows with the same shape.
+    groups: dict[tuple[str, int], list[int]] = {}
+    for index in np.flatnonzero(valid):
+        key = (chroms[index], int(bins_per_row[index]))
+        groups.setdefault(key, []).append(int(index))
+
+    tracks: dict[str, Optional[_CoverageTrack]] = {}
+    blocks: list[np.ndarray] = []
+    kept_indices: list[np.ndarray] = []
+    for (chrom, bins), indices in groups.items():
         if chrom not in by_chrom:
             continue
-        pstarts, pends, pweights = by_chrom[chrom]
-        lo = int(np.searchsorted(pends, start, side="right"))
-        hi = int(np.searchsorted(pstarts, end, side="left"))
-        if hi <= lo:
+        if chrom not in tracks:
+            tracks[chrom] = _coverage_track(*by_chrom[chrom])
+        track = tracks[chrom]
+        if track is None:
             continue
 
-        edges = np.linspace(start, end, bins + 1)
-        values = np.zeros(bins, dtype=float)
-        for j in range(lo, hi):
-            a = max(start, int(pstarts[j]))
-            b = min(end, int(pends[j]))
-            if b <= a:
+        index_array = np.asarray(indices, dtype=np.int64)
+        # Keep the edge batch at a predictable size; per-base windows can span
+        # tens of kilobases, so the chunk size shrinks with the bin count.
+        chunk = max(1, min(4096, _COVERAGE_BLOCK_ELEMENTS // (bins + 1)))
+        fractions = np.linspace(0.0, 1.0, bins + 1)
+        for offset in range(0, index_array.size, chunk):
+            block = index_array[offset : offset + chunk]
+            left = starts[block].astype(float)[:, None]
+            right = ends[block].astype(float)[:, None]
+            edges = left + (right - left) * fractions
+            values = np.diff(_integral_at(track, edges), axis=1)
+            keep = np.any(values != 0.0, axis=1)
+            if not np.any(keep):
                 continue
-            weight = float(pweights[j])
-            first = int(np.searchsorted(edges, a, side="right") - 1)
-            first = max(0, min(first, bins - 1))
-            last = int(np.searchsorted(edges, b, side="left") - 1)
-            last = max(0, min(last, bins - 1))
-            for bi in range(first, last + 1):
-                left = max(a, edges[bi])
-                right = min(b, edges[bi + 1])
-                if right > left:
-                    values[bi] += weight * float(right - left)
+            blocks.append(values[keep])
+            kept_indices.append(block[keep])
 
-        if np.all(values == 0):
-            continue
-        if str(window["strand"]) == "-" and not ignore_strand:
-            values = values[::-1]
-        rows.append(values)
-        kept.append(window)
+    if not blocks:
+        return empty, pd.DataFrame(columns=windows.columns)
 
-    if not rows:
-        width = int(n_bins) if n_bins is not None else 0
-        return np.empty((0, width), dtype=float), pd.DataFrame(
-            columns=windows.columns
-        )
-    return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True)
+    matrix = np.vstack(blocks)
+    order = np.concatenate(kept_indices)
+    # Groups are visited per chromosome; restore the caller's window order.
+    permutation = np.argsort(order, kind="stable")
+    matrix = matrix[permutation]
+    order = order[permutation]
+
+    if not ignore_strand:
+        minus = strands[order] == "-"
+        if np.any(minus):
+            matrix[minus] = matrix[minus][:, ::-1]
+    return matrix, windows.iloc[order].reset_index(drop=True)
 
 
-_COVERAGE_MIN_WINDOWS = 8000
+_COVERAGE_MIN_WINDOWS = 50_000
+# Spawning workers on Windows/macOS costs roughly a second per process, so a
+# parallel coverage matrix only pays off for very large window sets there.
+_COVERAGE_SPAWN_MIN_WINDOWS = 400_000
+
+
+def _coverage_parallel_floor() -> int:
+    if process_start_method() == "spawn":
+        return _COVERAGE_SPAWN_MIN_WINDOWS
+    return _COVERAGE_MIN_WINDOWS
+
+
 _COVERAGE_WORKER: Optional[tuple[dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]], Optional[int], bool]] = None
 
 
@@ -448,7 +572,10 @@ def _coverage_matrix(
 
     by_chrom = _peak_arrays(peaks)
     workers = effective_jobs(n_jobs, tasks=len(windows))
-    if workers > 1 and len(windows) >= _COVERAGE_MIN_WINDOWS * workers:
+    if (
+        workers > 1
+        and len(windows) >= _coverage_parallel_floor() * workers
+    ):
         chunks = [
             windows.iloc[start:stop].reset_index(drop=True)
             for start, stop in chunk_bounds(len(windows), workers * 4)
@@ -900,8 +1027,10 @@ def get_tag_matrix(
     If ``windows`` is omitted, a bioregion is built from ``TxDb``/``gtf``/
     ``annotation`` using ``upstream``, ``downstream``, ``by`` and ``type``.
 
-    ``n_jobs`` splits peak-coverage windows or bigWig chromosome blocks across
-    processes; ``-1`` uses every core and results match the sequential run.
+    ``n_jobs`` splits bigWig chromosome blocks or BAM windows across processes;
+    peak-coverage matrices are vectorised per chromosome and only fall back to
+    processes for very large window sets.  ``-1`` uses every core and results
+    match the sequential run.
     """
 
     if bigwig is None and isinstance(peak, (str, Path)):

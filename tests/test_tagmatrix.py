@@ -10,6 +10,8 @@ import pytest
 from pychipseeker import annotate_peak
 from pychipseeker.tagmatrix import (
     TagMatrix,
+    _coverage_rows,
+    _peak_arrays,
     get_bio_region,
     get_promoters,
     get_tag_matrix,
@@ -123,6 +125,102 @@ def test_tag_matrix_weight_column():
     )
     matrix = get_tag_matrix(peak=peaks, windows=windows, weightCol="score", nbin=20)
     assert np.isclose(matrix.sum(), 60.0)
+
+
+def _bruteforce_coverage(peaks, windows, *, n_bins, ignore_strand):
+    """Independent per-base reference for the peak-coverage matrix."""
+
+    rows = []
+    kept = []
+    for _, window in windows.iterrows():
+        chrom = str(window["chrom"])
+        start = int(window["start"])
+        end = int(window["end"])
+        width = end - start
+        if width <= 0 or (n_bins is not None and int(n_bins) <= 1):
+            continue
+        bins = int(n_bins) if n_bins is not None else width
+        per_base = np.zeros(width, dtype=float)
+        for _, peak in peaks[peaks["chrom"].astype(str) == chrom].iterrows():
+            left = max(start, int(peak["start"]))
+            right = min(end, int(peak["end"]))
+            if right <= left:
+                continue
+            per_base[left - start : right - start] += float(
+                peak.get("_weight", 1.0)
+            )
+        # Integrate the piecewise-constant per-base track at fractional bin
+        # edges, matching the half-open semantics of the production code.
+        cumulative = np.concatenate([[0.0], np.cumsum(per_base)])
+        edges = np.linspace(0.0, float(width), bins + 1)
+        base = np.clip(np.floor(edges).astype(np.int64), 0, width - 1)
+        values = np.diff(cumulative[base] + per_base[base] * (edges - base))
+        if np.all(values == 0):
+            continue
+        if str(window["strand"]) == "-" and not ignore_strand:
+            values = values[::-1]
+        rows.append(values)
+        kept.append(window)
+    if not rows:
+        return np.empty((0, int(n_bins) if n_bins is not None else 0)), pd.DataFrame(
+            columns=windows.columns
+        )
+    return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True)
+
+
+def test_peak_coverage_handles_unsorted_peak_ends():
+    # Starts are sorted but ends are not: the old searchsorted bound on peak
+    # ends skipped the long first peak, silently losing its coverage.
+    peaks = pd.DataFrame(
+        {
+            "chrom": ["chr1", "chr1"],
+            "start": [0, 100],
+            "end": [1000, 150],
+            "_weight": [1.0, 2.0],
+        }
+    )
+    windows = pd.DataFrame(
+        {"chrom": ["chr1"], "start": [120], "end": [140], "strand": ["+"]}
+    )
+    matrix, kept = _coverage_rows(
+        _peak_arrays(peaks), windows, n_bins=4, ignore_strand=False
+    )
+    assert kept["start"].tolist() == [120]
+    np.testing.assert_allclose(matrix, [[15.0, 15.0, 15.0, 15.0]])
+
+
+@pytest.mark.parametrize("ignore_strand", [False, True])
+@pytest.mark.parametrize("n_bins", [None, 2, 5, 13])
+def test_peak_coverage_matches_bruteforce(ignore_strand, n_bins):
+    rng = np.random.default_rng(21)
+    n_peaks = 40
+    peak_starts = rng.integers(0, 4000, n_peaks)
+    peaks = pd.DataFrame(
+        {
+            "chrom": rng.choice(["chr1", "chr2"], n_peaks),
+            "start": peak_starts,
+            "end": peak_starts + rng.integers(-20, 700, n_peaks),
+            "_weight": rng.normal(0.0, 2.0, n_peaks),
+        }
+    )
+    start = rng.integers(0, 4000, 60)
+    windows = pd.DataFrame(
+        {
+            "chrom": rng.choice(["chr1", "chr2", "chr3"], 60),
+            "start": start,
+            "end": start + 50,
+            "strand": rng.choice(["+", "-", "*"], 60),
+        }
+    )
+
+    expected, expected_kept = _bruteforce_coverage(
+        peaks, windows, n_bins=n_bins, ignore_strand=ignore_strand
+    )
+    got, got_kept = _coverage_rows(
+        _peak_arrays(peaks), windows, n_bins=n_bins, ignore_strand=ignore_strand
+    )
+    np.testing.assert_allclose(got, expected, rtol=1e-7, atol=1e-5)
+    pd.testing.assert_frame_equal(got_kept, expected_kept)
 
 
 def test_profile_and_heatmap_plots(annotation):

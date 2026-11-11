@@ -28,6 +28,12 @@ def available_cores() -> int:
     return max(1, int(os.cpu_count() or 1))
 
 
+def process_start_method() -> str:
+    """Return the multiprocessing start method used for worker pools."""
+
+    return mp.get_start_method()
+
+
 def effective_jobs(n_jobs: Optional[int], *, tasks: int = 1) -> int:
     """Resolve a user-facing ``n_jobs`` value into a worker count.
 

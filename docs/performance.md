@@ -56,7 +56,7 @@ cores.
 |---|---|---|
 | `extract_tss_matrix` | chromosome blocks | 4,000 regions per worker |
 | bigWig tag matrix | chromosome blocks | 4,000 windows per worker |
-| peak-coverage tag matrix | contiguous window chunks | 8,000 windows per worker |
+| peak-coverage tag matrix | contiguous window chunks | 50,000 windows per worker (400,000 with `spawn`) |
 
 The defaults stay sequential (`n_jobs=None`), so importing and small calls
 never pay process start-up.  On Windows, spawning a pool costs roughly one to
@@ -66,13 +66,39 @@ cover that cost, and parallel extraction only runs for vectorised value types
 (`sum`, `mean`, `coverage`) or the per-window `bw.stats` fallback when the
 input is genuinely large.
 
-Peak-coverage matrices are pure-Python per window, so they scale well once the
-input is large enough:
+## Peak-coverage tag matrices
 
-| Windows × bins | Sequential | 8 jobs |
-|---|---:|---:|
-| 40,000 × 100 | 4.8 s | 8.6 s |
-| 100,000 × 100 | 40.1 s | 10.9 s |
+`get_tag_matrix(peak=...)` reduces each chromosome to a piecewise-constant
+coverage track and evaluates every window as a difference of the track's
+cumulative integral.  Windows with the same chromosome and bin count are
+evaluated in vectorised batches, so the per-window cost is proportional to the
+number of bins rather than to the number of nearby peaks.  This also fixes a
+latent lookup bug: the old path used `searchsorted` on peak end coordinates
+without requiring them to be sorted, which could drop coverage from a long peak
+that started before a shorter one.  Real ENCODE peaks and mm10 promoters give
+bit-identical matrices; synthetic inputs with non-monotone ends now include the
+previously skipped peaks.
+
+Synthetic benchmark (100,000 peaks, 6 kb windows, 100 bins, Windows 11):
+
+| Windows × bins | 0.7 | 0.8 sequential | 0.8, 8 jobs |
+|---|---:|---:|---:|
+| 40,000 × 100 | 51.0 s | 0.22 s | 0.22 s |
+| 100,000 × 100 | 157.3 s | 0.43 s | 0.44 s |
+
+The real mm10 promoter set (55k genes, 6 kb windows, 100 bins) drops from
+16.5 s to 0.84 s on the example ENCODE peak file.  Because the sequential path
+is now so fast, process parallelism only starts for very large window sets:
+50,000 windows per worker with `fork`/`forkserver` and 400,000 per worker when
+the start method is `spawn` (Windows and macOS).  Smaller requests keep
+`n_jobs` accepted but build the matrix in-process, which is faster than paying
+the pool start-up cost.
+
+Reproduce with:
+
+```bash
+python scripts/bench_coverage.py --peaks 100000 --windows 100000 --jobs 1 8
+```
 
 Sequential and parallel matrices are compared with `numpy.testing` in
 `tests/test_parallel.py`, including strand handling and dropped empty rows.
