@@ -217,14 +217,21 @@ turn them into a single-page A3 plate and a multi-page PDF report:
 export ENCODE_BIGWIG=/path/to/ENCFF893ZGR.bigWig   # H3K4me3, mm10, ENCSR000CDQ
 python examples/call_encode_peaks.py --bigwig "$ENCODE_BIGWIG" \
     --out examples/encode_peaks.bed --threshold 3
-python examples/make_encode_plate.py    # A3 plate + 6 panels, 6 formats each
+python examples/make_encode_plate.py    # 2 A3 plates + 12 panels + gallery
 python examples/make_encode_report.py   # 11-page encode_report.pdf
 ```
 
-The plate and every panel are written as PNG, PDF, SVG, EPS and TIFF
-(plus a 600 dpi PNG of the plate), so the same artwork can go straight into
-slides, Illustrator/Inkscape, or a journal submission.  Use
-`--formats png,pdf` to keep only what you need.
+The main plate covers annotation composition, peak widths, TSS distance, the
+average profile, the coverage heatmap and the annotation table.  A second A3
+plate adds chromosome distribution, width and signal by annotation class,
+non-promoter distances, signal-quartile profiles, and a width-vs-signal
+density plot.  `gallery.html` indexes every panel with thumbnails and download
+links, so you can pick a chart type without opening the PDF.
+
+Both plates and every panel are written as PNG, PDF, SVG, EPS and TIFF (plus
+600 dpi PNGs of the plates), so the same artwork can go straight into slides,
+Illustrator/Inkscape, or a journal submission.  Use `--formats png,pdf` to keep
+only what you need.
 
 The committed `examples/encode_peaks.bed` holds the resulting 11,291 peaks
 (92% within 1 kb of a TSS, median width 958 bp).  The track is a

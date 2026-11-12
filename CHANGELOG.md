@@ -4,6 +4,26 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] - 2026-11-12
+
+### Added
+
+- A second A3 plate (`encode_supplementary_plate.*`) with six more views of
+  the ENCODE peak set: chromosome distribution, width and signal by annotation
+  class, non-promoter TSS distances, signal-quartile profiles, and a
+  width-vs-signal hexbin with a median trend.
+- `gallery.html`, a browsable index of both plates and all twelve panels with
+  thumbnails and direct links to every export format.
+- `_quartile_profiles()` in the example script groups promoters by the
+  strongest peak score annotated to each gene.
+
+### Changed
+
+- `examples/make_encode_plate.py` now produces twelve standalone panels and a
+  twelve-page `encode_figures.pdf` (previously six).
+- Panel L carries a white annotation backdrop so its statistics remain legible
+  over the density hexbins.
+
 ## [0.8.2] - 2026-11-11
 
 ### Fixed

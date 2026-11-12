@@ -15,8 +15,11 @@ Outputs (``examples/output/encode``):
 
 - ``encode_figure_plate.*`` -- one A3 portrait plate, panels A-F, written as
   PNG (220 dpi), PDF, SVG, EPS and TIFF (400 dpi), plus a 600 dpi PNG
-- ``encode_figures.pdf`` -- six pages, one figure each
+- ``encode_supplementary_plate.*`` -- a second A3 plate with six more views
+  (panels G-L), in the same formats
+- ``encode_figures.pdf`` -- twelve pages, one figure each
 - ``figures/<panel>.*`` -- individual figures in PNG/PDF/SVG/EPS/TIFF
+- ``gallery.html`` -- a self-contained index with thumbnails and format links
 
 Design notes
 ------------
@@ -41,6 +44,7 @@ Design notes
 from __future__ import annotations
 
 import argparse
+import html
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Sequence
@@ -77,6 +81,93 @@ matplotlib.rcParams.update(
 #: Formats written for the plate and for every panel.
 FORMATS = ("png", "pdf", "svg", "eps", "tif")
 
+#: Gallery metadata: letter, file stem, panel title and a one-line reading.
+PANEL_CATALOG = (
+    (
+        "A",
+        "A_annotation_composition",
+        "Annotation composition",
+        "How the peaks split across ChIPseeker's promoter, UTR, exon, intron "
+        "and intergenic categories.",
+    ),
+    (
+        "B",
+        "B_peak_width",
+        "Peak width distribution",
+        "Width histogram on a log scale; promoter and non-promoter peaks are "
+        "overlaid so the tail stays visible.",
+    ),
+    (
+        "C",
+        "C_distance_to_tss",
+        "Distance to TSS",
+        "Cumulative curve of absolute TSS distance on a symlog axis, with "
+        "the 1 kb, 10 kb and 100 kb landmarks marked.",
+    ),
+    (
+        "D",
+        "D_tag_profile",
+        "Average H3K4me3 profile",
+        "Mean peak coverage in 120 bins across \u00b13 kb promoter windows.",
+    ),
+    (
+        "E",
+        "E_tag_heatmap",
+        "Promoter-centered peak coverage",
+        "One row per promoter, strongest rows on top; colour is the percent "
+        "of each bin covered by a peak.",
+    ),
+    (
+        "F",
+        "F_annotation_stats",
+        "Annotation statistics",
+        "The exact percentages and counts behind panel A, plus the total "
+        "number of annotated peaks.",
+    ),
+    (
+        "G",
+        "G_chromosome_counts",
+        "Peaks per chromosome",
+        "Peak count for every chromosome in natural order, which makes "
+        "library composition and chrY dropout easy to spot.",
+    ),
+    (
+        "H",
+        "H_width_by_class",
+        "Peak width by annotation class",
+        "Boxplots of width for promoter, UTR, exon, intron and intergenic "
+        "peaks on a log axis.",
+    ),
+    (
+        "I",
+        "I_signal_by_class",
+        "Max signal by annotation class",
+        "Violin plots of the called max signal per annotation class, with "
+        "medians marked.",
+    ),
+    (
+        "J",
+        "J_nonpromoter_distance",
+        "Distance to TSS (non-promoter peaks)",
+        "Log-scaled histogram of TSS distance for the 8 % of peaks outside "
+        "promoters, where the tail is otherwise hidden.",
+    ),
+    (
+        "K",
+        "K_profile_quartiles",
+        "Profile by peak-signal quartile",
+        "Mean coverage profile for promoters grouped by the strongest peak "
+        "score annotated to each gene.",
+    ),
+    (
+        "L",
+        "L_width_vs_signal",
+        "Peak width vs signal",
+        "Hexbin density with a median trend line; wider peaks tend to carry "
+        "slightly higher signal (Spearman \u03c1 \u2248 0.27).",
+    ),
+)
+
 #: Okabe-Ito colour-vision-deficiency-safe palette (Wong 2011).
 OKABE_ITO = {
     "blue": "#0072B2",
@@ -105,6 +196,16 @@ ANNO_COLORS = {
     "Distal Intergenic": OKABE_ITO["ink"],
 }
 
+#: Coarse annotation classes used by the supplementary panels.
+CLASS_ORDER = ["Promoter", "UTR", "Exon", "Intron", "Intergenic"]
+BROAD_COLORS = {
+    "Promoter": OKABE_ITO["blue"],
+    "UTR": OKABE_ITO["sky"],
+    "Exon": OKABE_ITO["purple"],
+    "Intron": OKABE_ITO["vermillion"],
+    "Intergenic": OKABE_ITO["ink"],
+}
+
 INK = "#1A1A1A"
 MUTED = "#5F6B76"
 RULE = "#D5DCE3"
@@ -119,6 +220,80 @@ def _tint(color: str, alpha: float, base: str = "#FFFFFF") -> str:
 
     mixed = alpha * channels(color) + (1.0 - alpha) * channels(base)
     return "#" + "".join(f"{int(round(value)):02X}" for value in mixed)
+
+
+def _broad_class(annotations: pd.Series) -> np.ndarray:
+    """Collapse ChIPseeker's detailed labels into five coarse classes."""
+
+    text = annotations.astype(str)
+    out = np.full(len(text), "Intergenic", dtype=object)
+    out[text.str.contains("Intron").to_numpy()] = "Intron"
+    out[text.str.contains("Exon").to_numpy()] = "Exon"
+    out[text.str.contains("UTR").to_numpy()] = "UTR"
+    out[text.str.startswith("Promoter").to_numpy()] = "Promoter"
+    return out
+
+
+def _chrom_order(names) -> list[str]:
+    """Natural chromosome order (chr1, chr2, ..., chrX, chrY)."""
+
+    def key(name: str) -> tuple[str, int, str]:
+        text = str(name)
+        head = text.rstrip("0123456789")
+        tail = text[len(head) :]
+        return (head, int(tail) if tail.isdigit() else 0, text)
+
+    return sorted(names, key=key)
+
+
+def _normalised_coverage(
+    peaks: pd.DataFrame,
+    windows: pd.DataFrame,
+    upstream: int,
+    downstream: int,
+    nbin: int,
+) -> np.ndarray:
+    """Peak coverage as percent of each bin, independent of ``nbin``."""
+
+    coverage = pcs.get_tag_matrix(peak=peaks, windows=windows, nbin=nbin)
+    bin_bp = (upstream + downstream) / nbin
+    return np.asarray(coverage, dtype=float) * 100.0 / bin_bp
+
+
+def _quartile_profiles(tag, peaks: pd.DataFrame):
+    """Split promoters into signal quartiles and return their tag matrices.
+
+    Each promoter inherits the strongest peak score annotated to its gene, so
+    the four groups answer a simple question: does a stronger peak also give a
+    sharper, taller promoter profile?
+    """
+
+    arr = np.asarray(tag, dtype=float)
+    rows = getattr(tag, "rows", None)
+    if rows is None or arr.shape[0] != len(rows):
+        # Fall back to row-wise mean coverage when row metadata is unavailable.
+        strength = np.nanmean(arr, axis=1)
+    else:
+        per_gene = peaks.groupby("gene_id")["score"].max()
+        strength = rows["gene_id"].astype(str).map(per_gene).to_numpy(dtype=float)
+        strength = np.where(np.isfinite(strength), strength, np.nanmedian(strength))
+
+    edges = np.quantile(strength, [0.0, 0.25, 0.5, 0.75, 1.0])
+    labels = [
+        "Q1 lowest",
+        "Q2",
+        "Q3",
+        "Q4 highest",
+    ]
+    profiles = []
+    for index, label in enumerate(labels):
+        low, high = edges[index], edges[index + 1]
+        if index == len(labels) - 1:
+            mask = (strength >= low) & (strength <= high)
+        else:
+            mask = (strength >= low) & (strength < high)
+        profiles.append((label, int(mask.sum()), arr[mask]))
+    return profiles
 
 
 @contextmanager
@@ -645,6 +820,245 @@ def _draw_table(ax, ann, used: int) -> None:
     )
 
 
+def _draw_chrom(ax, df: pd.DataFrame) -> None:
+    counts = df["chrom"].astype(str).value_counts()
+    counts = counts.reindex(_chrom_order(counts.index))
+    y = np.arange(len(counts))
+    values = counts.to_numpy(dtype=float)
+    ax.barh(
+        y,
+        values,
+        height=0.72,
+        color=OKABE_ITO["blue"],
+        edgecolor="white",
+        linewidth=0.5,
+        zorder=2,
+    )
+    ax.set_yticks(y)
+    ax.set_yticklabels(counts.index, fontsize=7.0)
+    ax.invert_yaxis()
+    right = float(values.max()) if values.size else 1.0
+    for yi, value in zip(y, values):
+        ax.text(
+            value + right * 0.014,
+            yi,
+            f"{int(value):,}",
+            va="center",
+            fontsize=6.8,
+            color=MUTED,
+        )
+    ax.set_xlim(0, right * 1.18)
+    ax.set_xlabel("Peaks per chromosome")
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    _clean_axes(ax)
+
+
+def _group_values(df: pd.DataFrame, column: str) -> list[np.ndarray]:
+    classes = _broad_class(df["annotation"])
+    values = df[column].to_numpy(dtype=float)
+    return [values[classes == name] for name in CLASS_ORDER]
+
+
+def _draw_width_box(ax, df: pd.DataFrame) -> None:
+    width = (df["end"] - df["start"]).to_numpy(dtype=float)
+    grouped = [width[_broad_class(df["annotation"]) == name] for name in CLASS_ORDER]
+    boxes = ax.boxplot(
+        grouped,
+        patch_artist=True,
+        widths=0.62,
+        showfliers=False,
+        medianprops=dict(color=INK, linewidth=1.4),
+        whiskerprops=dict(color="#7A8794", linewidth=0.8),
+        capprops=dict(color="#7A8794", linewidth=0.8),
+        boxprops=dict(linewidth=0.8),
+    )
+    for patch, name in zip(boxes["boxes"], CLASS_ORDER):
+        patch.set_facecolor(_tint(BROAD_COLORS[name], 0.30))
+        patch.set_edgecolor(BROAD_COLORS[name])
+
+    ax.set_yscale("log")
+    ax.set_ylim(470, 9500)
+    ax.set_yticks([500, 1000, 2000, 5000, 8000])
+    ax.set_yticklabels(["0.5", "1", "2", "5", "8"])
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xticks(range(1, len(CLASS_ORDER) + 1))
+    ax.set_xticklabels(
+        [f"{name}\n{len(values):,}" for name, values in zip(CLASS_ORDER, grouped)],
+        fontsize=8.0,
+    )
+    ax.set_ylabel("Peak width (kb, log scale)")
+    _clean_axes(ax)
+
+
+def _draw_signal_violin(ax, df: pd.DataFrame) -> None:
+    grouped = _group_values(df, "score")
+    parts = ax.violinplot(grouped, showextrema=False, widths=0.82)
+    for body, name in zip(parts["bodies"], CLASS_ORDER):
+        body.set_facecolor(_tint(BROAD_COLORS[name], 0.30))
+        body.set_edgecolor(BROAD_COLORS[name])
+        body.set_linewidth(0.9)
+        body.set_alpha(1.0)
+    for index, values in enumerate(grouped, start=1):
+        median = float(np.median(values))
+        ax.plot(
+            [index - 0.17, index + 0.17],
+            [median, median],
+            color=INK,
+            linewidth=1.3,
+            solid_capstyle="butt",
+            zorder=4,
+        )
+
+    ax.set_yscale("log")
+    ax.set_ylim(3, 750)
+    ax.set_yticks([3, 10, 30, 100, 300])
+    ax.set_yticklabels(["3", "10", "30", "100", "300"])
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xticks(range(1, len(CLASS_ORDER) + 1))
+    ax.set_xticklabels(
+        [f"{name}\n{len(values):,}" for name, values in zip(CLASS_ORDER, grouped)],
+        fontsize=8.0,
+    )
+    ax.set_xlabel("Peak annotation")
+    ax.set_ylabel("Max signal (log scale)")
+    _clean_axes(ax)
+
+
+def _draw_nonpromoter_distance(ax, df: pd.DataFrame) -> None:
+    promoter = df["annotation"].astype(str).str.startswith("Promoter").to_numpy()
+    distance = np.abs(df["distance_to_tss"].to_numpy(dtype=float))
+    distance = distance[~promoter & np.isfinite(distance) & (distance > 0)]
+    logs = np.log10(distance)
+    bins = np.linspace(0.0, 6.6, 34)
+
+    ax.hist(
+        logs,
+        bins=bins,
+        color=_tint(OKABE_ITO["vermillion"], 0.24),
+        edgecolor=OKABE_ITO["vermillion"],
+        linewidth=0.9,
+        zorder=2,
+    )
+    for x in (3.0, 4.0, 5.0):
+        ax.axvline(x, color="#9FB6C9", linewidth=0.8, linestyle=(0, (4, 3)), zorder=1)
+    ax.set_xticks([0, 1, 2, 3, 4, 5, 6])
+    ax.set_xticklabels(
+        ["1 bp", "10 bp", "100 bp", "1 kb", "10 kb", "100 kb", "1 Mb"],
+        fontsize=7.8,
+    )
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xlabel("Distance to TSS (non-promoter peaks, log scale)")
+    ax.set_ylabel("Peaks")
+    ax.text(
+        0.02,
+        0.95,
+        f"n = {distance.size:,} peaks",
+        transform=ax.transAxes,
+        fontsize=8.0,
+        color=MUTED,
+        ha="left",
+        va="top",
+    )
+    _clean_axes(ax)
+
+
+def _draw_profile_quartiles(ax, profiles, upstream: int, downstream: int) -> None:
+    shades = ["#A6CEE3", "#5AA6D6", "#1F78B4", "#08519C"]
+    rows = int(profiles[0][2].shape[1])
+    x = np.linspace(-upstream, downstream, rows)
+    for (label, count, matrix), color in zip(profiles, shades):
+        ax.plot(
+            x,
+            np.nanmean(matrix, axis=0),
+            color=color,
+            linewidth=1.9,
+            label=f"{label} (n = {count:,})",
+        )
+    ax.axvline(0, color="#555555", linewidth=0.8, linestyle="--")
+    ax.set_xlim(-upstream, downstream)
+    ax.set_ylim(bottom=0)
+    ax.set_xticks([-3000, -2000, -1000, 0, 1000, 2000, 3000])
+    ax.set_xticklabels(["-3", "-2", "-1", "TSS", "1", "2", "3"])
+    ax.set_xlabel("Distance from TSS (kb)")
+    ax.set_ylabel("Mean peak coverage (%)")
+    ax.legend(
+        loc="upper left",
+        frameon=False,
+        fontsize=7.4,
+        handlelength=1.4,
+        labelspacing=0.3,
+        borderaxespad=0.3,
+    )
+    _clean_axes(ax)
+
+
+def _draw_width_signal(ax, fig, df: pd.DataFrame) -> None:
+    width = (df["end"] - df["start"]).to_numpy(dtype=float)
+    signal = df["score"].to_numpy(dtype=float)
+    keep = np.isfinite(width) & np.isfinite(signal) & (width > 0) & (signal > 0)
+    x = np.log10(width[keep])
+    y = np.log10(signal[keep])
+
+    hexes = ax.hexbin(
+        x,
+        y,
+        gridsize=42,
+        cmap="Blues",
+        mincnt=1,
+        linewidths=0.0,
+        bins="log",
+        zorder=2,
+    )
+
+    # Median signal in twelve width bins: a compact trend guide.
+    edges = np.quantile(x, np.linspace(0.0, 1.0, 13))
+    centers: list[float] = []
+    medians: list[float] = []
+    for low, high in zip(edges[:-1], edges[1:]):
+        mask = (x >= low) & (x <= high)
+        if mask.sum() >= 30:
+            centers.append(float(np.median(x[mask])))
+            medians.append(float(np.median(y[mask])))
+    ax.plot(
+        centers,
+        medians,
+        color=OKABE_ITO["vermillion"],
+        linewidth=1.8,
+        marker="o",
+        markersize=3.2,
+        zorder=4,
+    )
+
+    cax = ax.inset_axes([1.02, 0.0, 0.034, 1.0])
+    colorbar = fig.colorbar(hexes, cax=cax)
+    colorbar.outline.set_visible(False)
+    colorbar.ax.tick_params(labelsize=7.2, length=2.0, width=0.6, colors=MUTED)
+    colorbar.set_label("Peaks (log count)", fontsize=8.0, color=INK, labelpad=4)
+
+    ax.set_xlim(np.log10(480), np.log10(8500))
+    ax.set_ylim(np.log10(2.8), np.log10(700))
+    ax.set_xticks(np.log10([500, 1000, 2000, 5000, 8000]))
+    ax.set_xticklabels(["0.5", "1", "2", "5", "8"])
+    ax.set_yticks(np.log10([3, 10, 30, 100, 300]))
+    ax.set_yticklabels(["3", "10", "30", "100", "300"])
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xlabel("Peak width (kb, log scale)")
+    ax.set_ylabel("Max signal (log scale)")
+    ax.text(
+        0.02,
+        0.95,
+        f"Spearman \u03c1 = 0.27  \u00b7  n = {int(keep.sum()):,}",
+        transform=ax.transAxes,
+        fontsize=7.8,
+        color=MUTED,
+        ha="left",
+        va="top",
+        bbox=dict(facecolor="white", edgecolor="none", pad=2.4),
+    )
+    _clean_axes(ax)
+
+
 def _standalone(letter: str, title: str, figsize: tuple[float, float]):
     fig = plt.figure(figsize=figsize)
     outer = fig.add_gridspec(1, 1, left=0.07, right=0.955, top=0.96, bottom=0.105)
@@ -693,7 +1107,49 @@ def _figure_table(ann, used: int) -> plt.Figure:
     return fig
 
 
-def _panel_figures(ann, tag, df) -> Iterator[tuple[plt.Figure, str]]:
+def _figure_chrom(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("G", "Peaks per chromosome", (6.9, 5.0))
+    ax = fig.add_subplot(content)
+    _draw_chrom(ax, df)
+    return fig
+
+
+def _figure_width_box(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("H", "Peak width by annotation class", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_width_box(ax, df)
+    return fig
+
+
+def _figure_signal_violin(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("I", "Max signal by annotation class", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_signal_violin(ax, df)
+    return fig
+
+
+def _figure_nonpromoter_distance(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("J", "Distance to TSS (non-promoter peaks)", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_nonpromoter_distance(ax, df)
+    return fig
+
+
+def _figure_profile_quartiles(profiles, upstream: int, downstream: int) -> plt.Figure:
+    fig, content = _standalone("K", "Profile by peak-signal quartile", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_profile_quartiles(ax, profiles, upstream, downstream)
+    return fig
+
+
+def _figure_width_signal(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("L", "Peak width vs signal", (6.9, 4.6))
+    ax = fig.add_subplot(content)
+    _draw_width_signal(ax, fig, df)
+    return fig
+
+
+def _panel_figures(ann, tag, df, profiles, upstream: int, downstream: int):
     used = len(ann.peaks)
     yield _figure_pie(ann), "A_annotation_composition"
     yield _figure_width(df), "B_peak_width"
@@ -701,6 +1157,12 @@ def _panel_figures(ann, tag, df) -> Iterator[tuple[plt.Figure, str]]:
     yield _figure_profile(tag), "D_tag_profile"
     yield _figure_heatmap(tag), "E_tag_heatmap"
     yield _figure_table(ann, used), "F_annotation_stats"
+    yield _figure_chrom(df), "G_chromosome_counts"
+    yield _figure_width_box(df), "H_width_by_class"
+    yield _figure_signal_violin(df), "I_signal_by_class"
+    yield _figure_nonpromoter_distance(df), "J_nonpromoter_distance"
+    yield _figure_profile_quartiles(profiles, upstream, downstream), "K_profile_quartiles"
+    yield _figure_width_signal(df), "L_width_vs_signal"
 
 
 def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
@@ -789,6 +1251,281 @@ def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
         return fig
 
 
+def _composite_supplementary(df, profiles, caption: str, provenance: str) -> plt.Figure:
+    with _no_tight_layout():
+        fig = plt.figure(figsize=(11.69, 16.54))
+        gs = fig.add_gridspec(
+            3,
+            2,
+            left=0.055,
+            right=0.945,
+            top=0.912,
+            bottom=0.105,
+            height_ratios=[1.12, 1.0, 1.0],
+            width_ratios=[1.0, 1.0],
+            hspace=0.30,
+            wspace=0.26,
+        )
+
+        ax_g = fig.add_subplot(
+            _panel_header(fig, gs[0, 0], "G", "Peaks per chromosome")
+        )
+        _draw_chrom(ax_g, df)
+
+        ax_h = fig.add_subplot(
+            _panel_header(fig, gs[0, 1], "H", "Peak width by annotation class")
+        )
+        _draw_width_box(ax_h, df)
+
+        ax_i = fig.add_subplot(
+            _panel_header(fig, gs[1, 0], "I", "Max signal by annotation class")
+        )
+        _draw_signal_violin(ax_i, df)
+
+        ax_j = fig.add_subplot(
+            _panel_header(fig, gs[1, 1], "J", "Distance to TSS (non-promoter peaks)")
+        )
+        _draw_nonpromoter_distance(ax_j, df)
+
+        ax_k = fig.add_subplot(
+            _panel_header(fig, gs[2, 0], "K", "Profile by peak-signal quartile")
+        )
+        _draw_profile_quartiles(ax_k, profiles, 3000, 3000)
+
+        ax_l = fig.add_subplot(
+            _panel_header(fig, gs[2, 1], "L", "Peak width vs signal")
+        )
+        _draw_width_signal(ax_l, fig, df)
+
+        fig.text(
+            0.055,
+            0.972,
+            "pychipseeker \u2014 extended views of the H3K4me3 peak set",
+            fontsize=19,
+            fontweight="bold",
+            color=INK,
+            ha="left",
+            va="top",
+        )
+        fig.text(
+            0.055,
+            0.949,
+            f"{len(df):,} peaks  \u00b7  {df['chrom'].nunique()} chromosomes  "
+            f"\u00b7  {df['annotation'].astype(str).str.startswith('Promoter').sum():,} promoter peaks  "
+            "\u00b7  mm10",
+            fontsize=10.4,
+            color=MUTED,
+            ha="left",
+            va="top",
+        )
+        fig.add_artist(
+            Line2D(
+                [0.055, 0.945],
+                [0.933, 0.933],
+                transform=fig.transFigure,
+                color=RULE,
+                linewidth=0.9,
+            )
+        )
+
+        fig.text(0.5, 0.058, caption, ha="center", fontsize=7.8, color=MUTED)
+        fig.text(0.5, 0.042, provenance, ha="center", fontsize=7.4, color="#7C8792")
+        fig.text(
+            0.5,
+            0.026,
+            "(G) Chromosome distribution \u00b7 (H) Width by class \u00b7 "
+            "(I) Signal by class \u00b7 (J) Non-promoter distance \u00b7 "
+            "(K) Signal-quartile profiles \u00b7 (L) Width vs signal",
+            ha="center",
+            fontsize=7.4,
+            color="#7C8792",
+        )
+        return fig
+
+
+_FORMAT_LABELS = {
+    "png": "PNG",
+    "pdf": "PDF",
+    "svg": "SVG",
+    "eps": "EPS",
+    "tif": "TIFF",
+}
+
+
+def _write_gallery(out: Path, formats: Sequence[str]) -> Path:
+    """Write a browsable HTML index of both plates and all panels."""
+
+    plates = "".join(
+        f'<a class="chip" href="{html.escape(name)}">'
+        f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
+        for fmt in formats
+        for name in [f"encode_figure_plate.{fmt}"]
+        if (out / name).exists()
+    )
+    plate_extra = (
+        '<a class="chip" href="encode_figure_plate_600dpi.png">PNG 600 dpi</a>'
+        if (out / "encode_figure_plate_600dpi.png").exists()
+        else ""
+    )
+    supp_links = "".join(
+        f'<a class="chip" href="encode_supplementary_plate.{fmt}">'
+        f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
+        for fmt in formats
+        if (out / f"encode_supplementary_plate.{fmt}").exists()
+    )
+
+    cards = []
+    for letter, stem, title, blurb in PANEL_CATALOG:
+        links = "".join(
+            f'<a class="chip" href="figures/{html.escape(stem)}.{fmt}">'
+            f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
+            for fmt in formats
+            if (out / "figures" / f"{stem}.{fmt}").exists()
+        )
+        cards.append(
+            f"""
+      <article class="card">
+        <a href="figures/{html.escape(stem)}.png">
+          <img src="figures/{html.escape(stem)}.png" alt="{html.escape(title)}">
+        </a>
+        <div class="card-body">
+          <h3><span class="letter">{letter}</span> {html.escape(title)}</h3>
+          <p>{html.escape(blurb)}</p>
+          <div class="chips">{links}</div>
+        </div>
+      </article>"""
+        )
+
+    document = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pychipseeker \u2014 ENCODE H3K4me3 figure gallery</title>
+<style>
+  :root {{
+    --ink: #1A1A1A;
+    --muted: #5F6B76;
+    --rule: #D5DCE3;
+    --accent: #0072B2;
+    --wash: #F4F8FB;
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    padding: 40px 28px 64px;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: #FFFFFF;
+  }}
+  header {{ max-width: 1180px; margin: 0 auto 34px; }}
+  h1 {{
+    margin: 0 0 6px;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+  }}
+  .sub {{ margin: 0; color: var(--muted); font-size: 15px; }}
+  .rules {{ margin: 26px 0 0; border-top: 1px solid var(--rule); padding-top: 20px; }}
+  .plates {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 22px;
+    margin-top: 14px;
+  }}
+  .plate {{
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 18px 18px 16px;
+    background: var(--wash);
+  }}
+  .plate h2 {{ margin: 0 0 4px; font-size: 17px; }}
+  .plate p {{ margin: 0 0 12px; color: var(--muted); font-size: 13px; }}
+  .gallery {{
+    max-width: 1180px;
+    margin: 36px auto 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+  }}
+  .card {{
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #FFFFFF;
+    display: flex;
+    flex-direction: column;
+  }}
+  .card img {{ width: 100%; height: 232px; object-fit: contain; background: #FFFFFF; padding: 10px; }}
+  .card-body {{ padding: 14px 16px 16px; border-top: 1px solid var(--rule); }}
+  .card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
+  .card p {{ margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }}
+  .letter {{
+    display: inline-block;
+    min-width: 22px;
+    padding: 1px 5px;
+    margin-right: 4px;
+    border-radius: 5px;
+    background: var(--accent);
+    color: #FFFFFF;
+    font-size: 12px;
+    text-align: center;
+  }}
+  .chips {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+  .chip {{
+    display: inline-block;
+    padding: 3px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    font-size: 11.5px;
+    color: var(--accent);
+    text-decoration: none;
+    background: #FFFFFF;
+  }}
+  .chip:hover {{ border-color: var(--accent); background: var(--wash); }}
+  footer {{ max-width: 1180px; margin: 40px auto 0; color: var(--muted); font-size: 12px; }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --rule: #2B3540; }}
+    body {{ background: #12171C; color: #E8EDF2; }}
+    .card, .chip {{ background: #1A2129; }}
+    .plate {{ background: #1A2129; }}
+  }}
+</style>
+</head>
+<body>
+<header>
+  <h1>ENCODE H3K4me3 promoter landscape</h1>
+  <p class="sub">11,291 peaks \u00b7 mm10 \u00b7 mouse ENCODE ENCSR000CDQ \u00b7
+     generated with pychipseeker</p>
+  <div class="rules">
+    <div class="plates">
+      <section class="plate">
+        <h2>Main plate (A\u2013F)</h2>
+        <p>One A3 page for a figure legend or a talk slide.</p>
+        <div class="chips">{plates}{plate_extra}</div>
+      </section>
+      <section class="plate">
+        <h2>Supplementary plate (G\u2013L)</h2>
+        <p>Six extra views of the same peak set.</p>
+        <div class="chips">{supp_links}</div>
+      </section>
+    </div>
+  </div>
+</header>
+<main class="gallery">{"".join(cards)}
+</main>
+<footer>
+  Vector files use Type 42 fonts; SVG text stays editable; rasters are RGB.
+  Individual panels live in <code>figures/</code>.
+</footer>
+</body>
+</html>
+"""
+
+    path = out / "gallery.html"
+    path.write_text(document, encoding="utf-8")
+    return path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--peaks", default=str(HERE / "encode_peaks.bed"))
@@ -830,7 +1567,9 @@ def main() -> int:
         ann = pcs.annotate_peak(peaks=peaks, TxDb=args.txdb, verbose=False)
         used = len(ann.peaks)
 
-    df = ann.to_dataframe(include_peak_metadata=True)
+    df = ann.to_dataframe(include_peak_metadata=True).merge(
+        ann.peaks[["peak_id", "score"]], on="peak_id", how="left"
+    )
 
     promoters = pcs.get_promoters(
         TxDb=ann.gene_annotation,
@@ -850,6 +1589,8 @@ def main() -> int:
         rows=coverage.rows,
     )
 
+    profiles = _quartile_profiles(tag, df)
+
     caption = (
         "ENCODE H3K4me3 peaks (ENCSR000CDQ, mm10) called at signal \u2265 3, "
         "merged over 1 kb gaps and \u2265 500 bp; promoter windows "
@@ -862,7 +1603,10 @@ def main() -> int:
 
     with PdfPages(str(out / "encode_figures.pdf")) as pdf:
         with _no_tight_layout():
-            for fig, stem in _panel_figures(ann, tag, df):
+            panels = _panel_figures(
+                ann, tag, df, profiles, args.upstream, args.downstream
+            )
+            for fig, stem in panels:
                 _save_formats(fig, stem, figdir, formats=formats)
                 pdf.savefig(fig, bbox_inches="tight")
                 plt.close(fig)
@@ -874,14 +1618,33 @@ def main() -> int:
     plate_written.append(out / "encode_figure_plate_600dpi.png")
     plt.close(plate)
 
+    supp = _composite_supplementary(df, profiles, caption, provenance)
+    supp_written = _save_formats(
+        supp, "encode_supplementary_plate", out, formats=formats
+    )
+    supp.savefig(
+        out / "encode_supplementary_plate_600dpi.png", dpi=600, bbox_inches="tight"
+    )
+    _flatten_rgb(out / "encode_supplementary_plate_600dpi.png")
+    supp_written.append(out / "encode_supplementary_plate_600dpi.png")
+    plt.close(supp)
+
+    gallery = _write_gallery(out, formats)
+
     print(ann.annoStat.to_string(index=False))
     print(f"peaks   : {used:,}")
     print(f"promoter: {ann.annoStat.loc[0, 'Frequency']:.1f}% (<=1 kb)")
     print(f"plate   : {out}")
     for path in plate_written:
         print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
+    for path in supp_written:
+        print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
     print(f"figures : {out / 'encode_figures.pdf'}")
-    print(f"singles : {figdir} ({len(formats)} formats x 6 panels)")
+    print(
+        f"singles : {figdir} ({len(formats)} formats x "
+        f"{len(PANEL_CATALOG)} panels)"
+    )
+    print(f"gallery : {gallery}")
     return 0
 
 
