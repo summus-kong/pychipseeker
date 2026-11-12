@@ -1,6 +1,15 @@
 """pychipseeker: ChIPseeker-style peak annotation in Python."""
 
 from ._version import __version__
+from .analysis import (
+    annotation_summary,
+    distance_summary,
+    gene_type_summary,
+    peaks_per_gene,
+    signal_groups,
+    top_genes,
+    tss_enrichment_by_quartile,
+)
 from .annotation import (
     GeneAnnotation,
     PeakAnnotation,
@@ -125,6 +134,13 @@ from .tagmatrix import (
 
 __all__ = [
     "__version__",
+    "annotation_summary",
+    "distance_summary",
+    "gene_type_summary",
+    "peaks_per_gene",
+    "signal_groups",
+    "top_genes",
+    "tss_enrichment_by_quartile",
     "annotate_peak",
     "annotatePeak",
     "annotate_db",

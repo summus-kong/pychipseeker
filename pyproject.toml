@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pychipseeker"
-version = "0.8.3"
+version = "0.8.4"
 description = "A lightweight, ChIPseeker-compatible Python implementation of peak annotation and visualization"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -122,6 +122,7 @@ warn_unused_ignores = false
 warn_redundant_casts = false
 check_untyped_defs = false
 files = [
+    "src/pychipseeker/analysis.py",
     "src/pychipseeker/enrichment.py",
     "src/pychipseeker/genomes.py",
     "src/pychipseeker/io.py",

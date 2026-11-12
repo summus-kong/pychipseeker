@@ -166,7 +166,52 @@ PANEL_CATALOG = (
         "Hexbin density with a median trend line; wider peaks tend to carry "
         "slightly higher signal (Spearman \u03c1 \u2248 0.27).",
     ),
+    (
+        "M",
+        "M_width_ecdf",
+        "Peak width ECDF by annotation class",
+        "Cumulative width curves answer 'what fraction of each class is "
+        "below 1 kb?' at a glance.",
+    ),
+    (
+        "N",
+        "N_top_genes",
+        "Top genes by peak count",
+        "The twelve genes with the most assigned peaks, useful for spotting "
+        "recurrent loci.",
+    ),
+    (
+        "O",
+        "O_peaks_per_gene",
+        "Peaks per gene",
+        "How many genes carry one, two, three or four or more peaks; the "
+        "y-axis is logarithmic so the tail stays visible.",
+    ),
+    (
+        "P",
+        "P_tss_quartile_enrichment",
+        "TSS enrichment by signal quartile",
+        "Centre-to-flank coverage ratio for the four signal groups: stronger "
+        "peaks produce sharper TSS enrichment.",
+    ),
+    (
+        "Q",
+        "Q_width_by_distance",
+        "Peak width by TSS-distance class",
+        "Width distributions for peaks exactly at the TSS, within 1 kb, and "
+        "in progressively more distal classes.",
+    ),
+    (
+        "R",
+        "R_gene_biotypes",
+        "Gene biotypes of annotated peaks",
+        "Peaks grouped by the biotype of their assigned gene, with counts "
+        "and percentages (log x-axis).",
+    ),
 )
+
+#: Look up a panel by its letter for custom plates and the gallery.
+PANEL_BY_LETTER = {item[0]: item for item in PANEL_CATALOG}
 
 #: Okabe-Ito colour-vision-deficiency-safe palette (Wong 2011).
 OKABE_ITO = {
@@ -265,33 +310,16 @@ def _quartile_profiles(tag, peaks: pd.DataFrame):
 
     Each promoter inherits the strongest peak score annotated to its gene, so
     the four groups answer a simple question: does a stronger peak also give a
-    sharper, taller promoter profile?
+    sharper, taller promoter profile?  Genes without an assigned peak fall into
+    the lowest group.
     """
 
     arr = np.asarray(tag, dtype=float)
-    rows = getattr(tag, "rows", None)
-    if rows is None or arr.shape[0] != len(rows):
-        # Fall back to row-wise mean coverage when row metadata is unavailable.
-        strength = np.nanmean(arr, axis=1)
-    else:
-        per_gene = peaks.groupby("gene_id")["score"].max()
-        strength = rows["gene_id"].astype(str).map(per_gene).to_numpy(dtype=float)
-        strength = np.where(np.isfinite(strength), strength, np.nanmedian(strength))
-
-    edges = np.quantile(strength, [0.0, 0.25, 0.5, 0.75, 1.0])
-    labels = [
-        "Q1 lowest",
-        "Q2",
-        "Q3",
-        "Q4 highest",
-    ]
+    groups = pcs.signal_groups(tag, peaks, n_groups=4)
     profiles = []
-    for index, label in enumerate(labels):
-        low, high = edges[index], edges[index + 1]
-        if index == len(labels) - 1:
-            mask = (strength >= low) & (strength <= high)
-        else:
-            mask = (strength >= low) & (strength < high)
+    for index in sorted(groups["group"].unique()):
+        mask = groups["group"].to_numpy() == index
+        label = str(groups.loc[mask, "label"].iloc[0])
         profiles.append((label, int(mask.sum()), arr[mask]))
     return profiles
 
@@ -1059,6 +1087,283 @@ def _draw_width_signal(ax, fig, df: pd.DataFrame) -> None:
     _clean_axes(ax)
 
 
+def _draw_width_ecdf(ax, df: pd.DataFrame) -> None:
+    width = (df["end"] - df["start"]).to_numpy(dtype=float)
+    classes = _broad_class(df["annotation"])
+    for name in CLASS_ORDER:
+        values = np.sort(width[classes == name])
+        if values.size == 0:
+            continue
+        cumulative = np.arange(1, values.size + 1) / values.size * 100.0
+        ax.step(
+            values,
+            cumulative,
+            where="post",
+            color=BROAD_COLORS[name],
+            linewidth=1.7,
+            label=f"{name} (n = {values.size:,})",
+        )
+
+    ax.axvline(1000, color="#9FB6C9", linewidth=0.8, linestyle=(0, (4, 3)), zorder=1)
+    ax.set_xscale("log")
+    ax.set_xlim(480, 8500)
+    ax.set_ylim(0, 102)
+    ax.set_xticks([500, 1000, 2000, 5000, 8000])
+    ax.set_xticklabels(["0.5", "1", "2", "5", "8"])
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_yticks([0, 25, 50, 75, 100])
+    ax.set_xlabel("Peak width (kb, log scale)")
+    ax.set_ylabel("Cumulative peaks (%)")
+    ax.legend(
+        loc="upper left",
+        frameon=False,
+        fontsize=7.0,
+        handlelength=1.5,
+        labelspacing=0.28,
+        borderaxespad=0.25,
+    )
+    ax.text(
+        0.98,
+        0.045,
+        "dashed line: 1 kb",
+        transform=ax.transAxes,
+        fontsize=7.0,
+        color=MUTED,
+        ha="right",
+        va="bottom",
+    )
+    _clean_axes(ax)
+
+
+def _draw_top_genes(ax, df: pd.DataFrame) -> None:
+    top = pcs.top_genes(df, n=12)
+    if top.empty:
+        ax.text(0.5, 0.5, "No gene annotation available", ha="center", va="center")
+        _clean_axes(ax)
+        return
+    top = top.iloc[::-1].reset_index(drop=True)
+    y = np.arange(len(top))
+    values = top["n_peaks"].to_numpy(dtype=float)
+    ax.barh(
+        y,
+        values,
+        height=0.72,
+        color=OKABE_ITO["blue"],
+        edgecolor="white",
+        linewidth=0.5,
+        zorder=2,
+    )
+    ax.set_yticks(y)
+    ax.set_yticklabels(top["gene_name"].astype(str), fontsize=7.2)
+    right = float(values.max()) if values.size else 1.0
+    for yi, value in zip(y, values):
+        ax.text(
+            value + right * 0.02,
+            yi,
+            f"{int(value)}",
+            va="center",
+            fontsize=6.8,
+            color=MUTED,
+        )
+    ax.set_xlim(0, right * 1.18)
+    ax.set_xlabel("Peaks assigned to the gene")
+    ax.text(
+        0.98,
+        0.04,
+        f"{len(top)} of {pcs.peaks_per_gene(df).shape[0]:,} genes",
+        transform=ax.transAxes,
+        fontsize=7.0,
+        color=MUTED,
+        ha="right",
+        va="bottom",
+    )
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    _clean_axes(ax)
+
+
+def _draw_peaks_per_gene(ax, df: pd.DataFrame) -> None:
+    counts = pcs.peaks_per_gene(df)["n_peaks"]
+    distribution = counts.value_counts().sort_index()
+    labels = ["1", "2", "3", "4+"]
+    values = [
+        int(distribution.get(1, 0)),
+        int(distribution.get(2, 0)),
+        int(distribution.get(3, 0)),
+        int(distribution.loc[distribution.index >= 4].sum()),
+    ]
+    x = np.arange(len(labels))
+    bars = ax.bar(
+        x,
+        values,
+        width=0.62,
+        color=[OKABE_ITO["blue"], OKABE_ITO["sky"], OKABE_ITO["green"], OKABE_ITO["orange"]],
+        edgecolor="white",
+        linewidth=0.6,
+        zorder=2,
+    )
+    total = max(sum(values), 1)
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value * 1.15,
+            f"{value:,}\n{value / total * 100:.1f}%",
+            ha="center",
+            va="bottom",
+            fontsize=7.2,
+            color=INK,
+            linespacing=1.15,
+        )
+    ax.set_yscale("log")
+    ax.set_ylim(0.8, max(values) * 4.0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("Peaks per gene")
+    ax.set_ylabel("Genes (log scale)")
+    ax.text(
+        0.98,
+        0.95,
+        f"median = {np.median(counts):.0f}  \u00b7  {len(counts):,} genes",
+        transform=ax.transAxes,
+        fontsize=7.8,
+        color=MUTED,
+        ha="right",
+        va="top",
+    )
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    _clean_axes(ax)
+
+
+def _draw_tss_quartiles(ax, tag, ann) -> None:
+    summary = pcs.tss_enrichment_by_quartile(tag, ann, n_groups=4)
+    x = np.arange(len(summary))
+    shades = ["#A6CEE3", "#5AA6D6", "#1F78B4", "#08519C"]
+    colors = shades[: len(summary)]
+    bars = ax.bar(
+        x,
+        summary["tss_enrichment"],
+        width=0.62,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.8,
+        zorder=2,
+    )
+    for bar, value in zip(bars, summary["tss_enrichment"]):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value * 1.02,
+            f"{value:.1f}\u00d7",
+            ha="center",
+            va="bottom",
+            fontsize=8.0,
+            color=INK,
+            fontweight="bold",
+        )
+    ax.axhline(1.0, color="#9FB6C9", linewidth=0.8, linestyle=(0, (4, 3)), zorder=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [
+            f"{row.quartile}\nn = {int(row.n):,}"
+            for row in summary.itertuples(index=False)
+        ],
+        fontsize=7.6,
+    )
+    ax.set_ylim(0, float(summary["tss_enrichment"].max()) * 1.16)
+    ax.set_ylabel("TSS enrichment (centre / flank)")
+    ax.text(
+        0.02,
+        0.95,
+        "centre = central 5 % of bins  \u00b7  flank = outer 10 %\n"
+        "Q1 includes genes without an assigned peak",
+        transform=ax.transAxes,
+        fontsize=6.8,
+        color=MUTED,
+        ha="left",
+        va="top",
+        linespacing=1.35,
+    )
+    _clean_axes(ax)
+
+
+def _draw_width_distance(ax, df: pd.DataFrame) -> None:
+    width = (df["end"] - df["start"]).to_numpy(dtype=float)
+    distance = np.abs(df["distance_to_tss"].to_numpy(dtype=float))
+    groups = [
+        ("TSS (0)", distance == 0),
+        ("1 bp-1 kb", (distance > 0) & (distance <= 1000)),
+        ("1-10 kb", (distance > 1000) & (distance <= 10000)),
+        ("10-100 kb", (distance > 10000) & (distance <= 100000)),
+        (">100 kb", distance > 100000),
+    ]
+    labels = []
+    values = []
+    colors = []
+    shades = ["#08519C", "#1F78B4", "#5AA6D6", "#A6CEE3", "#D6E6F4"]
+    for (label, mask), color in zip(groups, shades):
+        selected = width[mask]
+        if selected.size == 0:
+            continue
+        values.append(selected)
+        labels.append(f"{label}\n{selected.size:,}")
+        colors.append(color)
+
+    boxes = ax.boxplot(
+        values,
+        patch_artist=True,
+        widths=0.62,
+        showfliers=False,
+        medianprops=dict(color=INK, linewidth=1.3),
+        whiskerprops=dict(color="#7A8794", linewidth=0.8),
+        capprops=dict(color="#7A8794", linewidth=0.8),
+        boxprops=dict(linewidth=0.8),
+    )
+    for patch, color in zip(boxes["boxes"], colors):
+        patch.set_facecolor(_tint(color, 0.34))
+        patch.set_edgecolor(color)
+    ax.set_yscale("log")
+    ax.set_ylim(470, 9500)
+    ax.set_yticks([500, 1000, 2000, 5000, 8000])
+    ax.set_yticklabels(["0.5", "1", "2", "5", "8"])
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    ax.set_xticks(range(1, len(labels) + 1))
+    ax.set_xticklabels(labels, fontsize=7.4)
+    ax.set_xlabel("Distance to TSS")
+    ax.set_ylabel("Peak width (kb, log scale)")
+    _clean_axes(ax)
+
+
+def _draw_gene_type(ax, df: pd.DataFrame) -> None:
+    summary = pcs.gene_type_summary(df, top=8)
+    summary = summary.iloc[::-1].reset_index(drop=True)
+    y = np.arange(len(summary))
+    values = summary["count"].to_numpy(dtype=float)
+    ax.barh(
+        y,
+        values,
+        height=0.7,
+        color=OKABE_ITO["purple"],
+        edgecolor="white",
+        linewidth=0.5,
+        zorder=2,
+    )
+    ax.set_xscale("log")
+    right = float(values.max()) if values.size else 1.0
+    ax.set_xlim(0.8, right * 1.6)
+    ax.set_yticks(y)
+    ax.set_yticklabels(summary["gene_type"].astype(str), fontsize=7.0)
+    for yi, row in zip(y, summary.itertuples(index=False)):
+        ax.text(
+            float(row.count) * 1.08,
+            yi,
+            f"{int(row.count):,} ({float(row.percent):.1f}%)",
+            va="center",
+            fontsize=6.5,
+            color=MUTED,
+        )
+    ax.set_xlabel("Peaks (log scale)")
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+    _clean_axes(ax)
+
+
 def _standalone(letter: str, title: str, figsize: tuple[float, float]):
     fig = plt.figure(figsize=figsize)
     outer = fig.add_gridspec(1, 1, left=0.07, right=0.955, top=0.96, bottom=0.105)
@@ -1149,6 +1454,48 @@ def _figure_width_signal(df: pd.DataFrame) -> plt.Figure:
     return fig
 
 
+def _figure_width_ecdf(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("M", "Peak width ECDF by annotation class", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_width_ecdf(ax, df)
+    return fig
+
+
+def _figure_top_genes(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("N", "Top genes by peak count", (6.8, 4.5))
+    ax = fig.add_subplot(content)
+    _draw_top_genes(ax, df)
+    return fig
+
+
+def _figure_peaks_per_gene(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("O", "Peaks per gene", (6.8, 4.3))
+    ax = fig.add_subplot(content)
+    _draw_peaks_per_gene(ax, df)
+    return fig
+
+
+def _figure_tss_quartiles(tag, ann) -> plt.Figure:
+    fig, content = _standalone("P", "TSS enrichment by signal quartile", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_tss_quartiles(ax, tag, ann)
+    return fig
+
+
+def _figure_width_distance(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("Q", "Peak width by TSS-distance class", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_width_distance(ax, df)
+    return fig
+
+
+def _figure_gene_type(df: pd.DataFrame) -> plt.Figure:
+    fig, content = _standalone("R", "Gene biotypes of annotated peaks", (6.8, 4.4))
+    ax = fig.add_subplot(content)
+    _draw_gene_type(ax, df)
+    return fig
+
+
 def _panel_figures(ann, tag, df, profiles, upstream: int, downstream: int):
     used = len(ann.peaks)
     yield _figure_pie(ann), "A_annotation_composition"
@@ -1163,6 +1510,12 @@ def _panel_figures(ann, tag, df, profiles, upstream: int, downstream: int):
     yield _figure_nonpromoter_distance(df), "J_nonpromoter_distance"
     yield _figure_profile_quartiles(profiles, upstream, downstream), "K_profile_quartiles"
     yield _figure_width_signal(df), "L_width_vs_signal"
+    yield _figure_width_ecdf(df), "M_width_ecdf"
+    yield _figure_top_genes(df), "N_top_genes"
+    yield _figure_peaks_per_gene(df), "O_peaks_per_gene"
+    yield _figure_tss_quartiles(tag, ann), "P_tss_quartile_enrichment"
+    yield _figure_width_distance(df), "Q_width_by_distance"
+    yield _figure_gene_type(df), "R_gene_biotypes"
 
 
 def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
@@ -1343,6 +1696,233 @@ def _composite_supplementary(df, profiles, caption: str, provenance: str) -> plt
         return fig
 
 
+def _draw_panel(
+    letter: str,
+    fig: plt.Figure,
+    spec,
+    ann,
+    tag,
+    df: pd.DataFrame,
+    profiles,
+    upstream: int,
+    downstream: int,
+) -> None:
+    """Draw one catalog panel into an existing gridspec slot."""
+
+    if letter == "A":
+        _panel_pie(fig, spec, ann)
+        return
+
+    title = PANEL_BY_LETTER[letter][2]
+    ax = fig.add_subplot(_panel_header(fig, spec, letter, title))
+    if letter == "B":
+        _draw_width(ax, df)
+    elif letter == "C":
+        _draw_distance(ax, df)
+    elif letter == "D":
+        _draw_profile(ax, tag)
+    elif letter == "E":
+        _draw_heatmap(fig, ax, tag)
+    elif letter == "F":
+        _draw_table(ax, ann, len(ann.peaks))
+    elif letter == "G":
+        _draw_chrom(ax, df)
+    elif letter == "H":
+        _draw_width_box(ax, df)
+    elif letter == "I":
+        _draw_signal_violin(ax, df)
+    elif letter == "J":
+        _draw_nonpromoter_distance(ax, df)
+    elif letter == "K":
+        _draw_profile_quartiles(ax, profiles, upstream, downstream)
+    elif letter == "L":
+        _draw_width_signal(ax, fig, df)
+    elif letter == "M":
+        _draw_width_ecdf(ax, df)
+    elif letter == "N":
+        _draw_top_genes(ax, df)
+    elif letter == "O":
+        _draw_peaks_per_gene(ax, df)
+    elif letter == "P":
+        _draw_tss_quartiles(ax, tag, ann)
+    elif letter == "Q":
+        _draw_width_distance(ax, df)
+    elif letter == "R":
+        _draw_gene_type(ax, df)
+    else:  # pragma: no cover - guarded by the CLI
+        raise ValueError(f"unknown panel letter: {letter}")
+
+
+def _composite_analysis(
+    ann, tag, df, caption: str, provenance: str
+) -> plt.Figure:
+    with _no_tight_layout():
+        fig = plt.figure(figsize=(11.69, 16.54))
+        gs = fig.add_gridspec(
+            3,
+            2,
+            left=0.055,
+            right=0.945,
+            top=0.912,
+            bottom=0.105,
+            height_ratios=[1.0, 1.0, 1.0],
+            width_ratios=[1.0, 1.0],
+            hspace=0.32,
+            wspace=0.26,
+        )
+        for index, letter in enumerate("MNOPQR"):
+            row, col = divmod(index, 2)
+            _draw_panel(
+                letter,
+                fig,
+                gs[row, col],
+                ann,
+                tag,
+                df,
+                [],
+                3000,
+                3000,
+            )
+
+        fig.text(
+            0.055,
+            0.972,
+            "pychipseeker \u2014 gene-level and distribution analyses",
+            fontsize=19,
+            fontweight="bold",
+            color=INK,
+            ha="left",
+            va="top",
+        )
+        fig.text(
+            0.055,
+            0.949,
+            f"{len(df):,} peaks  \u00b7  {pcs.peaks_per_gene(df).shape[0]:,} genes  "
+            f"\u00b7  {df['gene_type'].nunique()} gene biotypes  \u00b7  mm10",
+            fontsize=10.4,
+            color=MUTED,
+            ha="left",
+            va="top",
+        )
+        fig.add_artist(
+            Line2D(
+                [0.055, 0.945],
+                [0.933, 0.933],
+                transform=fig.transFigure,
+                color=RULE,
+                linewidth=0.9,
+            )
+        )
+        fig.text(0.5, 0.058, caption, ha="center", fontsize=7.8, color=MUTED)
+        fig.text(0.5, 0.042, provenance, ha="center", fontsize=7.4, color="#7C8792")
+        fig.text(
+            0.5,
+            0.026,
+            "(M) Width ECDF \u00b7 (N) Top genes \u00b7 (O) Peaks per gene \u00b7 "
+            "(P) TSS enrichment \u00b7 (Q) Width by distance \u00b7 (R) Gene biotypes",
+            ha="center",
+            fontsize=7.4,
+            color="#7C8792",
+        )
+        return fig
+
+
+def _composite_custom(
+    letters: Sequence[str],
+    ann,
+    tag,
+    df,
+    profiles,
+    upstream: int,
+    downstream: int,
+    caption: str,
+    provenance: str,
+) -> plt.Figure:
+    """Compose an arbitrary subset of catalog panels into one A3-style plate."""
+
+    letters = list(letters)
+    if not letters:
+        raise ValueError("at least one panel is required")
+    cols = 2 if len(letters) > 1 else 1
+    rows = int(np.ceil(len(letters) / cols))
+    if rows <= 1:
+        figsize = (11.69, 8.27)
+    elif rows == 2:
+        figsize = (11.69, 11.69)
+    else:
+        figsize = (11.69, 16.54)
+
+    with _no_tight_layout():
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(
+            rows,
+            cols,
+            left=0.055,
+            right=0.945,
+            top=0.912,
+            bottom=0.105,
+            hspace=0.32,
+            wspace=0.26,
+        )
+        for index, letter in enumerate(letters):
+            row, col = divmod(index, cols)
+            _draw_panel(
+                letter,
+                fig,
+                gs[row, col],
+                ann,
+                tag,
+                df,
+                profiles,
+                upstream,
+                downstream,
+            )
+
+        chosen = ", ".join(letters)
+        fig.text(
+            0.055,
+            0.972,
+            "pychipseeker \u2014 custom figure plate",
+            fontsize=19,
+            fontweight="bold",
+            color=INK,
+            ha="left",
+            va="top",
+        )
+        fig.text(
+            0.055,
+            0.949,
+            f"{len(letters)} selected panels: {chosen}  \u00b7  {len(df):,} peaks  \u00b7  mm10",
+            fontsize=10.4,
+            color=MUTED,
+            ha="left",
+            va="top",
+        )
+        fig.add_artist(
+            Line2D(
+                [0.055, 0.945],
+                [0.933, 0.933],
+                transform=fig.transFigure,
+                color=RULE,
+                linewidth=0.9,
+            )
+        )
+        fig.text(0.5, 0.058, caption, ha="center", fontsize=7.8, color=MUTED)
+        fig.text(0.5, 0.042, provenance, ha="center", fontsize=7.4, color="#7C8792")
+        fig.text(
+            0.5,
+            0.026,
+            "Selected: "
+            + " \u00b7 ".join(
+                f"({letter}) {PANEL_BY_LETTER[letter][2]}" for letter in letters
+            ),
+            ha="center",
+            fontsize=7.4,
+            color="#7C8792",
+        )
+        return fig
+
+
 _FORMAT_LABELS = {
     "png": "PNG",
     "pdf": "PDF",
@@ -1353,113 +1933,214 @@ _FORMAT_LABELS = {
 
 
 def _write_gallery(out: Path, formats: Sequence[str]) -> Path:
-    """Write a browsable HTML index of both plates and all panels."""
+    """Write an interactive, browsable index of the plates and panels."""
 
-    plates = "".join(
-        f'<a class="chip" href="{html.escape(name)}">'
-        f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
-        for fmt in formats
-        for name in [f"encode_figure_plate.{fmt}"]
-        if (out / name).exists()
-    )
-    plate_extra = (
-        '<a class="chip" href="encode_figure_plate_600dpi.png">PNG 600 dpi</a>'
-        if (out / "encode_figure_plate_600dpi.png").exists()
-        else ""
-    )
-    supp_links = "".join(
-        f'<a class="chip" href="encode_supplementary_plate.{fmt}">'
-        f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
-        for fmt in formats
-        if (out / f"encode_supplementary_plate.{fmt}").exists()
-    )
+    display_order = ("pdf", "svg", "png", "eps", "tif")
+    ordered = [fmt for fmt in display_order if fmt in formats]
+    ordered += [fmt for fmt in formats if fmt not in ordered]
 
-    cards = []
-    for letter, stem, title, blurb in PANEL_CATALOG:
-        links = "".join(
-            f'<a class="chip" href="figures/{html.escape(stem)}.{fmt}">'
+    def links_for(prefix: str) -> str:
+        return "".join(
+            f'<a class="chip{" chip-pdf" if fmt == "pdf" else ""}" '
+            f'href="{html.escape(prefix)}.{fmt}">'
             f"{_FORMAT_LABELS.get(fmt, fmt.upper())}</a>"
-            for fmt in formats
-            if (out / "figures" / f"{stem}.{fmt}").exists()
-        )
-        cards.append(
-            f"""
-      <article class="card">
-        <a href="figures/{html.escape(stem)}.png">
-          <img src="figures/{html.escape(stem)}.png" alt="{html.escape(title)}">
-        </a>
-        <div class="card-body">
-          <h3><span class="letter">{letter}</span> {html.escape(title)}</h3>
-          <p>{html.escape(blurb)}</p>
-          <div class="chips">{links}</div>
-        </div>
-      </article>"""
+            for fmt in ordered
+            if (out / f"{prefix}.{fmt}").exists()
         )
 
-    document = f"""<!doctype html>
+    plate_specs = (
+        ("encode_figure_plate", "Main plate (A-F)", "Core annotation and coverage story."),
+        (
+            "encode_supplementary_plate",
+            "Extended plate (G-L)",
+            "Chromosomes, classes, distances and density.",
+        ),
+        (
+            "encode_analysis_plate",
+            "Analysis plate (M-R)",
+            "Gene-level and distribution summaries.",
+        ),
+    )
+    plate_cards = []
+    for stem, title, blurb in plate_specs:
+        links = links_for(stem)
+        if not links:
+            continue
+        extra = (
+            f'<a class="chip" href="{stem}_600dpi.png">PNG 600 dpi</a>'
+            if (out / f"{stem}_600dpi.png").exists()
+            else ""
+        )
+        plate_cards.append(
+            f'<section class="plate"><h2>{html.escape(title)}</h2>'
+            f"<p>{html.escape(blurb)}</p>"
+            f'<div class="chips">{links}{extra}</div></section>'
+        )
+    custom_links = links_for("encode_custom_plate")
+    if custom_links:
+        plate_cards.append(
+            '<section class="plate plate-custom"><h2>Your custom plate</h2>'
+            "<p>Built from the panels you selected below.</p>"
+            f'<div class="chips">{custom_links}</div></section>'
+        )
+
+    groups = {"main": [], "extended": [], "analysis": []}
+    for letter, stem, title, blurb in PANEL_CATALOG:
+        if not (out / "figures" / f"{stem}.png").exists():
+            continue
+        if letter <= "F":
+            group = "main"
+        elif letter <= "L":
+            group = "extended"
+        else:
+            group = "analysis"
+        links = links_for(f"figures/{stem}")
+        groups[group].append(
+            f"""
+        <article class="card" data-group="{group}">
+          <label class="pick" title="Include in the custom plate">
+            <input type="checkbox" class="pick-box" value="{letter}"> {letter}
+          </label>
+          <a href="figures/{html.escape(stem)}.pdf">
+            <img src="figures/{html.escape(stem)}.png" alt="{html.escape(title)}">
+          </a>
+          <div class="card-body">
+            <h3><span class="letter">{letter}</span> {html.escape(title)}</h3>
+            <p>{html.escape(blurb)}</p>
+            <div class="chips">{links}</div>
+          </div>
+        </article>"""
+        )
+
+    section_titles = {
+        "main": "Main views (A-F)",
+        "extended": "Extended views (G-L)",
+        "analysis": "Analysis views (M-R)",
+    }
+    sections = "".join(
+        f'<section class="panel-section" data-group="{key}">'
+        f'<h2 class="section-title">{title}</h2>'
+        f'<div class="gallery">{"".join(groups[key])}</div></section>'
+        for key, title in section_titles.items()
+        if groups[key]
+    )
+
+    document = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pychipseeker \u2014 ENCODE H3K4me3 figure gallery</title>
+<title>pychipseeker - ENCODE H3K4me3 figure gallery</title>
 <style>
-  :root {{
+  :root {
     --ink: #1A1A1A;
     --muted: #5F6B76;
     --rule: #D5DCE3;
     --accent: #0072B2;
+    --accent-dark: #005A8C;
     --wash: #F4F8FB;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
+  }
+  * { box-sizing: border-box; }
+  body {
     margin: 0;
     padding: 40px 28px 64px;
     font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     color: var(--ink);
     background: #FFFFFF;
-  }}
-  header {{ max-width: 1180px; margin: 0 auto 34px; }}
-  h1 {{
-    margin: 0 0 6px;
-    font-size: 30px;
-    letter-spacing: -0.01em;
-  }}
-  .sub {{ margin: 0; color: var(--muted); font-size: 15px; }}
-  .rules {{ margin: 26px 0 0; border-top: 1px solid var(--rule); padding-top: 20px; }}
-  .plates {{
+  }
+  header, main, footer { max-width: 1180px; margin-left: auto; margin-right: auto; }
+  h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -0.01em; }
+  .sub { margin: 0; color: var(--muted); font-size: 15px; }
+  .rules { margin: 26px 0 0; border-top: 1px solid var(--rule); padding-top: 20px; }
+  .plates {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
     margin-top: 14px;
-  }}
-  .plate {{
+  }
+  .plate {
     border: 1px solid var(--rule);
     border-radius: 12px;
     padding: 18px 18px 16px;
     background: var(--wash);
-  }}
-  .plate h2 {{ margin: 0 0 4px; font-size: 17px; }}
-  .plate p {{ margin: 0 0 12px; color: var(--muted); font-size: 13px; }}
-  .gallery {{
-    max-width: 1180px;
-    margin: 36px auto 0;
+  }
+  .plate-custom { border-color: var(--accent); background: #EAF4FB; }
+  .plate h2 { margin: 0 0 4px; font-size: 17px; }
+  .plate p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .builder {
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 24px;
+    background: #FFFFFF;
+  }
+  .builder h2 { margin: 0 0 6px; font-size: 17px; }
+  .builder p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .cmd-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cmd-row code {
+    flex: 1 1 520px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #1A2129;
+    color: #E8EDF2;
+    font-size: 12.5px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button {
+    padding: 5px 12px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: #FFFFFF;
+    color: var(--accent);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover, button.active { border-color: var(--accent); background: var(--wash); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+  .panel-section { margin-top: 38px; }
+  .section-title {
+    margin: 0 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 19px;
+  }
+  .gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 24px;
-  }}
-  .card {{
+  }
+  .card {
+    position: relative;
     border: 1px solid var(--rule);
     border-radius: 12px;
     overflow: hidden;
     background: #FFFFFF;
     display: flex;
     flex-direction: column;
-  }}
-  .card img {{ width: 100%; height: 232px; object-fit: contain; background: #FFFFFF; padding: 10px; }}
-  .card-body {{ padding: 14px 16px 16px; border-top: 1px solid var(--rule); }}
-  .card h3 {{ margin: 0 0 6px; font-size: 15px; line-height: 1.35; }}
-  .card p {{ margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }}
-  .letter {{
+  }
+  .card img { width: 100%; height: 232px; object-fit: contain; background: #FFFFFF; padding: 10px; }
+  .card-body { padding: 14px 16px 16px; border-top: 1px solid var(--rule); }
+  .card h3 { margin: 0 0 6px; font-size: 15px; line-height: 1.35; }
+  .card p { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .pick {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    padding: 4px 9px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.94);
+    font-size: 11.5px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .letter {
     display: inline-block;
     min-width: 22px;
     padding: 1px 5px;
@@ -1469,9 +2150,9 @@ def _write_gallery(out: Path, formats: Sequence[str]) -> Path:
     color: #FFFFFF;
     font-size: 12px;
     text-align: center;
-  }}
-  .chips {{ display: flex; flex-wrap: wrap; gap: 6px; }}
-  .chip {{
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
     display: inline-block;
     padding: 3px 9px;
     border: 1px solid var(--rule);
@@ -1480,46 +2161,107 @@ def _write_gallery(out: Path, formats: Sequence[str]) -> Path:
     color: var(--accent);
     text-decoration: none;
     background: #FFFFFF;
-  }}
-  .chip:hover {{ border-color: var(--accent); background: var(--wash); }}
-  footer {{ max-width: 1180px; margin: 40px auto 0; color: var(--muted); font-size: 12px; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --rule: #2B3540; }}
-    body {{ background: #12171C; color: #E8EDF2; }}
-    .card, .chip {{ background: #1A2129; }}
-    .plate {{ background: #1A2129; }}
-  }}
+  }
+  .chip:hover { border-color: var(--accent); background: var(--wash); }
+  .chip-pdf { border-color: var(--accent); background: var(--accent); color: #FFFFFF; }
+  footer { margin-top: 44px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --rule: #2B3540; --wash: #1A2129; }
+    body { background: #12171C; color: #E8EDF2; }
+    .card, .chip, button, .builder { background: #1A2129; }
+    .plate { background: #1A2129; }
+    .plate-custom { background: #162A38; }
+    .pick { background: #1A2129; }
+    .cmd-row code { background: #0C1116; }
+  }
 </style>
 </head>
 <body>
 <header>
   <h1>ENCODE H3K4me3 promoter landscape</h1>
-  <p class="sub">11,291 peaks \u00b7 mm10 \u00b7 mouse ENCODE ENCSR000CDQ \u00b7
+  <p class="sub">11,291 peaks &middot; mm10 &middot; mouse ENCODE ENCSR000CDQ &middot;
      generated with pychipseeker</p>
   <div class="rules">
-    <div class="plates">
-      <section class="plate">
-        <h2>Main plate (A\u2013F)</h2>
-        <p>One A3 page for a figure legend or a talk slide.</p>
-        <div class="chips">{plates}{plate_extra}</div>
-      </section>
-      <section class="plate">
-        <h2>Supplementary plate (G\u2013L)</h2>
-        <p>Six extra views of the same peak set.</p>
-        <div class="chips">{supp_links}</div>
-      </section>
+    <div class="plates">$PLATES$</div>
+    <div class="builder">
+      <h2>Build a plate from the panels you want</h2>
+      <p>Tick any panels below. The command updates automatically; run it to
+         render only those panels into <code>encode_custom_plate.pdf</code>
+         (plus PNG/SVG/EPS/TIFF). Every panel also has its own PDF vector file.</p>
+      <div class="cmd-row">
+        <code id="cmd">python examples/make_encode_plate.py --panels A,C,K</code>
+        <button id="copy" class="primary" type="button">Copy command</button>
+      </div>
+      <div class="toolbar">
+        <button type="button" data-filter="all" class="active">All 18</button>
+        <button type="button" data-filter="main">Main A-F</button>
+        <button type="button" data-filter="extended">Extended G-L</button>
+        <button type="button" data-filter="analysis">Analysis M-R</button>
+        <button type="button" id="select-all">Select all</button>
+        <button type="button" id="clear-all">Clear</button>
+      </div>
     </div>
   </div>
 </header>
-<main class="gallery">{"".join(cards)}
-</main>
+<main>$SECTIONS$</main>
 <footer>
-  Vector files use Type 42 fonts; SVG text stays editable; rasters are RGB.
-  Individual panels live in <code>figures/</code>.
+  Vector files use Type 42 fonts and are safe for journal submission; SVG text
+  stays editable; rasters are RGB.  Individual panels live in
+  <code>figures/</code>.  Use <code>--formats pdf,svg,png</code> to limit the
+  export formats.
 </footer>
+<script>
+  const boxes = Array.from(document.querySelectorAll('.pick-box'));
+  const cmd = document.getElementById('cmd');
+
+  function refresh() {
+    const picked = boxes.filter(box => box.checked).map(box => box.value).sort();
+    cmd.textContent = 'python examples/make_encode_plate.py --panels '
+      + (picked.length ? picked.join(',') : 'A,C,K');
+  }
+
+  boxes.forEach(box => box.addEventListener('change', refresh));
+  document.getElementById('select-all').addEventListener('click', () => {
+    boxes.forEach(box => { box.checked = true; });
+    refresh();
+  });
+  document.getElementById('clear-all').addEventListener('click', () => {
+    boxes.forEach(box => { box.checked = false; });
+    refresh();
+  });
+  document.getElementById('copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(cmd.textContent);
+      const button = document.getElementById('copy');
+      button.textContent = 'Copied';
+      setTimeout(() => { button.textContent = 'Copy command'; }, 1200);
+    } catch (error) {
+      const range = document.createRange();
+      range.selectNodeContents(cmd);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  });
+  document.querySelectorAll('[data-filter]').forEach(button => {
+    button.addEventListener('click', () => {
+      const group = button.dataset.filter;
+      document.querySelectorAll('[data-filter]').forEach(item => {
+        item.classList.toggle('active', item === button);
+      });
+      document.querySelectorAll('.panel-section').forEach(section => {
+        section.style.display = (group === 'all' || section.dataset.group === group)
+          ? '' : 'none';
+      });
+    });
+  });
+</script>
 </body>
 </html>
 """
+
+    document = document.replace("$PLATES$", "".join(plate_cards))
+    document = document.replace("$SECTIONS$", sections)
 
     path = out / "gallery.html"
     path.write_text(document, encoding="utf-8")
@@ -1542,7 +2284,24 @@ def main() -> int:
         default=",".join(FORMATS),
         help="comma-separated export formats: " + ", ".join(FORMATS),
     )
+    parser.add_argument(
+        "--panels",
+        default="",
+        help="comma-separated panel letters for a custom plate (e.g. A,C,K); "
+        "use --list-panels to see all choices",
+    )
+    parser.add_argument(
+        "--list-panels",
+        action="store_true",
+        help="print the panel catalog and exit",
+    )
     args = parser.parse_args()
+
+    if args.list_panels:
+        print("letter  stem                            title")
+        for letter, stem, title, _ in PANEL_CATALOG:
+            print(f"{letter:>6}  {stem:<30}  {title}")
+        return 0
 
     formats = [item.strip().lower() for item in args.formats.split(",") if item.strip()]
     unknown = sorted(set(formats) - set(FORMATS))
@@ -1551,6 +2310,26 @@ def main() -> int:
     if not formats:
         parser.error("at least one export format is required")
 
+    selected: list[str] = []
+    if args.panels.strip():
+        raw = [item.strip() for item in args.panels.split(",") if item.strip()]
+        if any(item.lower() == "all" for item in raw):
+            selected = [letter for letter, *_ in PANEL_CATALOG]
+        else:
+            by_stem = {stem.lower(): letter for letter, stem, *_ in PANEL_CATALOG}
+            for item in raw:
+                letter = item.upper()
+                if letter not in PANEL_BY_LETTER:
+                    letter = by_stem.get(item.lower(), "")
+                if not letter:
+                    parser.error(
+                        f"unknown panel {item!r}; use --list-panels to see choices"
+                    )
+                if letter not in selected:
+                    selected.append(letter)
+        if not selected:
+            parser.error("--panels did not select any panel")
+
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
     figdir = out / "figures"
@@ -1558,6 +2337,13 @@ def main() -> int:
     for fmt in FORMATS:
         for stale in figdir.glob(f"*.{fmt}"):
             stale.unlink()
+    for fmt in FORMATS:
+        stale = out / f"encode_custom_plate.{fmt}"
+        if stale.exists():
+            stale.unlink()
+    stale = out / "encode_custom_plate_600dpi.png"
+    if stale.exists():
+        stale.unlink()
 
     ann = pcs.annotate_peak(peaks=args.peaks, TxDb=args.txdb, verbose=False)
     used = len(ann.peaks)
@@ -1629,6 +2415,40 @@ def main() -> int:
     supp_written.append(out / "encode_supplementary_plate_600dpi.png")
     plt.close(supp)
 
+    analysis = _composite_analysis(ann, tag, df, caption, provenance)
+    analysis_written = _save_formats(
+        analysis, "encode_analysis_plate", out, formats=formats
+    )
+    analysis.savefig(
+        out / "encode_analysis_plate_600dpi.png", dpi=600, bbox_inches="tight"
+    )
+    _flatten_rgb(out / "encode_analysis_plate_600dpi.png")
+    analysis_written.append(out / "encode_analysis_plate_600dpi.png")
+    plt.close(analysis)
+
+    custom_written: list[Path] = []
+    if selected:
+        custom = _composite_custom(
+            selected,
+            ann,
+            tag,
+            df,
+            profiles,
+            args.upstream,
+            args.downstream,
+            caption,
+            provenance,
+        )
+        custom_written = _save_formats(
+            custom, "encode_custom_plate", out, formats=formats
+        )
+        custom.savefig(
+            out / "encode_custom_plate_600dpi.png", dpi=600, bbox_inches="tight"
+        )
+        _flatten_rgb(out / "encode_custom_plate_600dpi.png")
+        custom_written.append(out / "encode_custom_plate_600dpi.png")
+        plt.close(custom)
+
     gallery = _write_gallery(out, formats)
 
     print(ann.annoStat.to_string(index=False))
@@ -1638,6 +2458,10 @@ def main() -> int:
     for path in plate_written:
         print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
     for path in supp_written:
+        print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
+    for path in analysis_written:
+        print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
+    for path in custom_written:
         print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
     print(f"figures : {out / 'encode_figures.pdf'}")
     print(

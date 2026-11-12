@@ -4,6 +4,38 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.8.4] - 2026-11-12
+
+### Added
+
+- Public analysis helpers: `annotation_summary`, `peaks_per_gene`,
+  `top_genes`, `gene_type_summary`, `distance_summary`, `signal_groups` and
+  `tss_enrichment_by_quartile`, all exported from the package root.
+- Six analysis panels (M-R) in the ENCODE example: width ECDF by class, top
+  genes, peaks per gene, TSS enrichment by signal quartile, width by
+  TSS-distance class and gene biotypes, composed into a third A3 plate
+  (`encode_analysis_plate.*`).
+- `--panels` and `--list-panels` in `examples/make_encode_plate.py` compose an
+  arbitrary subset of panels into `encode_custom_plate.*`, exported in every
+  format including PDF.
+- `gallery.html` is now interactive: grouped sections, filters, per-panel
+  checkboxes, an auto-updating command and a copy button.
+
+### Changed
+
+- `signal_groups` assigns a score of zero to genes without an assigned peak,
+  keeping them in the lowest group rather than filling the median; the
+  quartile profiles and TSS-enrichment bars are now monotonic.
+- The main plate's signal-quartile profiles share the same grouping as the
+  analysis panel, so panels K and P agree by construction.
+- README documents the analysis helpers, the eighteen panels and the
+  selection workflow.
+
+### Fixed
+
+- Panel O statistics no longer collide with the bars, and panel P reserves
+  space for its two-line method note.
+
 ## [0.8.3] - 2026-11-12
 
 ### Added

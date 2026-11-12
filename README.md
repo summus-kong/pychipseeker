@@ -217,18 +217,32 @@ turn them into a single-page A3 plate and a multi-page PDF report:
 export ENCODE_BIGWIG=/path/to/ENCFF893ZGR.bigWig   # H3K4me3, mm10, ENCSR000CDQ
 python examples/call_encode_peaks.py --bigwig "$ENCODE_BIGWIG" \
     --out examples/encode_peaks.bed --threshold 3
-python examples/make_encode_plate.py    # 2 A3 plates + 12 panels + gallery
+python examples/make_encode_plate.py    # 3 A3 plates + 18 panels + gallery
 python examples/make_encode_report.py   # 11-page encode_report.pdf
 ```
 
 The main plate covers annotation composition, peak widths, TSS distance, the
-average profile, the coverage heatmap and the annotation table.  A second A3
+average profile, the coverage heatmap and the annotation table.  The extended
 plate adds chromosome distribution, width and signal by annotation class,
 non-promoter distances, signal-quartile profiles, and a width-vs-signal
-density plot.  `gallery.html` indexes every panel with thumbnails and download
-links, so you can pick a chart type without opening the PDF.
+density plot.  A third plate collects the gene-level analyses: width ECDFs,
+top genes, peaks per gene, TSS enrichment by signal quartile, width by
+TSS-distance class and gene biotypes.
 
-Both plates and every panel are written as PNG, PDF, SVG, EPS and TIFF (plus
+Pick only the views you need with `--panels`; letter or stem names both work,
+and `all` restores the full set:
+
+```bash
+python examples/make_encode_plate.py --list-panels
+python examples/make_encode_plate.py --panels A,C,K,P
+```
+
+That writes `encode_custom_plate.*` for the selection while still refreshing
+the three curated plates.  `gallery.html` indexes every panel with thumbnails,
+per-panel checkboxes, filters and download links, so you can choose a chart
+type visually and copy the matching command.
+
+Every plate and every panel is written as PNG, PDF, SVG, EPS and TIFF (plus
 600 dpi PNGs of the plates), so the same artwork can go straight into slides,
 Illustrator/Inkscape, or a journal submission.  Use `--formats png,pdf` to keep
 only what you need.
@@ -313,6 +327,30 @@ Main profile/heatmap functions:
 All plotting helpers return matplotlib `(fig, ax)` (or `(fig, axes)` for
 multi-panel plots) and use the same 5'->3' orientation convention as
 ChIPseeker.
+
+## Peak-set summaries
+
+The `analysis` helpers turn an annotation table into small, plot-ready
+frames without pulling in extra dependencies:
+
+```python
+ann = pcs.annotate_peak("peaks.bed", TxDb="mm10")
+df = ann.to_dataframe()
+peaks = df.merge(ann.peaks[["peak_id", "score"]], on="peak_id", how="left")
+
+pcs.annotation_summary(df)          # class counts and percentages
+pcs.peaks_per_gene(df)              # one row per gene with its peak count
+pcs.top_genes(df, n=12)             # genes ranked by assigned peaks
+pcs.gene_type_summary(df, top=8)    # biotypes, tail folded into "Other"
+pcs.distance_summary(df)            # promoter fraction and distance quantiles
+
+groups = pcs.signal_groups(tag, peaks, n_groups=4)
+pcs.tss_enrichment_by_quartile(tag, peaks, n_groups=4)
+```
+
+`signal_groups` ranks promoters by the strongest peak score assigned to each
+gene; genes without an assigned peak receive a score of zero, so they stay in
+the lowest group instead of being silently dropped.
 
 ## Quality control
 
