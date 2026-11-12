@@ -249,6 +249,20 @@ the three curated plates.  `gallery.html` indexes every panel with thumbnails,
 per-panel checkboxes, filters and download links, so you can choose a chart
 type visually and copy the matching command.
 
+To render just one panel for your own peaks, without rebuilding the gallery:
+
+```bash
+python examples/plot_one_panel.py --list
+python examples/plot_one_panel.py \
+    --panel K --peaks my_peaks.bed --txdb mm10 \
+    --outdir figures --formats pdf
+```
+
+That writes `figures/K_K_profile_quartiles.pdf`; add `png,svg,eps,tif` to
+`--formats` if you need more than vector PDF.  Sample plates, including a
+custom A/D/K/P selection, are published with the
+[figure gallery](docs/gallery.md).
+
 Every plate and every panel is written as PNG, PDF, SVG, EPS and TIFF (plus
 600 dpi PNGs of the plates), so the same artwork can go straight into slides,
 Illustrator/Inkscape, or a journal submission.  Use `--formats png,pdf` to keep
@@ -605,6 +619,9 @@ python -m mypy
 ```
 
 `python scripts/bench.py --txdb mm10` reproduces the performance table.
+`python scripts/build_function_reference.py` regenerates the
+[function reference](https://summus-kong.github.io/pychipseeker/reference/functions/)
+page from the live signatures; run it after changing a public signature.
 Documentation lives in [docs/](docs/index.md) and is published at
 <https://summus-kong.github.io/pychipseeker/>. Preview it locally with:
 

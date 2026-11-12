@@ -26,6 +26,7 @@ journal-ready PDF in the same script.
 [Quick start](quickstart.md){ .md-button .md-button--primary }
 [Install](installation.md){ .md-button }
 [Browse the figure gallery](gallery.md){ .md-button }
+[Function reference](reference/functions.md){ .md-button }
 </div>
 
 </div>
@@ -168,6 +169,10 @@ Recipes for every helper, including signal quartiles and TSS enrichment, are in
 -   [**API overview**](api.md)
 
     The main objects, functions and output columns at a glance.
+
+-   [**Function reference**](reference/functions.md)
+
+    All 94 public functions, every parameter, type, default and meaning.
 
 -   [**Command line**](cli.md)
 

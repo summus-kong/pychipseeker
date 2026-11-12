@@ -79,6 +79,56 @@ width by TSS-distance class and gene biotypes.
 | Q | Width by TSS-distance class | How does width change from TSS to >100 kb? |
 | R | Gene biotypes | Which biotypes do annotated peaks belong to? |
 
+## Download a sample PDF plate
+
+Two ready-made PDFs are included with the documentation:
+
+- [Custom plate with A, D, K and P](assets/pdf/custom-plate.pdf) — shows how a
+  selection looks on one page.
+- [Analysis plate M–R](assets/pdf/analysis-plate.pdf) — the full gene-level
+  summary page.
+
+<figure class="shot" markdown>
+![Custom plate with four selected panels](assets/images/custom-plate.png)
+<figcaption>
+A custom A3-style plate built from panels A, D, K and P. The same command can
+select any subset of the 18 panels.
+</figcaption>
+</figure>
+
+## Run one panel on your own peaks
+
+You do not have to generate the whole gallery. `examples/plot_one_panel.py`
+takes any peak file and renders exactly one panel as PDF:
+
+```bash
+python examples/plot_one_panel.py --list
+python examples/plot_one_panel.py \
+    --panel K --peaks my_peaks.bed --txdb mm10 \
+    --outdir figures --formats pdf
+```
+
+The output is `figures/K_K_profile_quartiles.pdf`. Add `png,svg,eps,tif` to
+`--formats` if you need more than vector PDF.
+
+Every panel design is ordinary matplotlib code in
+`examples/make_encode_plate.py`. Copy the `_figure_*` function you need, or use
+the public helpers directly:
+
+```python
+import matplotlib.pyplot as plt
+import pychipseeker as pcs
+
+ann = pcs.annotate_peak("my_peaks.bed", TxDb="mm10")
+
+fig, ax = ann.plot_anno_pie()
+fig.savefig("my-annotation.pdf", bbox_inches="tight")
+plt.close(fig)
+```
+
+This keeps the choice with the author: use the full curated plate, a custom
+subset, a single gallery panel, or your own matplotlib layout.
+
 ## Choose only the panels you need
 
 List the catalogue:

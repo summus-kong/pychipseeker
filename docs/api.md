@@ -15,6 +15,12 @@ df = ann.to_dataframe()
 All plotting helpers return matplotlib `(fig, ax)` objects (or `(fig, axes)` for
 multi-panel figures), so they compose with ordinary matplotlib code.
 
+!!! tip "Every parameter, one page"
+
+    The [function reference](reference/functions.md) lists all 94 public
+    top-level functions with every parameter, its type, default and meaning.
+    It is generated from the live signatures, so it always matches the code.
+
 ## Core objects
 
 | Object | What it holds |
@@ -156,4 +162,5 @@ file records the exact compatibility matrix and known differences.
 | [`report.py`](https://github.com/summus-kong/pychipseeker/blob/main/src/pychipseeker/report.py) | multi-page PDF report |
 
 Python docstrings are available through `help(pcs.annotate_peak)` or
-`pcs.annotate_peak?` in IPython.
+`pcs.annotate_peak?` in IPython. For the full parameter tables, see the
+[function reference](reference/functions.md).

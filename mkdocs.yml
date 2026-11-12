@@ -84,6 +84,7 @@ nav:
   - Reference:
       - Command line: cli.md
       - API overview: api.md
+      - Function reference: reference/functions.md
       - FAQ and troubleshooting: faq.md
   - Project:
       - Changelog: https://github.com/summus-kong/pychipseeker/blob/main/CHANGELOG.md
