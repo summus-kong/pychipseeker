@@ -20,6 +20,10 @@ All notable changes to pychipseeker are documented here.  The format follows
   format including PDF.
 - `gallery.html` is now interactive: grouped sections, filters, per-panel
   checkboxes, an auto-updating command and a copy button.
+- A MkDocs Material documentation site at
+  <https://summus-kong.github.io/pychipseeker/>, deployed by GitHub Actions,
+  with a landing page, gallery, analysis recipes, API overview, FAQ and the
+  existing CLI/genome/enrichment/performance guides.
 
 ### Changed
 

@@ -3,6 +3,8 @@
 A Python implementation of **ChIPseeker-compatible peak annotation,
 summarization and visualization**.
 
+**Documentation:** <https://summus-kong.github.io/pychipseeker/>
+
 `pychipseeker` follows the R/Bioconductor
 [ChIPseeker](https://bioconductor.org/packages/ChIPseeker/) rules for
 transcript/gene-level annotation, promoter bins, annotation priority and signed
@@ -44,6 +46,11 @@ the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
 - **Enrichment**: Enrichr/GSEA via optional `gseapy`, plus a dependency-free
   local over-representation analysis with odds ratios, confidence intervals
   and BH/Bonferroni correction.
+- **Plot-ready summaries**: annotation composition, peaks per gene, top genes,
+  gene biotypes, distance quantiles, signal groups and TSS enrichment by
+  quartile.
+- **18 figure panels** with a selectable custom plate and an interactive
+  `gallery.html`; every plate and panel is exported as PDF vector.
 - **Chromosome harmonisation** between UCSC (`chr1`) and Ensembl (`1`) peak
   and annotation files, with conservative assembly detection (`TxDb="auto"`).
 - **Genome cache**: prebuilt hg19/hg38/mm9/mm10 bundles, on-demand Ensembl
@@ -598,8 +605,15 @@ python -m mypy
 ```
 
 `python scripts/bench.py --txdb mm10` reproduces the performance table.
-Documentation lives in [docs/](docs/index.md); release notes are in
-[CHANGELOG.md](CHANGELOG.md).
+Documentation lives in [docs/](docs/index.md) and is published at
+<https://summus-kong.github.io/pychipseeker/>. Preview it locally with:
+
+```bash
+pip install -e ".[docs]"
+mkdocs serve
+```
+
+Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 The core test suite uses synthetic GTF/BED data.  Real bigWig tests use
 upstream pyBigWig's own `pyBigWigTest/test.bw` file (bundled as

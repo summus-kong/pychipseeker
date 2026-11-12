@@ -7,5 +7,6 @@ venv/
 build/
 dist/
 examples/output/
+site/
 .coverage
 htmlcov/

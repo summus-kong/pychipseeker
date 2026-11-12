@@ -58,10 +58,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+docs = ["mkdocs-material>=9.5,<10"]
 
 [project.urls]
 Homepage = "https://github.com/summus-kong/pychipseeker"
-Documentation = "https://github.com/summus-kong/pychipseeker/tree/main/docs"
+Documentation = "https://summus-kong.github.io/pychipseeker/"
 Source = "https://github.com/summus-kong/pychipseeker"
 Issues = "https://github.com/summus-kong/pychipseeker/issues"
 Changelog = "https://github.com/summus-kong/pychipseeker/blob/main/CHANGELOG.md"
