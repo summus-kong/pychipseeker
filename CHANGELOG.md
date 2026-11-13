@@ -25,8 +25,10 @@ All notable changes to pychipseeker are documented here.  The format follows
   with a landing page, gallery, analysis recipes, API overview, FAQ and the
   existing CLI/genome/enrichment/performance guides.
 - A generated [function reference](https://summus-kong.github.io/pychipseeker/reference/functions/)
-  page covering all 94 public top-level functions, with every parameter, type,
-  default and description, plus an alias table.  Regenerate it with
+  page covering all 94 public top-level functions plus the constructors, data
+  attributes and methods of `PeakAnnotation`, `GeneAnnotation` and `TagMatrix`,
+  with every parameter, type, default and description, explicit member
+  anchors and an alias table.  Regenerate it with
   `python scripts/build_function_reference.py`.
 - `examples/plot_one_panel.py` renders a single gallery panel (A-R) for any
   peak file, with `--list`, `--panel`, `--peaks`, `--txdb`, `--outdir` and
@@ -43,6 +45,10 @@ All notable changes to pychipseeker are documented here.  The format follows
   analysis panel, so panels K and P agree by construction.
 - README documents the analysis helpers, the eighteen panels, the
   single-panel script and the selection workflow.
+- The CI `reference` job regenerates the function reference and fails when the
+  committed page is stale; the Docs workflow does the same before deploying.
+- mypy now type-checks every module under `src/pychipseeker` (19 files) instead
+  of six selected modules, and Ruff covers `scripts/` as well.
 
 ### Fixed
 

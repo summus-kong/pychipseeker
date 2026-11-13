@@ -122,14 +122,7 @@ ignore_missing_imports = true
 warn_unused_ignores = false
 warn_redundant_casts = false
 check_untyped_defs = false
-files = [
-    "src/pychipseeker/analysis.py",
-    "src/pychipseeker/enrichment.py",
-    "src/pychipseeker/genomes.py",
-    "src/pychipseeker/io.py",
-    "src/pychipseeker/peaks.py",
-    "src/pychipseeker/report.py",
-]
+files = ["src/pychipseeker"]
 exclude = ["examples/output", "build", "dist"]
 
 [tool.coverage.run]

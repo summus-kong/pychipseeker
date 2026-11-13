@@ -16,7 +16,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, Optional, Sequence, TypeVar
+from typing import Any, Callable, Optional, Sequence, TypeVar, cast
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -104,6 +104,6 @@ def parallel_map(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=initializer,
-        initargs=tuple(initargs),
+        initargs=cast(Any, tuple(initargs)),
     ) as pool:
         return list(pool.map(func, items))

@@ -367,9 +367,6 @@ Combine several `PeakAnnotation` objects (ChIPseeker `combine_csAnno`).
 combine_cs_anno(*annotations) -> 'PeakAnnotation'
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-
 ### `drop_anno`
 
 Filter peaks by `abs(distanceToTSS) < cutoff`.
@@ -1330,9 +1327,6 @@ Assemblies accepted by `TxDb=`.
 supported_genomes() -> 'tuple[str, ...]'
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-
 ### `is_genome_spec`
 
 True for `ensembl:`, `gencode:` and `url:` annotation specs.
@@ -1390,9 +1384,6 @@ Describe installed and downloaded bundles for `pychipseeker cache`.
 cached_genomes() -> 'list[dict[str, object]]'
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-
 ### `clear_genome_cache`
 
 Delete downloaded bundles from the cache directory.
@@ -1412,9 +1403,6 @@ Remove incomplete cache entries and orphaned provenance JSON files.
 ```python
 prune_genome_cache() -> 'list[Path]'
 ```
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
 
 ### `genome_provenance`
 
@@ -1699,3 +1687,599 @@ build_report(peaks: 'Union[str, Path, pd.DataFrame]', *, gtf: 'Optional[Union[st
 | `include_tag_matrix` | bool | `True` | Include tag-matrix pages. |
 | `qc` | bool | `False` | Include QC/FRiP pages. |
 | `n_jobs` | Optional[int] | `None` | Parallel worker count for annotation/QC. |
+
+## Classes and methods
+
+The functional API returns three public objects. Their methods accept the
+same parameters as the corresponding top-level helpers and are the usual
+entry point for interactive work:
+
+### `PeakAnnotation`
+
+Returned by `annotate_peak()` / `annotatePeak()`. It stores the annotated peaks, the gene model and the settings used for annotation, and exposes the ChIPseeker-style plotting and summary methods.
+
+#### Constructor {#peakannotation-constructor}
+
+```python
+PeakAnnotation(peaks: 'pd.DataFrame', annotation: 'pd.DataFrame', gene_annotation: 'GeneAnnotation', tss_region: 'tuple[int, int]' = (-3000, 3000), level: 'str' = 'transcript', promoter_bins: 'tuple[int, ...]' = (), genomic_annotation_priority: 'tuple[str, ...]' = ('Promoter', '5UTR', '3UTR', 'Exon', 'Intron', 'Downstream', 'Intergenic'), downstream_distance: 'int' = 300, detail_genomic_annotation: 'pd.DataFrame' = <factory>, has_genomic_annotation: 'bool' = True, add_flank_gene_info: 'bool' = False, flank_distance: 'int' = 5000) -> None
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **peaks** | DataFrame | — | Peak table to annotate. |
+| **annotation** | DataFrame | — | One row per annotated peak. |
+| **gene_annotation** | GeneAnnotation | — | Gene model used for annotation. |
+| `tss_region` | tuple[int, int] | `(-3000, 3000)` | Promoter window `(upstream, downstream)` in bp. |
+| `level` | str | `transcript` | `transcript` (default) or `gene`. |
+| `promoter_bins` | tuple[int, ...] | `()` | Promoter bin edges in bp. |
+| `genomic_annotation_priority` | tuple[str, ...] | `('Promoter', '5UTR', '3UTR', 'Exon', 'Intron', 'Downstrea...` | Feature priority used for overlapping annotations. |
+| `downstream_distance` | int | `300` | Downstream window used by the `Downstream` label. |
+| `detail_genomic_annotation` | DataFrame | `<factory>` | Detailed genomic-feature table. |
+| `has_genomic_annotation` | bool | `True` | Whether genomic features were assigned. |
+| `add_flank_gene_info` | bool | `False` | Whether flanking genes were added. |
+| `flank_distance` | int | `5000` | Flank distance used for flanking-gene searches. |
+
+#### Data attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `peaks` | DataFrame | Input peak table, including `score` when available. |
+| `annotation` | DataFrame | One row per annotated peak with snake_case columns. |
+| `gene_annotation` | GeneAnnotation | Gene model used for annotation. |
+| `tss_region` | tuple[int, int] | Promoter window `(upstream, downstream)` in bp. |
+| `level` | str | `transcript` (default) or `gene`. |
+| `promoter_bins` | tuple[int, ...] | Promoter bin edges used for labels. |
+| `genomic_annotation_priority` | tuple[str, ...] | Feature priority used for overlapping annotations. |
+| `downstream_distance` | int | Downstream window used by the `Downstream` label. |
+| `detail_genomic_annotation` | DataFrame | Detailed genomic-feature table. |
+| `has_genomic_annotation` | bool | Whether genomic features were assigned. |
+| `add_flank_gene_info` | bool | Whether flanking genes were added. |
+| `flank_distance` | int | Flank distance used for flanking-gene searches. |
+| `upstream` | int | Read-only property derived from `tss_region`. |
+| `downstream` | int | Read-only property derived from `tss_region`. |
+| `detail` | DataFrame | Alias for `detail_genomic_annotation`. |
+| `annoStat` | DataFrame | Alias for `anno_stat()`. |
+| `peakNum` | int | Number of annotated peaks. |
+| `hasGenomicAnnotation` | bool | Alias for `has_genomic_annotation`. |
+
+#### Methods
+
+#### `to_dataframe` {#peakannotation-to_dataframe}
+
+Return one row per annotated peak with snake_case columns.
+
+```python
+to_dataframe(include_peak_metadata: 'bool' = False) -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `include_peak_metadata` | bool | `False` | Merge peak metadata columns (`name`, `score`, `strand`) into the result. |
+
+#### `to_chipseeker` {#peakannotation-to_chipseeker}
+
+Return a table with ChIPseeker-style column names.
+
+```python
+to_chipseeker() -> 'pd.DataFrame'
+```
+
+#### `as_data_frame` {#peakannotation-as_data_frame}
+
+ChIPseeker `as.data.frame(csAnno)` analogue.
+
+```python
+as_data_frame() -> 'pd.DataFrame'
+```
+
+Aliases: `asDataFrame`
+
+#### `as_granges` {#peakannotation-as_granges}
+
+Return a GRanges-like table with `seqnames/start/end/strand`.
+
+```python
+as_granges() -> 'pd.DataFrame'
+```
+
+Aliases: `asGRanges`
+
+#### `get_anno_stat` {#peakannotation-get_anno_stat}
+
+Return the ChIPseeker `getAnnoStat` table.
+
+```python
+get_anno_stat() -> 'pd.DataFrame'
+```
+
+Aliases: `getAnnoStat`
+
+#### `drop_anno` {#peakannotation-drop_anno}
+
+Keep peaks within `abs(distanceToTSS) < cutoff`.
+
+```python
+drop_anno(distance_to_tss_cutoff: 'float' = 10000) -> "'PeakAnnotation'"
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `distance_to_tss_cutoff` | float | `10000` | Keep peaks with `abs(distance_to_tss) < cutoff`. |
+
+Aliases: `dropAnno`
+
+#### `anno_stat` {#peakannotation-anno_stat}
+
+Summarize major annotation classes.
+
+```python
+anno_stat(ignore_promoter_subcategory: 'bool' = False, ignore_1st_exon: 'bool' = False, ignore_1st_intron: 'bool' = False, ignore_downstream: 'bool' = False) -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `ignore_promoter_subcategory` | bool | `False` | Merge promoter sub-bins into one `Promoter` row. |
+| `ignore_1st_exon` | bool | `False` | Merge first-exon categories into `Exon`. |
+| `ignore_1st_intron` | bool | `False` | Merge first-intron categories into `Intron`. |
+| `ignore_downstream` | bool | `False` | Ignore downstream features when assigning annotations. |
+
+#### `summary` {#peakannotation-summary}
+
+Count peaks per class and optionally per metadata group.
+
+```python
+summary(groupby: 'Optional[str]' = None, normalize: 'bool' = False) -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `groupby` | Optional[str] | `None` | Optional metadata column used to split the summary. |
+| `normalize` | bool | `False` | Return percentages instead of raw counts. |
+
+#### `seq2gene` {#peakannotation-seq2gene}
+
+Return gene IDs linked to peaks through promoters or flanks.
+
+!!! note
+    Promoter and flank logic uses the annotation's `tss_region` and `flank_distance` unless overridden here.
+
+```python
+seq2gene(tss_region: 'Optional[Sequence[int]]' = None, flank_distance: 'int' = 5000, same_strand: 'bool' = False) -> 'list[str]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `tss_region` | Optional[Sequence[int]] | `None` | Promoter window used for the link. |
+| `flank_distance` | int | `5000` | Flank window used when a peak is not in a promoter. |
+| `same_strand` | bool | `False` | Only consider features on the same strand as the peak. |
+
+#### `seq2gene_links` {#peakannotation-seq2gene_links}
+
+Return a peak-to-gene link table for enrichment.
+
+```python
+seq2gene_links(tss_region: 'Optional[Sequence[int]]' = None, flank_distance: 'int' = 5000, same_strand: 'bool' = False) -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `tss_region` | Optional[Sequence[int]] | `None` | Promoter window as `(upstream, downstream)` relative to the TSS. |
+| `flank_distance` | int | `5000` | Distance in bp used to collect flanking genes. |
+| `same_strand` | bool | `False` | Only consider features on the same strand as the peak. |
+
+#### `plot_anno_pie` {#peakannotation-plot_anno_pie}
+
+Draw the annotation composition pie chart.
+
+```python
+plot_anno_pie(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `plotAnnoPie`
+
+#### `plot_anno_bar` {#peakannotation-plot_anno_bar}
+
+Draw annotation composition as grouped bars.
+
+```python
+plot_anno_bar(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `plotAnnoBar`
+
+#### `plot_dist_to_tss` {#peakannotation-plot_dist_to_tss}
+
+Draw the TSS-distance distribution.
+
+```python
+plot_dist_to_tss(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `plotDistToTSS`
+
+#### `vennpie` {#peakannotation-vennpie}
+
+Draw a nested Venn-pie summary of annotation flags.
+
+```python
+vennpie(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+#### `upsetplot` {#peakannotation-upsetplot}
+
+Draw an UpSet plot of annotation flags.
+
+```python
+upsetplot(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+#### `get_tag_matrix` {#peakannotation-get_tag_matrix}
+
+Build a ChIPseeker-style tag matrix from this annotation.
+
+!!! note
+    When `windows` is a sequence, a list of `TagMatrix` objects is returned. With `bigwig=`/`bam=` the matrix contains signal coverage; otherwise it contains peak coverage.
+
+```python
+get_tag_matrix(peak=None, upstream: 'int' = 3000, downstream: 'int' = 3000, type: 'str' = 'start_site', by: 'Optional[str]' = None, **kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `peak` | — | `None` | Peaks used to build the matrix; defaults to `ann.peaks`. |
+| `upstream` | int | `3000` | Upstream window in bp. |
+| `downstream` | int | `3000` | Downstream window in bp. |
+| `type` | str | `start_site` | Region type used when building windows. |
+| `by` | Optional[str] | `None` | `gene` or `transcript`. |
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `getTagMatrix`
+
+#### `plot_peak_prof` {#peakannotation-plot_peak_prof}
+
+Plot the average peak-centered profile.
+
+```python
+plot_peak_prof(**kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `plotPeakProf`
+
+#### `peak_heatmap` {#peakannotation-peak_heatmap}
+
+Draw a peak-centered coverage heatmap.
+
+```python
+peak_heatmap(peak=None, **kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `peak` | — | `None` | Peaks used to build the matrix. |
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+Aliases: `peakHeatmap`
+
+#### `plot_tss_profile` {#peakannotation-plot_tss_profile}
+
+Plot a bigWig, BAM or matrix TSS profile.
+
+!!! note
+    Pass exactly one of `bigwig`, `matrix` or `signal`; extra keyword arguments are forwarded to the top-level `plot_tss_profile`.
+
+```python
+plot_tss_profile(bigwig: 'Optional[Union[str, Path]]' = None, *, matrix: 'Optional[np.ndarray]' = None, signal: 'Optional[Union[str, Path, pd.DataFrame]]' = None, **kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `bigwig` | Optional[Union[str, Path]] | `None` | bigWig signal file; requires the optional `pyBigWig` dependency. |
+| `matrix` | Optional[ndarray] | `None` | Features x bins signal matrix. |
+| `signal` | Optional[Union[str, Path, DataFrame]] | `None` | bigWig path or precomputed signal table. |
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+#### `plot_tss_heatmap` {#peakannotation-plot_tss_heatmap}
+
+Draw a bigWig, BAM or matrix TSS heatmap.
+
+!!! note
+    Pass exactly one of `bigwig`, `matrix` or `signal`; extra keyword arguments are forwarded to the top-level `plot_tss_heatmap`.
+
+```python
+plot_tss_heatmap(bigwig: 'Optional[Union[str, Path]]' = None, *, matrix: 'Optional[np.ndarray]' = None, signal: 'Optional[Union[str, Path, pd.DataFrame]]' = None, **kwargs)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `bigwig` | Optional[Union[str, Path]] | `None` | bigWig signal file; requires the optional `pyBigWig` dependency. |
+| `matrix` | Optional[ndarray] | `None` | Features x bins signal matrix. |
+| `signal` | Optional[Union[str, Path, DataFrame]] | `None` | bigWig path or precomputed signal table. |
+| `kwargs` | — | keyword | Extra keyword arguments forwarded to matplotlib or the underlying helper. |
+
+#### Method aliases
+
+CamelCase aliases share the same signature and parameters as the
+canonical method:
+
+| Alias | Canonical method |
+|---|---|
+| `asDataFrame` | [`as_data_frame`](#peakannotation-as_data_frame) |
+| `asGRanges` | [`as_granges`](#peakannotation-as_granges) |
+| `getAnnoStat` | [`get_anno_stat`](#peakannotation-get_anno_stat) |
+| `dropAnno` | [`drop_anno`](#peakannotation-drop_anno) |
+| `plotAnnoPie` | [`plot_anno_pie`](#peakannotation-plot_anno_pie) |
+| `plotAnnoBar` | [`plot_anno_bar`](#peakannotation-plot_anno_bar) |
+| `plotDistToTSS` | [`plot_dist_to_tss`](#peakannotation-plot_dist_to_tss) |
+| `getTagMatrix` | [`get_tag_matrix`](#peakannotation-get_tag_matrix) |
+| `plotPeakProf` | [`plot_peak_prof`](#peakannotation-plot_peak_prof) |
+| `peakHeatmap` | [`peak_heatmap`](#peakannotation-peak_heatmap) |
+
+### `GeneAnnotation`
+
+Gene, transcript, exon, intron and UTR tables plus interval indexes. Build one with `GeneAnnotation.from_gtf()` or let `annotate_peak()` create it from `TxDb=`, `gtf=` or `annotation=`.
+
+#### Constructor {#geneannotation-constructor}
+
+```python
+GeneAnnotation(genes: 'pd.DataFrame', transcripts: 'pd.DataFrame', exons: 'pd.DataFrame', introns: 'pd.DataFrame', utr5: 'pd.DataFrame', utr3: 'pd.DataFrame', *, copy: 'bool' = True) -> 'None'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **genes** | DataFrame | — | Gene or transcript feature table; normally `ann.gene_annotation.features(...)`. |
+| **transcripts** | DataFrame | — | Transcript feature table. |
+| **exons** | DataFrame | — | Exon feature table. |
+| **introns** | DataFrame | — | Intron feature table. |
+| **utr5** | DataFrame | — | 5' UTR feature table. |
+| **utr3** | DataFrame | — | 3' UTR feature table. |
+| `copy` | bool | `True` | Return a copy instead of modifying the input frame in place. |
+
+#### Data attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `genes` | DataFrame | Gene feature table. |
+| `transcripts` | DataFrame | Transcript feature table. |
+| `exons` | DataFrame | Exon feature table. |
+| `introns` | DataFrame | Intron feature table. |
+| `utr5` | DataFrame | 5' UTR feature table. |
+| `utr3` | DataFrame | 3' UTR feature table. |
+| `gene_index` | BinnedIntervalIndex | Binned interval index over genes. |
+| `transcript_index` | BinnedIntervalIndex | Binned interval index over transcripts. |
+| `exon_index` | BinnedIntervalIndex | Binned interval index over exons. |
+| `intron_index` | BinnedIntervalIndex | Binned interval index over introns. |
+| `utr5_index` | BinnedIntervalIndex | Binned interval index over 5' UTRs. |
+| `utr3_index` | BinnedIntervalIndex | Binned interval index over 3' UTRs. |
+| `tss_index` | TSSIndex | Backwards-compatible gene-level TSS index. |
+
+#### Methods
+
+#### `from_gtf` {#geneannotation-from_gtf}
+
+Build a `GeneAnnotation` from a GTF/GFF path or feature table.
+
+!!! note
+    Coordinates are normalized to 0-based, half-open intervals.
+
+```python
+from_gtf(gtf: 'Union[str, Path, pd.DataFrame]') -> "'GeneAnnotation'"
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **gtf** | Union[str, Path, DataFrame] | — | GTF/GFF path or a feature DataFrame. |
+
+#### `features` {#geneannotation-features}
+
+Return the gene or transcript feature table.
+
+```python
+features(level: 'str' = 'transcript') -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `level` | str | `transcript` | `transcript` (default) or `gene`. |
+
+#### `tss_index_for` {#geneannotation-tss_index_for}
+
+Return (and cache) the TSS index for a level.
+
+```python
+tss_index_for(level: 'str') -> 'TSSIndex'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **level** | str | — | `transcript` or `gene`. |
+
+#### `span_index_for` {#geneannotation-span_index_for}
+
+Return (and cache) the span index for a level.
+
+```python
+span_index_for(level: 'str') -> 'SpanIndex'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **level** | str | — | `transcript` or `gene`. |
+
+#### `feature_by_id` {#geneannotation-feature_by_id}
+
+Look up one feature row by ID.
+
+```python
+feature_by_id(level: 'str', feature_id: 'str') -> 'Optional[pd.Series]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **level** | str | — | `transcript` or `gene`. |
+| **feature_id** | str | — | Feature identifier to look up. |
+
+#### `feature_row` {#geneannotation-feature_row}
+
+Return a feature row by positional index.
+
+```python
+feature_row(level: 'str', row_index: 'int') -> 'pd.Series'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **level** | str | — | `transcript` or `gene`. |
+| **row_index** | int | — | Zero-based row index in the feature table. |
+
+#### `category_table` {#geneannotation-category_table}
+
+Return the exon, intron or UTR table for a category.
+
+```python
+category_table(category: 'str') -> 'pd.DataFrame'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **category** | str | — | `Exon`, `Intron`, `5UTR` or `3UTR`. |
+
+#### `category_index` {#geneannotation-category_index}
+
+Return the binned index for a feature category.
+
+```python
+category_index(category: 'str') -> 'BinnedIntervalIndex'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **category** | str | — | `Exon`, `Intron`, `5UTR` or `3UTR`. |
+
+#### `gene_row` {#geneannotation-gene_row}
+
+Look up a gene row by gene ID.
+
+```python
+gene_row(gene_id: 'str') -> 'Optional[pd.Series]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **gene_id** | str | — | Gene identifier. |
+
+#### `nearest_gene` {#geneannotation-nearest_gene}
+
+Return the nearest gene and signed distance.
+
+```python
+nearest_gene(chrom: 'str', pos: 'int') -> 'tuple[Optional[pd.Series], float]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **chrom** | str | — | Chromosome name. |
+| **pos** | int | — | 0-based genomic position. |
+
+#### `choose_gene` {#geneannotation-choose_gene}
+
+Choose the closest gene among candidate IDs.
+
+```python
+choose_gene(gene_ids: 'Iterable[str]', pos: 'int') -> 'tuple[Optional[pd.Series], float]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **gene_ids** | Iterable[str] | — | Candidate gene identifiers to compare. |
+| **pos** | int | — | 0-based genomic position. |
+
+#### `promoter_gene` {#geneannotation-promoter_gene}
+
+Return the gene whose promoter contains `pos`.
+
+```python
+promoter_gene(chrom: 'str', pos: 'int', upstream: 'int', downstream: 'int') -> 'tuple[Optional[pd.Series], float]'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **chrom** | str | — | Chromosome name. |
+| **pos** | int | — | 0-based genomic position. |
+| **upstream** | int | — | Bases upstream of the anchor (the 5' side on the feature strand). |
+| **downstream** | int | — | Bases downstream of the anchor (the 3' side on the feature strand). |
+
+#### `promoter_label` {#geneannotation-promoter_label}
+
+Map a TSS distance to a promoter-bin label.
+
+```python
+promoter_label(distance: 'float', bins: 'Sequence[int]') -> 'str'
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **distance** | float | — | Signed distance from the peak to the TSS. |
+| **bins** | Sequence[int] | — | Promoter bin edges in bp. |
+
+### `TagMatrix`
+
+A `numpy.ndarray` subclass carrying ChIPseeker-style region metadata. It is returned by `get_tag_matrix()` and accepted by the profile and heatmap helpers.
+
+#### Constructor {#tagmatrix-constructor}
+
+```python
+TagMatrix(matrix: 'np.ndarray', *, upstream: 'Optional[int]' = None, downstream: 'Optional[int]' = None, type: 'Optional[str]' = None, by: 'Optional[str]' = None, label: 'Optional[str]' = None, is_binning: 'bool' = False, rows: 'Optional[pd.DataFrame]' = None) -> "'TagMatrix'"
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| **matrix** | ndarray | — | Numeric features x bins matrix. |
+| `upstream` | Optional[int] | `None` | Upstream window size in bp. |
+| `downstream` | Optional[int] | `None` | Downstream window size in bp. |
+| `type` | Optional[str] | `None` | Region type (`start_site`, `end_site` or `body`). |
+| `by` | Optional[str] | `None` | Feature level (`gene` or `transcript`). |
+| `label` | Optional[str] | `None` | Optional label used in plots. |
+| `is_binning` | bool | `False` | Whether the matrix contains binned windows. |
+| `rows` | Optional[DataFrame] | `None` | Region metadata with one row per matrix row. |
+
+#### Data attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `upstream` | int \| None | Upstream window size in bp. |
+| `downstream` | int \| None | Downstream window size in bp. |
+| `type` | str \| None | Region type (`start_site`, `end_site` or `body`). |
+| `by` | str \| None | Feature level (`gene` or `transcript`). |
+| `label` | str \| None | Optional label used in plots. |
+| `is_binning` | bool | Whether the matrix contains binned windows. |
+| `rows` | DataFrame \| None | Region metadata with one row per matrix row. |
+| `matrix` | ndarray | The underlying float matrix as a plain NumPy array. |
+
+#### Methods
+
+`TagMatrix` has no public methods. Use the attributes above or pass it
+to `plot_avg_prof`, `tag_heatmap` and the other top-level helpers.

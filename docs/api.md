@@ -18,8 +18,10 @@ multi-panel figures), so they compose with ordinary matplotlib code.
 !!! tip "Every parameter, one page"
 
     The [function reference](reference/functions.md) lists all 94 public
-    top-level functions with every parameter, its type, default and meaning.
-    It is generated from the live signatures, so it always matches the code.
+    top-level functions plus the constructors, data attributes and methods of
+    `PeakAnnotation`, `GeneAnnotation` and `TagMatrix` — every parameter, its
+    type, default and meaning. It is generated from the live signatures, so it
+    always matches the code, and CI fails when the committed page drifts.
 
 ## Core objects
 

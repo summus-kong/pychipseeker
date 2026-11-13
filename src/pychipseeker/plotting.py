@@ -278,6 +278,9 @@ def _grouped_stat(
     downstream_distance = kwargs.get("downstream_distance")
     if downstream_distance is None:
         downstream_distance = getattr(annotation, "downstream_distance", 300)
+    if downstream_distance is None:
+        downstream_distance = 300
+    downstream_distance = int(downstream_distance)
     rows: dict[str, pd.Series] = {}
     for group, sub in df.groupby(groupby, dropna=False):
         stat = get_genomic_anno_stat(
@@ -375,8 +378,9 @@ def plot_anno_bar(
 def _distance_breaks(
     distance_breaks: Optional[Sequence[float]],
 ) -> tuple[np.ndarray, list[str]]:
+    breaks: list[float]
     if distance_breaks is None:
-        breaks = [0, 1000, 3000, 5000, 10000, 100000]
+        breaks = [0.0, 1000.0, 3000.0, 5000.0, 10000.0, 100000.0]
     else:
         breaks = [float(x) for x in distance_breaks]
     breaks = sorted(set(breaks))
@@ -682,7 +686,7 @@ def extract_tss_matrix_from_signal(
     genes, _chrom_map = harmonize_frame(
         genes, by_chrom.keys(), column="chrom", copy=True
     )
-    matrix = np.full((len(genes), n_bins), np.nan, dtype=dtype)
+    matrix: np.ndarray = np.full((len(genes), n_bins), np.nan, dtype=dtype)
 
     for row_idx, row in enumerate(genes.itertuples(index=False)):
         chrom = str(row.chrom)
@@ -863,7 +867,7 @@ def extract_tss_matrix(
             & (ends <= chrom_lengths)
         )
         rows = np.flatnonzero(valid)
-        matrix = np.full((len(genes), n_bins), np.nan, dtype=dtype)
+        matrix: np.ndarray = np.full((len(genes), n_bins), np.nan, dtype=dtype)
         if rows.size == 0:
             raise ValueError(
                 "no features could be extracted from the bigWig track"

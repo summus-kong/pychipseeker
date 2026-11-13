@@ -614,14 +614,16 @@ See [PARITY.md](PARITY.md) for the function-by-function status.
 pip install -e ".[dev,bigwig]"
 pytest -q
 pytest -q --cov=pychipseeker --cov-report=term-missing
-python -m ruff check src tests examples
+python -m ruff check src tests examples scripts
 python -m mypy
 ```
 
 `python scripts/bench.py --txdb mm10` reproduces the performance table.
 `python scripts/build_function_reference.py` regenerates the
 [function reference](https://summus-kong.github.io/pychipseeker/reference/functions/)
-page from the live signatures; run it after changing a public signature.
+page from the live signatures (top-level functions plus the `PeakAnnotation`,
+`GeneAnnotation` and `TagMatrix` members); run it after changing a public
+signature. CI regenerates the page and fails when the committed copy drifts.
 Documentation lives in [docs/](docs/index.md) and is published at
 <https://summus-kong.github.io/pychipseeker/>. Preview it locally with:
 

@@ -642,14 +642,14 @@ def shuffle(
 
         if isinstance(TxDb, GeneAnnotation):
             model = TxDb
-        elif is_assembly_name(TxDb):
+        elif isinstance(TxDb, str) and is_assembly_name(TxDb):
             from .genomes import load_genome  # deferred: keep import graph flat
 
             model = load_genome(TxDb)
-        elif is_genome_spec(TxDb):
+        elif isinstance(TxDb, (str, Path)) and is_genome_spec(str(TxDb)):
             from .genomes import load_annotation
 
-            model = load_annotation(TxDb)
+            model = load_annotation(str(TxDb))
         else:
             model = GeneAnnotation.from_gtf(TxDb)
         chrom_sizes = model.genes.groupby("chrom")["end"].max().astype(int).to_dict()
@@ -1049,7 +1049,9 @@ def _load_gsminfo(gsminfo=None) -> pd.DataFrame:
     from importlib.resources import as_file, files
 
     if gsminfo is None:
-        with as_file(files("pychipseeker").joinpath("data", "gsminfo.csv.gz")) as path:
+        with as_file(
+            files("pychipseeker").joinpath("data").joinpath("gsminfo.csv.gz")
+        ) as path:
             return pd.read_csv(
                 path,
                 compression="gzip",
@@ -1184,7 +1186,9 @@ def get_sample_files(directory=None) -> dict[str, Path]:
     from importlib.resources import as_file, files
 
     if directory is None:
-        with as_file(files("pychipseeker").joinpath("data", "GEO_sample_data")) as dir_path:
+        with as_file(
+            files("pychipseeker").joinpath("data").joinpath("GEO_sample_data")
+        ) as dir_path:
             result: dict[str, Path] = {}
             for fname in sorted(p.name for p in dir_path.iterdir() if p.is_file()):
                 label = re.sub(r"GSM\d+_(\w+_\w+)_.*", r"\1", fname)
@@ -1221,7 +1225,7 @@ asGRanges = as_granges
 getAnnoStat = get_anno_stat
 dropAnno = drop_anno
 combine_csAnno = combine_cs_anno
-vennplot.peakfile = vennplot_peakfile
+setattr(vennplot, "peakfile", vennplot_peakfile)  # noqa: B010 - function attribute
 enrichPeakOverlap = enrich_peak_overlap
 enrichAnnoOverlap = enrich_anno_overlap
 detailGenomicAnnotation = detail_genomic_annotation

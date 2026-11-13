@@ -22,7 +22,7 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence, Union
+from typing import Callable, Dict, Iterable, Optional, Sequence, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -129,9 +129,13 @@ def promoter_label(distance: float, bins: Sequence[int]) -> str:
         return "Promoter"
     abs_d = abs(float(distance))
     b0, b1, b2 = (list(bins) + [None, None, None])[:3]
+    if b0 is None:
+        return "Promoter"
     if abs_d <= b0:
         return f"Promoter (<={_format_kb(int(b0))})"
-    if b1 is not None and abs_d <= b1:
+    if b1 is None:
+        return "Promoter"
+    if abs_d <= b1:
         return f"Promoter ({int(b0) // 1000}-{int(b1) // 1000}kb)"
     if b2 is not None and abs_d <= b2:
         return f"Promoter ({int(b1) // 1000}-{int(b2) // 1000}kb)"
@@ -481,11 +485,11 @@ class GeneAnnotation:
             ].map(tx2gene)
 
         if gene_rows.empty:
-            source = tx_rows if not tx_rows.empty else exon_rows
-            if source.empty:
+            gene_source = tx_rows if not tx_rows.empty else exon_rows
+            if gene_source.empty:
                 raise ValueError("no gene or transcript records were found")
             gene_rows = (
-                source.dropna(subset=["gene_id"])
+                gene_source.dropna(subset=["gene_id"])
                 .groupby("gene_id", as_index=False)
                 .agg(
                     chrom=("chrom", "first"),
@@ -1232,27 +1236,35 @@ class PeakAnnotation:
         if signal is not None:
             from .plotting import extract_tss_matrix_from_signal
 
-            return extract_tss_matrix_from_signal(
-                signal,
-                genes,
-                window=window,
-                n_bins=n_bins,
-                min_value=min_value,
-                upstream=upstream,
-                downstream=downstream,
+            return cast(
+                np.ndarray,
+                extract_tss_matrix_from_signal(
+                    signal,
+                    genes,
+                    window=window,
+                    n_bins=n_bins,
+                    min_value=min_value,
+                    upstream=upstream,
+                    downstream=downstream,
+                ),
             )
 
         from .plotting import extract_tss_matrix
 
-        return extract_tss_matrix(
-            bigwig,
-            genes,
-            window=window,
-            n_bins=n_bins,
-            min_value=0.0 if min_value is None else float(min_value),
-            upstream=upstream,
-            downstream=downstream,
-            n_jobs=n_jobs,
+        if bigwig is None:
+            raise ValueError("provide a bigWig path when matrix and signal are omitted")
+        return cast(
+            np.ndarray,
+            extract_tss_matrix(
+                bigwig,
+                genes,
+                window=window,
+                n_bins=n_bins,
+                min_value=0.0 if min_value is None else float(min_value),
+                upstream=upstream,
+                downstream=downstream,
+                n_jobs=n_jobs,
+            ),
         )
 
     def plot_tss_profile(
@@ -1986,6 +1998,7 @@ def _annotate_peaks_frame(
     # six annotation frames in each worker is far cheaper than pickling the
     # several-hundred-megabyte object on every spawn.
     source = getattr(model, "source", None)
+    initializer: Callable[..., None]
     if source is not None:
         initializer = _annotation_worker_init_from_source
         initargs: tuple[object, ...] = (source, worker_config)
@@ -2116,10 +2129,10 @@ def annotate_peak(
         from .genomes import detect_assembly
 
         gtf = detect_assembly(peaks=peaks)
-    if is_assembly_name(gtf):
+    if isinstance(gtf, str) and is_assembly_name(gtf):
         gtf = load_genome(gtf)
-    elif is_genome_spec(gtf):
-        gtf = load_annotation(gtf)
+    elif isinstance(gtf, (str, Path)) and is_genome_spec(str(gtf)):
+        gtf = load_annotation(str(gtf))
     if str(overlap) not in {"TSS", "all"}:
         raise ValueError("overlap must be 'TSS' or 'all'")
 
@@ -2630,7 +2643,7 @@ def get_flanking_genes(
                 tx_ids.append(str(feature["transcript_id"]))
             distances.append(str(int(d)))
 
-        record = {
+        record: Dict[str, object] = {
             "peak_id": str(peak_row.peak_id),
             "flank_gene_ids": ";".join(gene_ids),
             "flank_gene_distances": ";".join(distances),

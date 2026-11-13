@@ -49,7 +49,7 @@ def _coerce_peaks(peaks: Union[str, Path, pd.DataFrame]) -> pd.DataFrame:
 def _chrom_sizes_from_genome(genome: Union[str, Path]) -> Dict[str, int]:
     from .genomes import load_genome
 
-    annotation = load_genome(genome)
+    annotation = load_genome(str(genome))
     sizes: Dict[str, int] = {}
     for table in (
         annotation.genes,
@@ -351,6 +351,8 @@ def frip(
         raise ValueError("peak table is empty")
     if bigwig is not None:
         return _frip_bigwig(bigwig, frame, chrom_sizes=chrom_sizes)
+    if bam is None:
+        raise ValueError("supply exactly one of bigwig=... or bam=...")
     return _frip_bam(
         bam,
         frame,
@@ -597,6 +599,8 @@ def tss_enrichment(
             n_jobs=n_jobs,
         )
     else:
+        if bam is None:
+            raise ValueError("provide a bigWig path or bam=...")
         handle = _bam_handle(bam)
         try:
             references = list(getattr(handle, "references", []) or [])

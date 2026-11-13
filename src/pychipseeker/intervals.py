@@ -12,7 +12,7 @@ unknown strand (``*`` or ``.``) are treated as unstranded.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,7 @@ def _normalise_strands(values: Iterable[object]) -> np.ndarray:
     """Vectorised :func:`_normalise_strand` for a column of values."""
 
     if hasattr(values, "to_numpy"):
-        arr = values.astype(str).to_numpy(dtype="U1", copy=False)
+        arr = np.asarray(cast(Any, values).astype(str), dtype="U1")
     else:
         arr = np.asarray([str(v) for v in values], dtype="U1")
     out = np.full(arr.shape, "*", dtype="U1")
@@ -104,7 +104,7 @@ class BinnedIntervalIndex:
         if int(bin_size) <= 0:
             raise ValueError("bin_size must be positive")
         self.bin_size = int(bin_size)
-        self._bins: Dict[str, Dict[int, list[int]]] = {}
+        self._bins: Dict[str, Dict[int, np.ndarray]] = {}
         self._starts: Optional[np.ndarray] = None
         self._ends: Optional[np.ndarray] = None
         self._strands: Optional[np.ndarray] = None
@@ -288,9 +288,12 @@ class _SortedFeatureIndex:
             return None
         if len(entries) == 1:
             return entries[0]
-        vals = np.concatenate([e[0] for e in entries])
-        rows = np.concatenate([e[1] for e in entries])
-        strands = np.concatenate([e[2] for e in entries])
+        present = [
+            cast(Tuple[np.ndarray, np.ndarray, np.ndarray], entry) for entry in entries
+        ]
+        vals = np.concatenate([e[0] for e in present])
+        rows = np.concatenate([e[1] for e in present])
+        strands = np.concatenate([e[2] for e in present])
         order = np.argsort(vals, kind="mergesort")
         return vals[order], rows[order], strands[order]
 
@@ -473,9 +476,12 @@ class SpanIndex(_SortedFeatureIndex):
             return None
         if len(entries) == 1:
             return entries[0]
-        vals = np.concatenate([e[0] for e in entries])
-        rows = np.concatenate([e[1] for e in entries])
-        strands = np.concatenate([e[2] for e in entries])
+        present = [
+            cast(Tuple[np.ndarray, np.ndarray, np.ndarray], entry) for entry in entries
+        ]
+        vals = np.concatenate([e[0] for e in present])
+        rows = np.concatenate([e[1] for e in present])
+        strands = np.concatenate([e[2] for e in present])
         order = np.argsort(vals, kind="mergesort")
         return vals[order], rows[order], strands[order]
 

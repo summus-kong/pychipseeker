@@ -338,6 +338,24 @@ PARAM_DOCS: Dict[str, str] = {
     "ranking": "Ranked gene mapping/table or ranked gene sequence.",
     "result": "Enrichment result table from `ora`, `enrichr` or `gsea`.",
     "kind": "Plot kind: `'bar'` (default) or `'dot'`.",
+    "include_peak_metadata": "Merge peak metadata columns (`name`, `score`, `strand`) into the result.",
+    "normalize": "Return percentages instead of raw counts when `True`.",
+    "feature_id": "Feature identifier (`gene_id` or `transcript_id`).",
+    "row_index": "Zero-based row index in the feature table.",
+    "category": "Feature category: `Exon`, `Intron`, `5UTR` or `3UTR`.",
+    "gene_id": "Gene identifier.",
+    "chrom": "Chromosome name.",
+    "pos": "0-based genomic position.",
+    "gene_ids": "Candidate gene identifiers to compare.",
+    "is_binning": "Whether the matrix contains binned windows.",
+    "rows": "Region metadata table with one row per matrix row.",
+    "transcripts": "Transcript feature table.",
+    "exons": "Exon feature table.",
+    "introns": "Intron feature table.",
+    "utr5": "5' UTR feature table.",
+    "utr3": "3' UTR feature table.",
+    "detail_genomic_annotation": "Detailed genomic-feature table.",
+    "has_genomic_annotation": "Whether genomic features were assigned.",
 }
 
 
@@ -640,12 +658,220 @@ FUNCTION_NOTES: Dict[str, str] = {
 }
 
 
-def _signature_text(func: Any) -> str:
+CLASS_ORDER: Sequence[str] = ("PeakAnnotation", "GeneAnnotation", "TagMatrix")
+
+CLASS_NOTES: Dict[str, str] = {
+    "PeakAnnotation": (
+        "Returned by `annotate_peak()` / `annotatePeak()`. It stores the "
+        "annotated peaks, the gene model and the settings used for annotation, "
+        "and exposes the ChIPseeker-style plotting and summary methods."
+    ),
+    "GeneAnnotation": (
+        "Gene, transcript, exon, intron and UTR tables plus interval indexes. "
+        "Build one with `GeneAnnotation.from_gtf()` or let `annotate_peak()` "
+        "create it from `TxDb=`, `gtf=` or `annotation=`."
+    ),
+    "TagMatrix": (
+        "A `numpy.ndarray` subclass carrying ChIPseeker-style region metadata. "
+        "It is returned by `get_tag_matrix()` and accepted by the profile and "
+        "heatmap helpers."
+    ),
+}
+
+CLASS_ATTRIBUTES: Dict[str, Sequence[Tuple[str, str, str]]] = {
+    "PeakAnnotation": (
+        ("peaks", "DataFrame", "Input peak table, including `score` when available."),
+        ("annotation", "DataFrame", "One row per annotated peak with snake_case columns."),
+        ("gene_annotation", "GeneAnnotation", "Gene model used for annotation."),
+        ("tss_region", "tuple[int, int]", "Promoter window `(upstream, downstream)` in bp."),
+        ("level", "str", "`transcript` (default) or `gene`."),
+        ("promoter_bins", "tuple[int, ...]", "Promoter bin edges used for labels."),
+        (
+            "genomic_annotation_priority",
+            "tuple[str, ...]",
+            "Feature priority used for overlapping annotations.",
+        ),
+        ("downstream_distance", "int", "Downstream window used by the `Downstream` label."),
+        (
+            "detail_genomic_annotation",
+            "DataFrame",
+            "Detailed genomic-feature table.",
+        ),
+        ("has_genomic_annotation", "bool", "Whether genomic features were assigned."),
+        ("add_flank_gene_info", "bool", "Whether flanking genes were added."),
+        ("flank_distance", "int", "Flank distance used for flanking-gene searches."),
+        ("upstream", "int", "Read-only property derived from `tss_region`."),
+        ("downstream", "int", "Read-only property derived from `tss_region`."),
+        ("detail", "DataFrame", "Alias for `detail_genomic_annotation`."),
+        ("annoStat", "DataFrame", "Alias for `anno_stat()`."),
+        ("peakNum", "int", "Number of annotated peaks."),
+        ("hasGenomicAnnotation", "bool", "Alias for `has_genomic_annotation`."),
+    ),
+    "GeneAnnotation": (
+        ("genes", "DataFrame", "Gene feature table."),
+        ("transcripts", "DataFrame", "Transcript feature table."),
+        ("exons", "DataFrame", "Exon feature table."),
+        ("introns", "DataFrame", "Intron feature table."),
+        ("utr5", "DataFrame", "5' UTR feature table."),
+        ("utr3", "DataFrame", "3' UTR feature table."),
+        ("gene_index", "BinnedIntervalIndex", "Binned interval index over genes."),
+        ("transcript_index", "BinnedIntervalIndex", "Binned interval index over transcripts."),
+        ("exon_index", "BinnedIntervalIndex", "Binned interval index over exons."),
+        ("intron_index", "BinnedIntervalIndex", "Binned interval index over introns."),
+        ("utr5_index", "BinnedIntervalIndex", "Binned interval index over 5' UTRs."),
+        ("utr3_index", "BinnedIntervalIndex", "Binned interval index over 3' UTRs."),
+        ("tss_index", "TSSIndex", "Backwards-compatible gene-level TSS index."),
+    ),
+    "TagMatrix": (
+        ("upstream", "int | None", "Upstream window size in bp."),
+        ("downstream", "int | None", "Downstream window size in bp."),
+        ("type", "str | None", "Region type (`start_site`, `end_site` or `body`)."),
+        ("by", "str | None", "Feature level (`gene` or `transcript`)."),
+        ("label", "str | None", "Optional label used in plots."),
+        ("is_binning", "bool", "Whether the matrix contains binned windows."),
+        ("rows", "DataFrame | None", "Region metadata with one row per matrix row."),
+        ("matrix", "ndarray", "The underlying float matrix as a plain NumPy array."),
+    ),
+}
+
+METHOD_SUMMARIES: Dict[Tuple[str, str], str] = {
+    ("PeakAnnotation", "to_dataframe"): "Return one row per annotated peak with snake_case columns.",
+    ("PeakAnnotation", "to_chipseeker"): "Return a table with ChIPseeker-style column names.",
+    ("PeakAnnotation", "as_data_frame"): "ChIPseeker `as.data.frame(csAnno)` analogue.",
+    ("PeakAnnotation", "as_granges"): "Return a GRanges-like table with `seqnames/start/end/strand`.",
+    ("PeakAnnotation", "get_anno_stat"): "Return the ChIPseeker `getAnnoStat` table.",
+    ("PeakAnnotation", "drop_anno"): "Keep peaks within `abs(distanceToTSS) < cutoff`.",
+    ("PeakAnnotation", "anno_stat"): "Summarize major annotation classes.",
+    ("PeakAnnotation", "summary"): "Count peaks per class and optionally per metadata group.",
+    ("PeakAnnotation", "seq2gene"): "Return gene IDs linked to peaks through promoters or flanks.",
+    ("PeakAnnotation", "seq2gene_links"): "Return a peak-to-gene link table for enrichment.",
+    ("PeakAnnotation", "plot_anno_pie"): "Draw the annotation composition pie chart.",
+    ("PeakAnnotation", "plot_anno_bar"): "Draw annotation composition as grouped bars.",
+    ("PeakAnnotation", "plot_dist_to_tss"): "Draw the TSS-distance distribution.",
+    ("PeakAnnotation", "vennpie"): "Draw a nested Venn-pie summary of annotation flags.",
+    ("PeakAnnotation", "upsetplot"): "Draw an UpSet plot of annotation flags.",
+    ("PeakAnnotation", "get_tag_matrix"): "Build a ChIPseeker-style tag matrix from this annotation.",
+    ("PeakAnnotation", "plot_peak_prof"): "Plot the average peak-centered profile.",
+    ("PeakAnnotation", "peak_heatmap"): "Draw a peak-centered coverage heatmap.",
+    ("PeakAnnotation", "plot_tss_profile"): "Plot a bigWig, BAM or matrix TSS profile.",
+    ("PeakAnnotation", "plot_tss_heatmap"): "Draw a bigWig, BAM or matrix TSS heatmap.",
+    ("GeneAnnotation", "from_gtf"): "Build a `GeneAnnotation` from a GTF/GFF path or feature table.",
+    ("GeneAnnotation", "features"): "Return the gene or transcript feature table.",
+    ("GeneAnnotation", "tss_index_for"): "Return (and cache) the TSS index for a level.",
+    ("GeneAnnotation", "span_index_for"): "Return (and cache) the span index for a level.",
+    ("GeneAnnotation", "feature_by_id"): "Look up one feature row by ID.",
+    ("GeneAnnotation", "feature_row"): "Return a feature row by positional index.",
+    ("GeneAnnotation", "category_table"): "Return the exon, intron or UTR table for a category.",
+    ("GeneAnnotation", "category_index"): "Return the binned index for a feature category.",
+    ("GeneAnnotation", "gene_row"): "Look up a gene row by gene ID.",
+    ("GeneAnnotation", "nearest_gene"): "Return the nearest gene and signed distance.",
+    ("GeneAnnotation", "choose_gene"): "Choose the closest gene among candidate IDs.",
+    ("GeneAnnotation", "promoter_gene"): "Return the gene whose promoter contains `pos`.",
+    ("GeneAnnotation", "promoter_label"): "Map a TSS distance to a promoter-bin label.",
+}
+
+METHOD_NOTES: Dict[Tuple[str, str], str] = {
+    ("PeakAnnotation", "get_tag_matrix"): (
+        "When `windows` is a sequence, a list of `TagMatrix` objects is returned. "
+        "With `bigwig=`/`bam=` the matrix contains signal coverage; otherwise it "
+        "contains peak coverage."
+    ),
+    ("PeakAnnotation", "seq2gene"): (
+        "Promoter and flank logic uses the annotation's `tss_region` and "
+        "`flank_distance` unless overridden here."
+    ),
+    ("PeakAnnotation", "plot_tss_profile"): (
+        "Pass exactly one of `bigwig`, `matrix` or `signal`; extra keyword "
+        "arguments are forwarded to the top-level `plot_tss_profile`."
+    ),
+    ("PeakAnnotation", "plot_tss_heatmap"): (
+        "Pass exactly one of `bigwig`, `matrix` or `signal`; extra keyword "
+        "arguments are forwarded to the top-level `plot_tss_heatmap`."
+    ),
+    ("GeneAnnotation", "from_gtf"): (
+        "Coordinates are normalized to 0-based, half-open intervals."
+    ),
+}
+
+METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
+    ("PeakAnnotation.to_dataframe", "include_peak_metadata"): (
+        "Merge peak metadata columns (`name`, `score`, `strand`) into the result."
+    ),
+    ("PeakAnnotation.summary", "normalize"): "Return percentages instead of raw counts.",
+    ("PeakAnnotation.get_tag_matrix", "peak"): (
+        "Peaks used to build the matrix; defaults to `ann.peaks`."
+    ),
+    ("PeakAnnotation.get_tag_matrix", "upstream"): "Upstream window in bp.",
+    ("PeakAnnotation.get_tag_matrix", "downstream"): "Downstream window in bp.",
+    ("PeakAnnotation.plot_tss_profile", "bigwig"): (
+        "bigWig signal file; requires the optional `pyBigWig` dependency."
+    ),
+    ("PeakAnnotation.plot_tss_profile", "matrix"): "Features x bins signal matrix.",
+    ("PeakAnnotation.plot_tss_profile", "signal"): "bigWig path or precomputed signal table.",
+    ("PeakAnnotation.plot_tss_heatmap", "bigwig"): (
+        "bigWig signal file; requires the optional `pyBigWig` dependency."
+    ),
+    ("PeakAnnotation.plot_tss_heatmap", "matrix"): "Features x bins signal matrix.",
+    ("PeakAnnotation.plot_tss_heatmap", "signal"): "bigWig path or precomputed signal table.",
+    ("GeneAnnotation.from_gtf", "gtf"): "GTF/GFF path or a feature DataFrame.",
+    ("GeneAnnotation.features", "level"): "`transcript` (default) or `gene`.",
+    ("GeneAnnotation.tss_index_for", "level"): "`transcript` or `gene`.",
+    ("GeneAnnotation.span_index_for", "level"): "`transcript` or `gene`.",
+    ("GeneAnnotation.feature_by_id", "level"): "`transcript` or `gene`.",
+    ("GeneAnnotation.feature_by_id", "feature_id"): "Feature identifier to look up.",
+    ("GeneAnnotation.feature_row", "level"): "`transcript` or `gene`.",
+    ("GeneAnnotation.feature_row", "row_index"): "Zero-based row index in the feature table.",
+    ("GeneAnnotation.category_table", "category"): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
+    ("GeneAnnotation.category_index", "category"): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
+    ("GeneAnnotation.nearest_gene", "chrom"): "Chromosome name.",
+    ("GeneAnnotation.nearest_gene", "pos"): "0-based genomic position.",
+    ("GeneAnnotation.choose_gene", "gene_ids"): "Candidate gene identifiers to compare.",
+    ("GeneAnnotation.choose_gene", "pos"): "0-based genomic position.",
+    ("GeneAnnotation.promoter_label", "distance"): "Signed distance from the peak to the TSS.",
+    ("GeneAnnotation.promoter_label", "bins"): "Promoter bin edges in bp.",
+    ("PeakAnnotation", "peaks"): "Peak table to annotate.",
+    ("PeakAnnotation", "annotation"): "One row per annotated peak.",
+    ("PeakAnnotation", "gene_annotation"): "Gene model used for annotation.",
+    ("PeakAnnotation", "tss_region"): "Promoter window `(upstream, downstream)` in bp.",
+    ("PeakAnnotation", "level"): "`transcript` (default) or `gene`.",
+    ("PeakAnnotation", "promoter_bins"): "Promoter bin edges in bp.",
+    (
+        "PeakAnnotation",
+        "genomic_annotation_priority",
+    ): "Feature priority used for overlapping annotations.",
+    ("PeakAnnotation", "downstream_distance"): "Downstream window used by the `Downstream` label.",
+    (
+        "PeakAnnotation",
+        "detail_genomic_annotation",
+    ): "Detailed genomic-feature table.",
+    (
+        "PeakAnnotation",
+        "has_genomic_annotation",
+    ): "Whether genomic features were assigned.",
+    ("PeakAnnotation", "add_flank_gene_info"): "Whether flanking genes were added.",
+    ("PeakAnnotation", "flank_distance"): "Flank distance used for flanking-gene searches.",
+    ("TagMatrix", "matrix"): "Numeric features x bins matrix.",
+    ("TagMatrix", "upstream"): "Upstream window size in bp.",
+    ("TagMatrix", "downstream"): "Downstream window size in bp.",
+    ("TagMatrix", "type"): "Region type (`start_site`, `end_site` or `body`).",
+    ("TagMatrix", "by"): "Feature level (`gene` or `transcript`).",
+    ("TagMatrix", "label"): "Optional label used in plots.",
+    ("TagMatrix", "is_binning"): "Whether the matrix contains binned windows.",
+    ("TagMatrix", "rows"): "Region metadata with one row per matrix row.",
+}
+
+
+def _signature_text(func: Any, drop_first: bool = False) -> str:
     try:
         signature = inspect.signature(func)
     except (TypeError, ValueError):
         return "(...)"
-    return f"{func.__name__}{signature}"
+    if drop_first:
+        parameters = list(signature.parameters.values())
+        if parameters and parameters[0].name in {"self", "cls"}:
+            signature = signature.replace(parameters=parameters[1:])
+    name = getattr(func, "__name__", type(func).__name__)
+    return f"{name}{signature}"
 
 
 def _clean_type(annotation: Any) -> str:
@@ -689,32 +915,186 @@ def _summary(func: Any) -> str:
     return first
 
 
-def _param_description(name: str, func_name: str) -> str:
+def _param_description(name: str, func_name: str, scope: str = "") -> str:
+    if scope:
+        override = METHOD_OVERRIDES.get((scope, name))
+        if override:
+            return override
     return OVERRIDES.get((func_name, name)) or PARAM_DOCS.get(name, "")
+
+
+def _parameter_table(
+    func: Any,
+    func_name: str,
+    *,
+    scope: str = "",
+    drop_first: bool = False,
+) -> List[str]:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return ["*(signature unavailable)*", ""]
+    parameters = list(signature.parameters.values())
+    if drop_first and parameters and parameters[0].name in {"self", "cls"}:
+        parameters = parameters[1:]
+    parameters = [
+        param
+        for param in parameters
+        if param.kind is not inspect.Parameter.VAR_POSITIONAL
+    ]
+    if not parameters:
+        return []
+    lines = ["| Parameter | Type | Default | Description |", "|---|---|---|---|"]
+    for param in parameters:
+        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+            continue
+        description = _param_description(param.name, func_name, scope)
+        if not description:
+            description = "*(description not yet written)*"
+        ptype = _clean_type(param.annotation)
+        default = (
+            "keyword"
+            if param.kind is inspect.Parameter.VAR_KEYWORD
+            else _clean_default(param.default)
+        )
+        label = (
+            f"**{param.name}**"
+            if param.default is inspect._empty
+            and param.kind is not inspect.Parameter.VAR_KEYWORD
+            else f"`{param.name}`"
+        )
+        lines.append(
+            f"| {label} | {_escape(ptype)} | {_escape(default)} | {_escape(description)} |"
+        )
+    lines.append("")
+    return lines
 
 
 def _render_function(name: str) -> str:
     func = getattr(pcs, name)
-    signature = inspect.signature(func)
     lines = [f"### `{name}`", "", _summary(func), ""]
     note = FUNCTION_NOTES.get(name)
     if note:
         lines += ["!!! note", f"    {note}", ""]
     lines += ["```python", _signature_text(func), "```", ""]
-    lines += ["| Parameter | Type | Default | Description |", "|---|---|---|---|"]
-    for param in signature.parameters.values():
-        if param.kind is inspect.Parameter.VAR_POSITIONAL:
+    lines += _parameter_table(func, name)
+    return "\n".join(lines)
+
+
+def _class_anchor(class_name: str, member: str) -> str:
+    return f"{class_name.lower()}-{member.lower()}"
+
+
+def _class_members(class_name: str) -> List[Tuple[str, Any, List[str], bool]]:
+    cls = getattr(pcs, class_name)
+    groups: Dict[Tuple[str, int], List[str]] = {}
+    objects: Dict[Tuple[str, int], Any] = {}
+    order: List[Tuple[str, int]] = []
+    drop_first: Dict[Tuple[str, int], bool] = {}
+    for name, raw in vars(cls).items():
+        if name.startswith("_") or isinstance(raw, property):
             continue
-        description = _param_description(param.name, name)
-        if not description:
-            description = "*(description not yet written)*"
-        ptype = _clean_type(param.annotation)
-        default = "keyword" if param.kind is inspect.Parameter.VAR_KEYWORD else _clean_default(param.default)
-        label = f"**{param.name}**" if param.default is inspect._empty and param.kind is not inspect.Parameter.VAR_KEYWORD else f"`{param.name}`"
+        if isinstance(raw, classmethod):
+            key = ("classmethod", id(raw.__func__))
+            obj = getattr(cls, name)
+            drops = False
+        elif isinstance(raw, staticmethod):
+            key = ("staticmethod", id(raw.__func__))
+            obj = getattr(cls, name)
+            drops = False
+        elif inspect.isfunction(raw):
+            key = ("function", id(raw))
+            obj = raw
+            drops = True
+        else:
+            continue
+        if key not in groups:
+            groups[key] = []
+            objects[key] = obj
+            order.append(key)
+            drop_first[key] = drops
+        groups[key].append(name)
+
+    result: List[Tuple[str, Any, List[str], bool]] = []
+    for key in order:
+        names = sorted(groups[key], key=lambda item: (item.lower() != item, item))
+        result.append((names[0], objects[key], names[1:], drop_first[key]))
+    return result
+
+
+def _render_method(
+    class_name: str,
+    name: str,
+    func: Any,
+    aliases: Sequence[str],
+    drop_first: bool,
+) -> str:
+    scope = f"{class_name}.{name}"
+    anchor = _class_anchor(class_name, name)
+    summary = METHOD_SUMMARIES.get((class_name, name)) or _summary(func)
+    lines = [f"#### `{name}` {{#{anchor}}}", "", summary, ""]
+    note = METHOD_NOTES.get((class_name, name))
+    if note:
+        lines += ["!!! note", f"    {note}", ""]
+    lines += ["```python", _signature_text(func, drop_first=drop_first), "```", ""]
+    lines += _parameter_table(func, name, scope=scope, drop_first=drop_first)
+    if aliases:
+        lines += [
+            "Aliases: " + ", ".join(f"`{alias}`" for alias in aliases),
+            "",
+        ]
+    return "\n".join(lines)
+
+
+def _render_class(class_name: str) -> str:
+    cls = getattr(pcs, class_name)
+    lines = [f"### `{class_name}`", "", CLASS_NOTES.get(class_name, _summary(cls)), ""]
+    constructor_anchor = _class_anchor(class_name, "constructor")
+    lines += [f"#### Constructor {{#{constructor_anchor}}}", ""]
+    lines += ["```python", _signature_text(cls), "```", ""]
+    lines += _parameter_table(cls, class_name, scope=class_name)
+    lines += [
+        "#### Data attributes",
+        "",
+        "| Attribute | Type | Description |",
+        "|---|---|---|",
+    ]
+    for attribute, attribute_type, description in CLASS_ATTRIBUTES.get(class_name, ()):
         lines.append(
-            f"| {label} | {_escape(ptype)} | {_escape(default)} | {_escape(description)} |"
+            f"| `{attribute}` | {_escape(attribute_type)} | {_escape(description)} |"
         )
     lines.append("")
+
+    members = _class_members(class_name)
+    if members:
+        lines += ["#### Methods", ""]
+        alias_rows: List[Tuple[str, str]] = []
+        for canonical, obj, aliases, drop_first in members:
+            lines.append(_render_method(class_name, canonical, obj, aliases, drop_first))
+            for alias in aliases:
+                alias_rows.append((alias, canonical))
+        if alias_rows:
+            lines += [
+                "#### Method aliases",
+                "",
+                "CamelCase aliases share the same signature and parameters as the",
+                "canonical method:",
+                "",
+                "| Alias | Canonical method |",
+                "|---|---|",
+            ]
+            for alias, canonical in alias_rows:
+                target = _class_anchor(class_name, canonical)
+                lines.append(f"| `{alias}` | [`{canonical}`](#{target}) |")
+            lines.append("")
+    else:
+        lines += [
+            "#### Methods",
+            "",
+            "`TagMatrix` has no public methods. Use the attributes above or pass it",
+            "to `plot_avg_prof`, `tag_heatmap` and the other top-level helpers.",
+            "",
+        ]
     return "\n".join(lines)
 
 
@@ -790,6 +1170,17 @@ def main() -> int:
             if not hasattr(pcs, name):
                 raise SystemExit(f"missing public function: {name}")
             lines.append(_render_function(name))
+
+    lines += [
+        "## Classes and methods",
+        "",
+        "The functional API returns three public objects. Their methods accept the",
+        "same parameters as the corresponding top-level helpers and are the usual",
+        "entry point for interactive work:",
+        "",
+    ]
+    for class_name in CLASS_ORDER:
+        lines.append(_render_class(class_name))
 
     output = ROOT / "docs" / "reference" / "functions.md"
     output.parent.mkdir(parents=True, exist_ok=True)

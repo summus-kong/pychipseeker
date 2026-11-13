@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from statistics import NormalDist
-from typing import Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union, cast
 
 import numpy as np
 import pandas as pd
@@ -102,14 +102,14 @@ def _resolve_annotation(
         raise ValueError("provide an annotation/gtf or a GeneAnnotation object")
     if isinstance(source, GeneAnnotation):
         return source
-    if is_assembly_name(source):
+    if isinstance(source, str) and is_assembly_name(source):
         from .genomes import load_genome  # deferred: keep import graph flat
 
         return load_genome(source)
     from .genomes import is_genome_spec, load_annotation
 
-    if is_genome_spec(source):
-        return load_annotation(source)
+    if isinstance(source, (str, Path)) and is_genome_spec(str(source)):
+        return load_annotation(str(source))
     if isinstance(source, (str, Path, pd.DataFrame)):
         return GeneAnnotation.from_gtf(source)
     raise TypeError("annotation must be a GTF path, DataFrame or GeneAnnotation")
@@ -729,6 +729,8 @@ def _bigwig_matrix(
                 # which dominates the runtime for transcript-scale matrices.
                 for chrom in pd.unique(chroms[rows_idx]):
                     index = rows_idx[chroms[rows_idx] == chrom]
+                    if intervals_fn is None:
+                        continue
                     intervals = intervals_fn(str(chrom))
                     if not intervals:
                         continue
@@ -796,7 +798,7 @@ def _bin_signal(values: np.ndarray, n_bins: Optional[int], value_type: str) -> n
 
 
 _BAM_MATRIX_MIN_WINDOWS = 500
-_BAM_MATRIX_WORKER: Optional[tuple[object, ...]] = None
+_BAM_MATRIX_WORKER: Optional[tuple[str, Optional[int], bool, str, int, bool]] = None
 
 
 def _bam_matrix_rows(
@@ -1045,35 +1047,38 @@ def get_tag_matrix(
     if isinstance(windows, (list, tuple)):
         if not windows:
             raise ValueError("windows is empty")
-        matrices = []
+        matrices: List[TagMatrix] = []
         for i, one_window in enumerate(windows):
-            matrix = get_tag_matrix(
-                peak=peak,
-                upstream=upstream,
-                downstream=downstream,
-                windows=one_window,
-                type=type,
-                by=by,
-                TxDb=TxDb,
-                weightCol=weightCol,
-                nbin=nbin,
-                verbose=verbose,
-                ignore_strand=ignore_strand,
-                annotation=annotation,
-                gtf=gtf,
-                bigwig=bigwig,
-                bam=bam,
-                value_type=value_type,
-                min_mapping_quality=min_mapping_quality,
-                exclude_duplicates=exclude_duplicates,
-                n_jobs=n_jobs,
+            tag_matrix = cast(
+                TagMatrix,
+                get_tag_matrix(
+                    peak=peak,
+                    upstream=upstream,
+                    downstream=downstream,
+                    windows=one_window,
+                    type=type,
+                    by=by,
+                    TxDb=TxDb,
+                    weightCol=weightCol,
+                    nbin=nbin,
+                    verbose=verbose,
+                    ignore_strand=ignore_strand,
+                    annotation=annotation,
+                    gtf=gtf,
+                    bigwig=bigwig,
+                    bam=bam,
+                    value_type=value_type,
+                    min_mapping_quality=min_mapping_quality,
+                    exclude_duplicates=exclude_duplicates,
+                    n_jobs=n_jobs,
+                ),
             )
-            matrix.label = (
+            tag_matrix.label = (
                 getattr(one_window, "attrs", {}).get("label")
                 or getattr(one_window, "attrs", {}).get("type")
                 or f"Window{i + 1}"
             )
-            matrices.append(matrix)
+            matrices.append(tag_matrix)
         return matrices
 
     if windows is None:
@@ -1232,7 +1237,7 @@ def example_signal_path() -> Path:
     from importlib.resources import as_file, files
 
     with as_file(
-        files("pychipseeker").joinpath("data", "ENCODE_demo_signal.bw")
+        files("pychipseeker").joinpath("data").joinpath("ENCODE_demo_signal.bw")
     ) as path:
         return Path(path)
 
@@ -1243,7 +1248,7 @@ def example_signal_provenance() -> dict:
     from importlib.resources import as_file, files
 
     with as_file(
-        files("pychipseeker").joinpath("data", "ENCODE_demo_signal.json")
+        files("pychipseeker").joinpath("data").joinpath("ENCODE_demo_signal.json")
     ) as path:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -1697,21 +1702,24 @@ def plot_peak_prof_multi_windows(
 ):
     """Plot profiles for several bioregions/windows on the same peak set."""
 
-    matrices = []
+    matrices: List[TagMatrix] = []
     for i, window in enumerate(windows):
-        matrix = get_tag_matrix(
-            peak=peak,
-            windows=window,
-            weightCol=weightCol,
-            nbin=nbin,
-            ignore_strand=ignore_strand,
+        tag_matrix = cast(
+            TagMatrix,
+            get_tag_matrix(
+                peak=peak,
+                windows=window,
+                weightCol=weightCol,
+                nbin=nbin,
+                ignore_strand=ignore_strand,
+            ),
         )
-        matrix.label = (
+        tag_matrix.label = (
             windows_name[i]
             if windows_name is not None and i < len(windows_name)
             else getattr(window, "attrs", {}).get("label", f"Window{i + 1}")
         )
-        matrices.append(matrix)
+        matrices.append(tag_matrix)
     return plot_multi_prof(matrices, conf=conf, **kwargs)
 
 

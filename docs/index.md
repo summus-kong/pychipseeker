@@ -172,7 +172,8 @@ Recipes for every helper, including signal quartiles and TSS enrichment, are in
 
 -   [**Function reference**](reference/functions.md)
 
-    All 94 public functions, every parameter, type, default and meaning.
+    All 94 public functions plus the `PeakAnnotation`, `GeneAnnotation` and
+    `TagMatrix` methods — every parameter, type, default and meaning.
 
 -   [**Command line**](cli.md)
 
