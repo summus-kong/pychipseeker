@@ -565,16 +565,16 @@ def _enrichment_plot_frame(result: pd.DataFrame) -> pd.DataFrame:
             count = pd.to_numeric(raw, errors="coerce")
         else:
             text = raw.astype(str)
-            numerator, _, denominator = text.str.partition("/")
-            count = pd.to_numeric(numerator, errors="coerce")
-            denominator_values = pd.to_numeric(denominator, errors="coerce")
+            parts = text.str.partition("/")
+            count = pd.to_numeric(parts[0], errors="coerce")
+            denominator_values = pd.to_numeric(parts[2], errors="coerce")
             with np.errstate(invalid="ignore", divide="ignore"):
                 ratio = count / denominator_values
     if "GeneRatio" in columns:
         text = result["GeneRatio"].astype(str)
-        numerator, _, denominator = text.str.partition("/")
-        count = pd.to_numeric(numerator, errors="coerce")
-        denominator_values = pd.to_numeric(denominator, errors="coerce")
+        parts = text.str.partition("/")
+        count = pd.to_numeric(parts[0], errors="coerce")
+        denominator_values = pd.to_numeric(parts[2], errors="coerce")
         with np.errstate(invalid="ignore", divide="ignore"):
             ratio = count / denominator_values
 

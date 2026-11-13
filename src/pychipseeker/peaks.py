@@ -46,7 +46,7 @@ def _call_peaks_chrom(
     """Call peaks for one chromosome from an open bigWig handle."""
 
     intervals = bw.intervals(chrom)
-    if not intervals:
+    if intervals is None or len(intervals) == 0:
         return []
 
     table = np.asarray(intervals, dtype=np.float64)

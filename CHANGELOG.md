@@ -54,6 +54,12 @@ All notable changes to pychipseeker are documented here.  The format follows
 
 - Panel O statistics no longer collide with the bars, and panel P reserves
   space for its two-line method note.
+- Threshold peak calling handles empty interval arrays returned by modern
+  `pyBigWig` builds instead of failing on an ambiguous truth value.
+- Enrichment dot plots parse `Overlap`/`GeneRatio` fractions correctly; the
+  count was previously collapsed to a scalar and the ratio was wrong.
+- Added regression tests for peaks, enrichment, QC, genome cache, bigWig
+  integration and compatibility helpers, raising total coverage to 88%.
 
 ## [0.8.3] - 2026-11-12
 
