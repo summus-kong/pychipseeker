@@ -13,20 +13,30 @@ All notable changes to pychipseeker are documented here.  The format follows
   and a test fails when the installed metadata, the module constant and the
   changelog drift apart.
 - CI raises the coverage gate from 75% to 85% (the suite currently reports
-  93%), and tests now cover the public `__all__` surface and every
+  96%), and tests now cover the public `__all__` surface and every
   ChIPseeker-style alias.
 - New focused tests cover interval-index binning/strand semantics, the
   tag-matrix validation, bigWig/BAM dispatch and plotting branches, plus the
   TSS-matrix signal/bigWig extraction paths and grouped annotation plots.
-- Removed an unused private binning helper from `plotting`.
+- Annotation coverage is now complete: GTF fallback reconstruction, UTR
+  splitting, peak-table normalisation, legacy gene accessors, downstream
+  labels, flanking-gene helpers and the parallel annotation plumbing are all
+  exercised.  Total coverage is 96% and `annotation.py` reports 100%.
+- Removed unreachable validation branches from `annotation.py`,
+  `plotting.py` and the tag-matrix code instead of testing them.
 - Package classifiers now declare OS independence, console usage and
   visualization.
 
 ### Fixed
 
+- `seq2gene_links` now reports **every** exon/intron host gene overlapping a
+  peak; previously only the first hit per feature category was kept, so a peak
+  spanning two genes could lose one of its host links.
 - BAM-backed tag matrices now raise the documented "windows must have equal
   widths" error for unequal windows without `nbin`, instead of leaking a
   NumPy `vstack` message.
+- Gene-ID backfilling no longer triggers a pandas dtype warning when
+  recovering transcript-to-gene links from exon rows.
 
 ## [0.8.4] - 2026-11-12
 

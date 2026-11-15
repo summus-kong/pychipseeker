@@ -486,8 +486,6 @@ class GeneAnnotation:
 
         if gene_rows.empty:
             gene_source = tx_rows if not tx_rows.empty else exon_rows
-            if gene_source.empty:
-                raise ValueError("no gene or transcript records were found")
             gene_rows = (
                 gene_source.dropna(subset=["gene_id"])
                 .groupby("gene_id", as_index=False)
@@ -541,7 +539,7 @@ class GeneAnnotation:
 
         tx_rows = tx_rows.dropna(subset=["transcript_id"]).copy()
         tx_rows["transcript_id"] = tx_rows["transcript_id"].astype(str)
-        tx_rows["gene_id"] = tx_rows["gene_id"].fillna(
+        tx_rows["gene_id"] = tx_rows["gene_id"].astype(object).fillna(
             tx_rows["transcript_id"].map(tx2gene)
         )
         # Some GTF/GFF files place the gene on the exon rows only.
@@ -1251,8 +1249,7 @@ class PeakAnnotation:
 
         from .plotting import extract_tss_matrix
 
-        if bigwig is None:
-            raise ValueError("provide a bigWig path when matrix and signal are omitted")
+        assert bigwig is not None  # guaranteed by the exactly-one check above
         return cast(
             np.ndarray,
             extract_tss_matrix(
@@ -1419,8 +1416,6 @@ def _normalise_peaks(peaks: Union[str, Path, pd.DataFrame]) -> pd.DataFrame:
                 ids.append(index_ids[i] if index_ids is not None else f"peak_{i + 1}")
             else:
                 ids.append(pid)
-    elif "peak_id" in df.columns and df["peak_id"].notna().any():
-        ids = df["peak_id"].astype(str).tolist()
     elif index_ids is not None:
         ids = index_ids
     else:
@@ -1810,15 +1805,6 @@ def _annotate_rows(
                 detail["downstream"] = bool(0 < downstream_dd < downstream_distance)
             if annotation == "Intergenic":
                 annotation = "Distal Intergenic"
-                detail["distal_intergenic"] = True
-        elif assign_genomic_annotation and annotation is not None:
-            if annotation.startswith("Distal"):
-                detail["distal_intergenic"] = True
-
-        if assign_genomic_annotation and annotation is not None:
-            if annotation == "Intergenic":
-                annotation = "Distal Intergenic"
-            if str(annotation).startswith("Distal"):
                 detail["distal_intergenic"] = True
 
         # Align the reported feature with the feature that supplied the
@@ -2404,9 +2390,6 @@ def get_genomic_anno_stat(
     levels = [v for v in levels if v is not None]
     counts = anno.value_counts()
     counts = counts.reindex([v for v in levels if v in counts.index])
-    extra = [v for v in counts.index if v not in levels]
-    if extra:
-        counts = pd.concat([counts, pd.Series(0, index=extra)]).loc[counts.index]
     total = int(counts.sum())
     frequency = (counts / total * 100) if total else counts.astype(float)
     out = pd.DataFrame(
@@ -2531,7 +2514,8 @@ def seq2gene_links(
             )
             if len(rows):
                 table = gene_annotation.category_table(category)
-                host_genes.add(str(table.iloc[int(rows[0])]["gene_id"]))
+                for row_idx in rows:
+                    host_genes.add(str(table.iloc[int(row_idx)]["gene_id"]))
 
         nearest_idx, distance = _nearest_feature(
             gene_annotation,
