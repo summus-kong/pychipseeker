@@ -624,6 +624,10 @@ python -m mypy
 page from the live signatures (top-level functions plus the `PeakAnnotation`,
 `GeneAnnotation` and `TagMatrix` members); run it after changing a public
 signature. CI regenerates the page and fails when the committed copy drifts.
+
+The release version lives in `src/pychipseeker/_version.py`; `pyproject.toml`
+reads it dynamically and CI fails when the installed metadata and
+`pychipseeker.__version__` disagree. Update the changelog when bumping it.
 Documentation lives in [docs/](docs/index.md) and is published at
 <https://summus-kong.github.io/pychipseeker/>. Preview it locally with:
 

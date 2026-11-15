@@ -74,7 +74,7 @@ jobs:
           python -m pytest -q
           --cov=pychipseeker
           --cov-report=term-missing
-          --cov-fail-under=75
+          --cov-fail-under=85
 
   typing:
     name: typing (mypy)
@@ -136,4 +136,7 @@ jobs:
           $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
           python -m pip install --force-reinstall $wheel.FullName
       - name: Smoke test
-        run: python -c "import pychipseeker as pcs; print(pcs.__version__)"
+        run: >-
+          python -c "import importlib.metadata as m, pychipseeker as pcs;
+          assert m.version('pychipseeker') == pcs.__version__;
+          print(pcs.__version__)"
