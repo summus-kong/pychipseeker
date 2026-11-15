@@ -13,16 +13,17 @@ All notable changes to pychipseeker are documented here.  The format follows
   and a test fails when the installed metadata, the module constant and the
   changelog drift apart.
 - CI raises the coverage gate from 75% to 85% (the suite currently reports
-  97%), and tests now cover the public `__all__` surface and every
+  98%), and tests now cover the public `__all__` surface and every
   ChIPseeker-style alias.
 - New focused tests cover interval-index binning/strand semantics, the
   tag-matrix validation, bigWig/BAM dispatch and plotting branches, plus the
   TSS-matrix signal/bigWig extraction paths and grouped annotation plots.
-- Annotation, GTF/peak reader and report coverage are now complete: GTF
+- Annotation, GTF/peak reader, report and CLI coverage are now complete: GTF
   fallback reconstruction, UTR splitting, peak-table normalisation, legacy
   gene accessors, downstream labels, flanking-gene helpers, parallel
-  annotation, every reader backend and all report pages are exercised.
-  Total coverage is 97%; `annotation.py`, `io.py` and `report.py` report 100%.
+  annotation, every reader backend, all report pages and every CLI subcommand
+  branch are exercised.  Total coverage is 98%; `annotation.py`, `io.py`,
+  `report.py` and `cli.py` report 100%.
 - Removed unreachable validation branches from `annotation.py`,
   `plotting.py` and the tag-matrix code instead of testing them.
 - Package classifiers now declare OS independence, console usage and
