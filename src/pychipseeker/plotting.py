@@ -391,8 +391,6 @@ def _distance_breaks(
     arr = np.asarray(breaks, dtype=float)
 
     def fmt(value: float) -> str:
-        if np.isinf(value):
-            return "Inf"
         if value == 0:
             return "0"
         if value >= 1000 and value % 1000 == 0:
@@ -727,46 +725,6 @@ def extract_tss_matrix_from_signal(
     if return_mask:
         return matrix, mask
     return matrix
-
-
-def _bin_values(values: np.ndarray, n_bins: int) -> np.ndarray:
-    """Mean of ``values`` in ``n_bins`` equal-width bins, ignoring NaNs.
-
-    Mirrors pyBigWig's ``stats(..., type="mean")``: bins without any covered
-    base stay ``NaN``.
-    """
-
-    n = int(values.size)
-    if n == 0:
-        return np.full(n_bins, np.nan)
-
-    if n % n_bins == 0:
-        blocks = values.reshape(n_bins, n // n_bins).astype(np.float64, copy=False)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            return np.nanmean(blocks, axis=1)
-
-    if n < n_bins:
-        out = np.full(n_bins, np.nan)
-        for i in range(n_bins):
-            lo = int(i * n / n_bins)
-            hi = int((i + 1) * n / n_bins)
-            if hi > lo:
-                chunk = values[lo:hi].astype(np.float64, copy=False)
-                if not np.all(np.isnan(chunk)):
-                    out[i] = np.nanmean(chunk)
-        return out
-
-    edges = (np.arange(n_bins + 1, dtype=np.int64) * n) // n_bins
-    valid = ~np.isnan(values)
-    totals = np.add.reduceat(
-        np.where(valid, values, 0.0).astype(np.float64, copy=False), edges[:-1]
-    )
-    counts = np.add.reduceat(valid.astype(np.int64), edges[:-1])
-    out = np.full(n_bins, np.nan)
-    covered = counts > 0
-    out[covered] = totals[covered] / counts[covered]
-    return out
 
 
 def _resolve_tss_window(
