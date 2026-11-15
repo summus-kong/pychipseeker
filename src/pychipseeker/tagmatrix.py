@@ -947,6 +947,13 @@ def _bam_matrix(
         ) from exc
 
     windows = windows.reset_index(drop=True)
+    if n_bins is None:
+        widths = (windows["end"] - windows["start"]).to_numpy(dtype=np.int64)
+        if len(np.unique(widths)) != 1:
+            raise ValueError(
+                "windows must have equal widths when nbin is not supplied; "
+                "use nbin=... for variable-width regions"
+            )
     workers = effective_jobs(n_jobs, tasks=len(windows))
     if workers <= 1 or len(windows) < _BAM_MATRIX_MIN_WINDOWS:
         matrix, kept = _bam_matrix_rows(

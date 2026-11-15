@@ -13,10 +13,18 @@ All notable changes to pychipseeker are documented here.  The format follows
   and a test fails when the installed metadata, the module constant and the
   changelog drift apart.
 - CI raises the coverage gate from 75% to 85% (the suite currently reports
-  88%), and tests now cover the public `__all__` surface and every
+  91%), and tests now cover the public `__all__` surface and every
   ChIPseeker-style alias.
+- New focused tests cover interval-index binning/strand semantics and the
+  tag-matrix validation, bigWig/BAM dispatch, backend and plotting branches.
 - Package classifiers now declare OS independence, console usage and
   visualization.
+
+### Fixed
+
+- BAM-backed tag matrices now raise the documented "windows must have equal
+  widths" error for unequal windows without `nbin`, instead of leaking a
+  NumPy `vstack` message.
 
 ## [0.8.4] - 2026-11-12
 
