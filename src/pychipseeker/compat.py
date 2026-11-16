@@ -8,7 +8,6 @@ returns ``(fig, ax)`` pairs from plotting functions, matching the rest of
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from itertools import product
 from pathlib import Path
@@ -17,6 +16,8 @@ from typing import Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from ._stats import hypergeom_sf as _hypergeom_sf
+from ._stats import p_adjust as _p_adjust
 from .annotation import (
     GeneAnnotation,
     PeakAnnotation,
@@ -169,7 +170,9 @@ def annotate_db(
             if candidate is None:
                 candidate = table.columns[0]
             table = table.rename(columns={candidate: key})
-        selected = [c for c in (columns or table.columns) if c in table.columns and c != key]
+        selected = [
+            c for c in (columns or table.columns) if c in table.columns and c != key
+        ]
         table = table[[key] + selected].drop_duplicates(key)
         merged = df.merge(table, on=key, how="left", suffixes=("", "_annoDb"))
         annotation.annotation = merged.reset_index(drop=True)
@@ -245,8 +248,7 @@ def _set_elements(value) -> set[str]:
     if isinstance(value, pd.DataFrame):
         df = _normalise_peaks(value)
         return {
-            f"{r.chrom}:{int(r.start)}-{int(r.end)}"
-            for r in df.itertuples(index=False)
+            f"{r.chrom}:{int(r.start)}-{int(r.end)}" for r in df.itertuples(index=False)
         }
     if isinstance(value, dict):
         return set(map(str, value.keys()))
@@ -301,9 +303,11 @@ def vennplot(
         values = list(Sets.values())
     else:
         values = list(Sets)
-        names = list(labels) if labels is not None else [
-            f"Set{i + 1}" for i in range(len(values))
-        ]
+        names = (
+            list(labels)
+            if labels is not None
+            else [f"Set{i + 1}" for i in range(len(values))]
+        )
     if not values:
         raise ValueError("Sets is empty")
     if labels is not None and len(labels) != len(values):
@@ -320,14 +324,18 @@ def vennplot(
         fig, ax = plt.subplots(figsize=figsize)
     else:
         fig = ax.figure
-    palette = list(colors) if colors is not None else [
-        "#8dd3c7",
-        "#fb8072",
-        "#80b1d3",
-        "#fdb462",
-        "#b3de69",
-        "#fccde5",
-    ]
+    palette = (
+        list(colors)
+        if colors is not None
+        else [
+            "#8dd3c7",
+            "#fb8072",
+            "#80b1d3",
+            "#fdb462",
+            "#b3de69",
+            "#fccde5",
+        ]
+    )
     n = len(names)
 
     if n <= 3:
@@ -361,20 +369,41 @@ def vennplot(
             ax.text(0.58, 0, str(weight(0, 1)), ha="center", va="center", fontsize=11)
             ax.text(0, 0, str(weight(1, 1)), ha="center", va="center", fontsize=11)
         else:
-            ax.text(-0.58, -0.28, str(weight(1, 0, 0)), ha="center", va="center", fontsize=10)
-            ax.text(0.58, -0.28, str(weight(0, 1, 0)), ha="center", va="center", fontsize=10)
-            ax.text(0.0, 0.62, str(weight(0, 0, 1)), ha="center", va="center", fontsize=10)
-            ax.text(0.0, -0.4, str(weight(1, 1, 0)), ha="center", va="center", fontsize=10)
-            ax.text(-0.28, 0.18, str(weight(1, 0, 1)), ha="center", va="center", fontsize=10)
-            ax.text(0.28, 0.18, str(weight(0, 1, 1)), ha="center", va="center", fontsize=10)
-            ax.text(0.0, 0.02, str(weight(1, 1, 1)), ha="center", va="center", fontsize=10)
+            ax.text(
+                -0.58,
+                -0.28,
+                str(weight(1, 0, 0)),
+                ha="center",
+                va="center",
+                fontsize=10,
+            )
+            ax.text(
+                0.58, -0.28, str(weight(0, 1, 0)), ha="center", va="center", fontsize=10
+            )
+            ax.text(
+                0.0, 0.62, str(weight(0, 0, 1)), ha="center", va="center", fontsize=10
+            )
+            ax.text(
+                0.0, -0.4, str(weight(1, 1, 0)), ha="center", va="center", fontsize=10
+            )
+            ax.text(
+                -0.28, 0.18, str(weight(1, 0, 1)), ha="center", va="center", fontsize=10
+            )
+            ax.text(
+                0.28, 0.18, str(weight(0, 1, 1)), ha="center", va="center", fontsize=10
+            )
+            ax.text(
+                0.0, 0.02, str(weight(1, 1, 1)), ha="center", va="center", fontsize=10
+            )
         ax.set_xlim(-1.25, 1.25)
         ax.set_ylim(-1.1, 1.2)
         ax.set_aspect("equal")
         ax.axis("off")
         ax.legend(
             [
-                plt.Line2D([0], [0], marker="o", linestyle="", color=palette[i % len(palette)])
+                plt.Line2D(
+                    [0], [0], marker="o", linestyle="", color=palette[i % len(palette)]
+                )
                 for i in range(n)
             ],
             names,
@@ -387,9 +416,7 @@ def vennplot(
         nonempty = table[table["Weight"] > 0].copy()
         labels_bar = []
         for _, row in nonempty.iterrows():
-            labels_bar.append(" & ".join(
-                name for name in names if int(row[name]) == 1
-            ))
+            labels_bar.append(" & ".join(name for name in names if int(row[name]) == 1))
         ax.barh(range(len(nonempty)), nonempty["Weight"], color=palette[0], alpha=0.8)
         ax.set_yticks(range(len(nonempty)))
         ax.set_yticklabels(labels_bar)
@@ -435,9 +462,15 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
     exon = int(detail["Exon"].sum()) if "Exon" in detail else 0
     intron = int(detail["Intron"].sum()) if "Intron" in detail else 0
     other_genic = max(genic - exon - intron, 0)
-    upstream = int(((detail["Promoter"]) & (distance < 0)).sum()) if "Promoter" in detail else 0
+    upstream = (
+        int(((detail["Promoter"]) & (distance < 0)).sum())
+        if "Promoter" in detail
+        else 0
+    )
     downstream = int(detail["downstream"].sum()) if "downstream" in detail else 0
-    distal = int(detail["distal_intergenic"].sum()) if "distal_intergenic" in detail else 0
+    distal = (
+        int(detail["distal_intergenic"].sum()) if "distal_intergenic" in detail else 0
+    )
 
     plt = _plt()
     if ax is None:
@@ -466,7 +499,12 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
         counterclock=False,
         wedgeprops=dict(width=0.26, edgecolor="white"),
     )
-    inner_vals = [upstream, downstream, distal, max(intergenic - upstream - downstream - distal, 0)]
+    inner_vals = [
+        upstream,
+        downstream,
+        distal,
+        max(intergenic - upstream - downstream - distal, 0),
+    ]
     inner_labels = ["Upstream", "Downstream", "Distal intergenic", "Other intergenic"]
     inner_colors = ["#ffeda0", "#fee0d2", "#d95f0e", "#d9d9d9"]
     ax.pie(
@@ -489,7 +527,9 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
             outer_vals + mid_vals + inner_vals,
         )
     ]
-    ax.legend(handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False)
+    ax.legend(
+        handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False
+    )
     ax.set_aspect("equal")
     ax.set_title("Genomic annotation")
     fig.tight_layout()
@@ -502,7 +542,7 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
 def _chrom_sort_key(chrom: str):
     text = str(chrom)
     head = text.rstrip("0123456789")
-    tail = text[len(head):]
+    tail = text[len(head) :]
     return (head, int(tail) if tail.isdigit() else 0, text)
 
 
@@ -589,12 +629,20 @@ def covplot(
             if lower is not None:
                 ys = [y if y >= float(lower) else 0.0 for y in ys]
             color = palette[fi % len(palette)]
-            ax.fill_between(xs, 0, ys, step="post", color=color, alpha=0.65, linewidth=0)
+            ax.fill_between(
+                xs, 0, ys, step="post", color=color, alpha=0.65, linewidth=0
+            )
             ax.plot(xs, ys, drawstyle="steps-post", color=color, linewidth=0.8)
-        ax.set_xlim(*(xlim if xlim is not None else (
-            int(min(df["start"].min() for df in frames if len(df))),
-            int(max(df["end"].max() for df in frames if len(df))),
-        )))
+        ax.set_xlim(
+            *(
+                xlim
+                if xlim is not None
+                else (
+                    int(min(df["start"].min() for df in frames if len(df))),
+                    int(max(df["end"].max() for df in frames if len(df))),
+                )
+            )
+        )
         ax.set_title(chrom)
         ax.set_xlabel(xlab if idx >= n - ncols else "")
         ax.set_ylabel(ylab)
@@ -611,7 +659,9 @@ def covplot(
             plt.Line2D([0], [0], color=palette[i % len(palette)], linewidth=3)
             for i in range(len(frames))
         ]
-        axes_flat[0].legend(handles, [f"Set{i + 1}" for i in range(len(frames))], frameon=False)
+        axes_flat[0].legend(
+            handles, [f"Set{i + 1}" for i in range(len(frames))], frameon=False
+        )
     if title:
         fig.suptitle(title)
     fig.tight_layout()
@@ -636,7 +686,9 @@ def shuffle(
 
     peaks = _normalise_peaks(peak)
     if n is not None:
-        peaks = peaks.sample(n=int(n), replace=len(peaks) < int(n), random_state=seed).reset_index(drop=True)
+        peaks = peaks.sample(
+            n=int(n), replace=len(peaks) < int(n), random_state=seed
+        ).reset_index(drop=True)
     if chrom_sizes is None and TxDb is not None:
         from .genomes import is_assembly_name, is_genome_spec
 
@@ -701,26 +753,6 @@ def _count_query_overlaps(query: pd.DataFrame, target: pd.DataFrame) -> int:
     return count
 
 
-def _p_adjust(pvalues: Sequence[float], method: str = "BH") -> np.ndarray:
-    p = np.asarray(pvalues, dtype=float)
-    method = str(method).upper()
-    if method in {"NONE", "NOP"}:
-        return p
-    n = len(p)
-    if n == 0:
-        return p
-    if method == "BONFERRONI":
-        return np.minimum(p * n, 1.0)
-    if method != "BH":
-        raise ValueError("pAdjustMethod must be one of BH, bonferroni or none")
-    order = np.argsort(p)
-    ranked = p[order] * n / np.arange(1, n + 1)
-    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
-    out = np.empty(n, dtype=float)
-    out[order] = np.minimum(ranked, 1.0)
-    return out
-
-
 def enrich_peak_overlap(
     queryPeak: Union[str, Path, pd.DataFrame],
     targetPeak,
@@ -735,9 +767,7 @@ def enrich_peak_overlap(
 
     query = _normalise_peaks(queryPeak)
     targets = (
-        list(targetPeak)
-        if isinstance(targetPeak, (list, tuple))
-        else [targetPeak]
+        list(targetPeak) if isinstance(targetPeak, (list, tuple)) else [targetPeak]
     )
     if chrom_sizes is None:
         chrom_sizes = _chrom_sizes_from_peaks(query)
@@ -754,7 +784,9 @@ def enrich_peak_overlap(
         if nShuffle and nShuffle > 0 and sizes:
             exceed = 0
             for _ in range(int(nShuffle)):
-                shuffled = shuffle(query, chrom_sizes=sizes, seed=int(rng.integers(0, 2**31 - 1)))
+                shuffled = shuffle(
+                    query, chrom_sizes=sizes, seed=int(rng.integers(0, 2**31 - 1))
+                )
                 if _count_query_overlaps(shuffled, tgt) >= observed:
                     exceed += 1
             pvalue = (exceed + 1.0) / (int(nShuffle) + 1.0)
@@ -771,32 +803,6 @@ def enrich_peak_overlap(
     out = pd.DataFrame(rows)
     out["p.adjust"] = _p_adjust(out["pvalue"].fillna(1.0).to_numpy(), pAdjustMethod)
     return out
-
-
-def _log_comb(n: int, k: int) -> float:
-    if k < 0 or k > n:
-        return float("-inf")
-    return math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
-
-
-def _hypergeom_sf(k: int, M: int, n: int, N: int) -> float:
-    """P(X >= k) for a hypergeometric distribution."""
-
-    if k <= 0:
-        return 1.0
-    upper = min(n, N)
-    if k > upper:
-        return 0.0
-    terms = []
-    for i in range(int(k), int(upper) + 1):
-        terms.append(
-            math.exp(
-                _log_comb(n, i)
-                + _log_comb(M - n, N - i)
-                - _log_comb(M, N)
-            )
-        )
-    return float(min(max(math.fsum(terms), 0.0), 1.0))
 
 
 def _annotation_gene_ids(
@@ -1055,7 +1061,11 @@ def _load_gsminfo(gsminfo=None) -> pd.DataFrame:
             return pd.read_csv(
                 path,
                 compression="gzip",
-                dtype={"series_id": "string", "gsm": "string", "genomeVersion": "string"},
+                dtype={
+                    "series_id": "string",
+                    "gsm": "string",
+                    "genomeVersion": "string",
+                },
             )
     if isinstance(gsminfo, pd.DataFrame):
         return gsminfo.copy()
@@ -1077,7 +1087,7 @@ def _geo_https_url(url: str) -> str:
 
     out = str(url)
     if out.startswith("ftp://"):
-        out = "https://" + out[len("ftp://"):]
+        out = "https://" + out[len("ftp://") :]
     return out
 
 
@@ -1117,7 +1127,9 @@ def getGEOspecies(gsminfo=None) -> pd.DataFrame:
 
     species = _load_gsminfo(gsminfo)["organism"]
     counts = species.astype("string").fillna("NA").value_counts().sort_index()
-    return pd.DataFrame({"species": counts.index.astype(str), "Freq": counts.to_numpy()})
+    return pd.DataFrame(
+        {"species": counts.index.astype(str), "Freq": counts.to_numpy()}
+    )
 
 
 def getGEOgenomeVersion(gsminfo=None) -> pd.DataFrame:
@@ -1127,8 +1139,12 @@ def getGEOgenomeVersion(gsminfo=None) -> pd.DataFrame:
     gv = info[["organism", "genomeVersion"]].copy()
     gv["genomeVersion"] = gv["genomeVersion"].astype("string").fillna("NA").astype(str)
     counts = gv["genomeVersion"].value_counts().sort_index()
-    res = pd.DataFrame({"genomeVersion": counts.index.astype(str), "Freq": counts.to_numpy()})
-    unique_gv = gv.assign(organism=gv["organism"].astype("string").fillna("NA").astype(str))
+    res = pd.DataFrame(
+        {"genomeVersion": counts.index.astype(str), "Freq": counts.to_numpy()}
+    )
+    unique_gv = gv.assign(
+        organism=gv["organism"].astype("string").fillna("NA").astype(str)
+    )
     unique_gv = unique_gv.drop_duplicates()
     merged = unique_gv.merge(res, on="genomeVersion", how="right")
     return merged[["organism", "genomeVersion", "Freq"]].sort_values(

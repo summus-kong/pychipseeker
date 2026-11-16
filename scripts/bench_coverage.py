@@ -83,14 +83,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    peaks, windows = synthetic_intervals(
-        args.peaks, args.windows, seed=args.seed
-    )
+    peaks, windows = synthetic_intervals(args.peaks, args.windows, seed=args.seed)
     print(f"pychipseeker {pcs.__version__}")
-    print(
-        f"{args.peaks:,} peaks, {args.windows:,} windows "
-        f"x {args.bins} bins"
-    )
+    print(f"{args.peaks:,} peaks, {args.windows:,} windows x {args.bins} bins")
 
     for jobs in args.jobs:
         best = float("inf")
@@ -107,8 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             shape = matrix.shape
         rate = args.windows / best if best else float("inf")
         print(
-            f"n_jobs={jobs:<3} {best:8.2f} s   {rate:10,.0f} windows/s   "
-            f"shape={shape}"
+            f"n_jobs={jobs:<3} {best:8.2f} s   {rate:10,.0f} windows/s   shape={shape}"
         )
     return 0
 

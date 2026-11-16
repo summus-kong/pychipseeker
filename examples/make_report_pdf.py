@@ -44,11 +44,16 @@ CHROM_SIZE = 151_834_684
 def _title_page(stat: pd.DataFrame, df: pd.DataFrame) -> plt.Figure:
     fig = plt.figure(figsize=(8.5, 11))
     fig.text(0.5, 0.93, "pychipseeker", ha="center", fontsize=28, weight="bold")
-    fig.text(0.5, 0.895, "ChIPseeker-style peak annotation report", ha="center", fontsize=13)
     fig.text(
-        0.5, 0.86,
+        0.5, 0.895, "ChIPseeker-style peak annotation report", ha="center", fontsize=13
+    )
+    fig.text(
+        0.5,
+        0.86,
         f"pychipseeker {__version__} · virtual example data + ENCODE demo signal",
-        ha="center", fontsize=10, color="0.4",
+        ha="center",
+        fontsize=10,
+        color="0.4",
     )
 
     lines = [
@@ -60,7 +65,13 @@ def _title_page(stat: pd.DataFrame, df: pd.DataFrame) -> plt.Figure:
     ]
     fig.text(0.12, 0.76, "\n".join(lines), fontsize=11, family="monospace")
 
-    fig.text(0.12, 0.66, "Annotation statistics (ChIPseeker annoStat):", fontsize=12, weight="bold")
+    fig.text(
+        0.12,
+        0.66,
+        "Annotation statistics (ChIPseeker annoStat):",
+        fontsize=12,
+        weight="bold",
+    )
     ax = fig.add_axes((0.12, 0.30, 0.76, 0.30))
     ax.axis("off")
     table = ax.table(
@@ -75,32 +86,43 @@ def _title_page(stat: pd.DataFrame, df: pd.DataFrame) -> plt.Figure:
 
     genes = df.groupby("gene_name").size().sort_values(ascending=False)
     fig.text(
-        0.12, 0.22,
+        0.12,
+        0.22,
         "Peaks assigned per gene:\n  "
         + ";  ".join(f"{g}: {n}" for g, n in genes.items()),
-        fontsize=11, family="monospace",
+        fontsize=11,
+        family="monospace",
     )
 
     kinds = df["annotation"].value_counts()
     fig.text(
-        0.12, 0.10,
+        0.12,
+        0.10,
         "Categories hit by the demo peaks:\n  "
         + "\n  ".join(f"{k}: {n}" for k, n in kinds.items()),
-        fontsize=11, family="monospace",
+        fontsize=11,
+        family="monospace",
     )
     fig.text(
-        0.5, 0.03,
+        0.5,
+        0.03,
         "promoter window = 10 bp (deliberately narrow so UTR/exon/intron categories appear)",
-        ha="center", fontsize=9, style="italic", color="0.35",
+        ha="center",
+        fontsize=9,
+        style="italic",
+        color="0.35",
     )
     return fig
 
 
 def _final_page() -> plt.Figure:
     fig = plt.figure(figsize=(8.5, 11))
-    fig.text(0.5, 0.85, "Reproduce this report", ha="center", fontsize=16, weight="bold")
     fig.text(
-        0.10, 0.58,
+        0.5, 0.85, "Reproduce this report", ha="center", fontsize=16, weight="bold"
+    )
+    fig.text(
+        0.10,
+        0.58,
         "python examples/make_report_pdf.py\n\n"
         "from pychipseeker.report steps:\n"
         "  ann = pcs.annotate_peak(peaks=..., gtf=..., upstream=10, downstream=10)\n"
@@ -119,9 +141,13 @@ def _final_page() -> plt.Figure:
         "  tag     = pcs.get_tag_matrix_from_bigwig(bw_path, peaks +/- 1 kb, nbin=50)\n"
         "  pcs.plotAvgProf(tag, conf=0.95)  ·  pcs.tagHeatmap(tag)\n"
         "  mat = pcs.extract_tss_matrix(bw_path, summit_table, window=1000)",
-        fontsize=10.5, family="monospace", va="top",
+        fontsize=10.5,
+        family="monospace",
+        va="top",
     )
-    fig.text(0.5, 0.06, f"pychipseeker {__version__}", ha="center", fontsize=9, color="0.4")
+    fig.text(
+        0.5, 0.06, f"pychipseeker {__version__}", ha="center", fontsize=9, color="0.4"
+    )
     return fig
 
 
@@ -182,14 +208,18 @@ def _summit_table(peaks: pd.DataFrame, bw_path: Path) -> pd.DataFrame:
     bw = pyBigWig.open(str(bw_path))
     try:
         rows = []
-        for chrom, start, end in peaks[["chrom", "start", "end"]].itertuples(index=False):
+        for chrom, start, end in peaks[["chrom", "start", "end"]].itertuples(
+            index=False
+        ):
             bins = bw.intervals(chrom, int(start), int(end)) or []
             best_value = -np.inf
             for bin_start, _bin_end, value in bins:
                 if value > best_value:
                     best_value, best_bin = value, bin_start
             if best_bin is not None:
-                rows.append({"chrom": chrom, "tss": int(best_bin) + BIN_BP // 2, "strand": "+"})
+                rows.append(
+                    {"chrom": chrom, "tss": int(best_bin) + BIN_BP // 2, "strand": "+"}
+                )
     finally:
         bw.close()
     return pd.DataFrame(rows, columns=["chrom", "tss", "strand"])
@@ -276,7 +306,9 @@ def _encode_covplot_page(peaks: pd.DataFrame) -> plt.Figure:
         f"median width: {float(np.median(peaks['end'] - peaks['start'])):,.0f} bp\n"
         f"highest mean fold change in a peak: {peaks['score'].max():.1f}×"
     )
-    fig.text(0.62, 0.80, summary, fontsize=9.5, family="monospace", va="top", color="0.25")
+    fig.text(
+        0.62, 0.80, summary, fontsize=9.5, family="monospace", va="top", color="0.25"
+    )
     return fig
 
 
@@ -319,7 +351,9 @@ def main() -> int:
         }
     )
 
-    promoters = pcs.getPromoters(TxDb=ann.gene_annotation, upstream=1000, downstream=1000)
+    promoters = pcs.getPromoters(
+        TxDb=ann.gene_annotation, upstream=1000, downstream=1000
+    )
     tag = pcs.getTagMatrix(peak=ann.peaks, windows=promoters, nbin=50)
 
     # ------------------------------ ENCODE chapter ------------------------
@@ -343,12 +377,24 @@ def main() -> int:
         (ann.plot_anno_pie()[0], "Annotation distribution (pie)"),
         (ann.plot_anno_bar()[0], "Annotation distribution (bar)"),
         (ann.plot_dist_to_tss()[0], "Distance to TSS"),
-        (pcs.covplot(ann.peaks, title="Peak coverage over chromosomes")[0], "Peak coverage (covplot)"),
-        (ann.plot_tss_profile(signal=signal, window=100, n_bins=50)[0], "TSS avg profile (signal)"),
-        (ann.plot_tss_heatmap(signal=signal, window=100, n_bins=50)[0], "TSS heatmap (signal)"),
+        (
+            pcs.covplot(ann.peaks, title="Peak coverage over chromosomes")[0],
+            "Peak coverage (covplot)",
+        ),
+        (
+            ann.plot_tss_profile(signal=signal, window=100, n_bins=50)[0],
+            "TSS avg profile (signal)",
+        ),
+        (
+            ann.plot_tss_heatmap(signal=signal, window=100, n_bins=50)[0],
+            "TSS heatmap (signal)",
+        ),
         (pcs.plot_avg_prof(tag, conf=None)[0], "Promoter avg profile (tagMatrix)"),
         (pcs.tag_heatmap(tag)[0], "Promoter tag heatmap (tagMatrix)"),
-        (_encode_track_page(bw_path, prov, peaks), "ENCODE chapter — H3K4me3 chr5 track"),
+        (
+            _encode_track_page(bw_path, prov, peaks),
+            "ENCODE chapter — H3K4me3 chr5 track",
+        ),
         (_encode_covplot_page(peaks), "ENCODE chapter — pseudo-peak coverage"),
         (
             pcs.plot_avg_prof(
@@ -372,9 +418,7 @@ def main() -> int:
             "ENCODE chapter \u2014 summit-anchored profile",
         ),
         (
-            pcs.plot_tss_heatmap(
-                summit_matrix, window=1000, cmap="viridis"
-            )[0],
+            pcs.plot_tss_heatmap(summit_matrix, window=1000, cmap="viridis")[0],
             "ENCODE chapter \u2014 summit-anchored heatmap",
         ),
         (_final_page(), "How to reproduce"),

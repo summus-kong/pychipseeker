@@ -12,12 +12,12 @@ import pandas as pd
 import pytest
 
 from pychipseeker import enrichment
+from pychipseeker._stats import log_comb as _log_comb
 from pychipseeker.enrichment import (
     _as_gene_sets,
     _as_ranked_frame,
     _enrichment_plot_frame,
     _hypergeom_sf,
-    _log_comb,
     _normal_quantile,
     _odds_ratio_ci,
     _p_adjust,
@@ -37,9 +37,7 @@ def test_p_adjust_methods_and_empty() -> None:
     assert _p_adjust([]) == []
     assert _p_adjust([0.02, 0.5], "none") == [0.02, 0.5]
     assert _p_adjust([0.02, 0.5], "raw") == [0.02, 0.5]
-    np.testing.assert_allclose(
-        _p_adjust([0.02, 0.5], "bonferroni"), [0.04, 1.0]
-    )
+    np.testing.assert_allclose(_p_adjust([0.02, 0.5], "bonferroni"), [0.04, 1.0])
     with pytest.raises(ValueError, match="p_adjust"):
         _p_adjust([0.1], "holm")
 
@@ -53,11 +51,7 @@ def test_hypergeom_sf_bounds() -> None:
 def test_read_gmt_skips_malformed_lines(tmp_path) -> None:
     gmt = tmp_path / "sets.gmt"
     gmt.write_text(
-        "\n"
-        "only_one_field\n"
-        "\tdesc\tg1\n"
-        "term A\tdesc\tg1\t\tg2\n"
-        "empty\tdesc\n",
+        "\nonly_one_field\n\tdesc\tg1\nterm A\tdesc\tg1\t\tg2\nempty\tdesc\n",
         encoding="utf-8",
     )
     assert read_gmt(gmt) == {"term A": ["g1", "g2"]}
@@ -198,7 +192,9 @@ def test_enrich_peak_genes_local_and_remote(monkeypatch: pytest.MonkeyPatch) -> 
     annotation = FakeLinksAnnotation(links)
     captured = {}
     monkeypatch.setattr(
-        enrichment, "ora", lambda genes, **kwargs: captured.update(genes=genes, **kwargs)
+        enrichment,
+        "ora",
+        lambda genes, **kwargs: captured.update(genes=genes, **kwargs),
     )
     enrich_peak_genes(annotation, upstream=1000, local=True, p_adjust="none")
     assert annotation.calls == [(-1000, 0)]
@@ -219,9 +215,7 @@ def test_enrich_peak_genes_local_and_remote(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_as_ranked_frame_variants() -> None:
-    frame = _as_ranked_frame(
-        pd.DataFrame({"Gene": ["a", "b"], "Rank": [1.0, 2.0]})
-    )
+    frame = _as_ranked_frame(pd.DataFrame({"Gene": ["a", "b"], "Rank": [1.0, 2.0]}))
     assert frame.to_dict("list") == {"gene": ["b", "a"], "score": [2.0, 1.0]}
 
     unknown = _as_ranked_frame(pd.DataFrame({"id": ["a", "b"], "value": [1, 3]}))
@@ -347,9 +341,7 @@ def test_enrichment_plot_frame_normalises_columns() -> None:
     with pytest.raises(ValueError, match="no p-value"):
         _enrichment_plot_frame(pd.DataFrame({"Term": ["A"], "NES": [1.0]}))
     with pytest.raises(ValueError, match="no finite p-values"):
-        _enrichment_plot_frame(
-            pd.DataFrame({"Term": ["A"], "PValue": [np.nan]})
-        )
+        _enrichment_plot_frame(pd.DataFrame({"Term": ["A"], "PValue": [np.nan]}))
 
 
 def test_plot_enrichment_accepts_axes_and_rejects_kind() -> None:

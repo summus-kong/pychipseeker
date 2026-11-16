@@ -69,9 +69,7 @@ def test_stat_from_annotation_variants():
     direct = pd.DataFrame({"Feature": ["Promoter"], "Frequency": [100.0]})
     assert _stat_from_annotation(direct).equals(direct)
 
-    labels = pd.DataFrame(
-        {"annotation": ["Promoter", "Exon", "Distal Intergenic"]}
-    )
+    labels = pd.DataFrame({"annotation": ["Promoter", "Exon", "Distal Intergenic"]})
     stat = _stat_from_annotation(labels, downstream_distance=100)
     assert not stat.empty
 
@@ -248,9 +246,7 @@ def test_extract_signal_validation_and_empty_intervals():
         )
 
     # A valid chromosome with no signal in the window is also empty.
-    gap = pd.DataFrame(
-        {"chrom": ["chr1"], "start": [0], "end": [10], "value": [1.0]}
-    )
+    gap = pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10], "value": [1.0]})
     with pytest.raises(ValueError, match="no features could be extracted"):
         extract_tss_matrix_from_signal(
             gap,
@@ -355,9 +351,7 @@ def test_extract_tss_matrix_interval_path_and_masks(monkeypatch):
         {"chrom": ["chr2", "chr2"], "tss": [200, 300], "strand": ["+", "+"]}
     )
     with pytest.raises(ValueError, match="no features"):
-        extract_tss_matrix(
-            "x.bw", empty, window=100, n_bins=4, drop_empty=True
-        )
+        extract_tss_matrix("x.bw", empty, window=100, n_bins=4, drop_empty=True)
 
 
 def test_extract_tss_matrix_parallel_assignment(monkeypatch):
@@ -372,9 +366,7 @@ def test_extract_tss_matrix_parallel_assignment(monkeypatch):
     genes = pd.DataFrame(
         {"chrom": ["chr1", "chr1"], "tss": [200, 400], "strand": ["+", "-"]}
     )
-    matrix = extract_tss_matrix(
-        "x.bw", genes, window=100, n_bins=4, n_jobs=2
-    )
+    matrix = extract_tss_matrix("x.bw", genes, window=100, n_bins=4, n_jobs=2)
     np.testing.assert_allclose(matrix, 5.0)
 
 

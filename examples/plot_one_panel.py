@@ -89,7 +89,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--panel", default="K", help="panel letter A-R")
     parser.add_argument("--peaks", default=str(DEFAULT_PEAKS), help="peak file")
-    parser.add_argument("--txdb", default="mm10", help="assembly name, GTF or TxDb spec")
+    parser.add_argument(
+        "--txdb", default="mm10", help="assembly name, GTF or TxDb spec"
+    )
     parser.add_argument(
         "--outdir",
         default=str(REPO / "examples" / "output" / "one-panel"),

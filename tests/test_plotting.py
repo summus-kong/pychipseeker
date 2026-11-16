@@ -157,9 +157,7 @@ def test_extract_tss_matrix_from_signal_file(tmp_path):
         "chr1\t300\t400\t4\n",
         encoding="utf-8",
     )
-    genes = pd.DataFrame(
-        {"chrom": ["chr1"], "tss": [200], "strand": ["+"]}
-    )
+    genes = pd.DataFrame({"chrom": ["chr1"], "tss": [200], "strand": ["+"]})
     matrix = extract_tss_matrix_from_signal(
         path, genes, window=100, n_bins=4, min_value=None
     )

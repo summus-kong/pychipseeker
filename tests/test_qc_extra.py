@@ -63,9 +63,7 @@ def test_peak_qc_genome_blacklist_path_and_bad_type(
         "_chrom_sizes_from_genome",
         lambda genome: {"chr1": 1000, "chr2": 1000},
     )
-    peaks = pd.DataFrame(
-        {"chrom": ["1", "chr2"], "start": [0, 0], "end": [100, 100]}
-    )
+    peaks = pd.DataFrame({"chrom": ["1", "chr2"], "start": [0, 0], "end": [100, 100]})
     blacklist = tmp_path / "blacklist.bed"
     blacklist.write_text("chr1\t50\t60\n", encoding="utf-8")
     table = peak_qc(peaks, genome="demo", blacklist=blacklist)
@@ -289,9 +287,7 @@ def test_frip_bam_streaming_edge_cases(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(qc, "_bam_handle", lambda path: Handle())
     peaks = pd.DataFrame({"chrom": ["1", "1"], "start": [90, 120], "end": [200, 210]})
     # Two merged peaks collapse to one interval; reads 1 and 10 overlap it.
-    assert _frip_bam("fake.bam", peaks, min_mapping_quality=10) == pytest.approx(
-        2 / 4
-    )
+    assert _frip_bam("fake.bam", peaks, min_mapping_quality=10) == pytest.approx(2 / 4)
 
     class NoReads(Handle):
         def fetch(self, until_eof=True):
@@ -486,9 +482,7 @@ def test_profile_score_edges_and_windows() -> None:
 def test_tss_enrichment_errors_and_sampling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    genes = pd.DataFrame(
-        {"chrom": ["chr1"] * 5, "tss": [100] * 5, "strand": ["+"] * 5}
-    )
+    genes = pd.DataFrame({"chrom": ["chr1"] * 5, "tss": [100] * 5, "strand": ["+"] * 5})
     with pytest.raises(ValueError, match="exactly one"):
         tss_enrichment(genes)
     with pytest.raises(ValueError, match="exactly one"):
@@ -542,9 +536,7 @@ def test_tss_enrichment_bam_harmonises_and_scores(
         return np.zeros((len(frame), 10))
 
     monkeypatch.setattr(qc, "_bam_tss_matrix", fake_matrix)
-    genes = pd.DataFrame(
-        {"chrom": ["1", "1"], "tss": [100, 200], "strand": ["+", "-"]}
-    )
+    genes = pd.DataFrame({"chrom": ["1", "1"], "tss": [100, 200], "strand": ["+", "-"]})
     result = tss_enrichment(
         genes, bam="fake.bam", upstream=10, downstream=10, n_bins=10, sample=None
     )

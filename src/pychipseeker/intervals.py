@@ -52,9 +52,7 @@ def _strand_compatible(
     return query == subject
 
 
-def _min_row_for_value(
-    vals: np.ndarray, rows: np.ndarray, value: int
-) -> int:
+def _min_row_for_value(vals: np.ndarray, rows: np.ndarray, value: int) -> int:
     """Smallest row index among entries equal to ``value``.
 
     ``vals`` is sorted but may contain ties; GenomicRanges tie-breaking uses
@@ -68,9 +66,7 @@ def _min_row_for_value(
     return int(rows[lo:hi].min())
 
 
-def _first_greater(
-    vals: np.ndarray, rows: np.ndarray, threshold: int
-) -> Optional[int]:
+def _first_greater(vals: np.ndarray, rows: np.ndarray, threshold: int) -> Optional[int]:
     """Row index of the smallest value strictly above ``threshold``."""
 
     i = int(np.searchsorted(vals, threshold, side="right"))
@@ -79,9 +75,7 @@ def _first_greater(
     return _min_row_for_value(vals, rows, int(vals[i]))
 
 
-def _last_smaller(
-    vals: np.ndarray, rows: np.ndarray, threshold: int
-) -> Optional[int]:
+def _last_smaller(vals: np.ndarray, rows: np.ndarray, threshold: int) -> Optional[int]:
     """Row index of the largest value strictly below ``threshold``."""
 
     j = int(np.searchsorted(vals, threshold, side="left")) - 1
@@ -211,9 +205,7 @@ class BinnedIntervalIndex:
 
         b0 = int(start) // self.bin_size
         b1 = (int(end) - 1) // self.bin_size
-        parts = [
-            chrom_bins[b] for b in range(b0, b1 + 1) if b in chrom_bins
-        ]
+        parts = [chrom_bins[b] for b in range(b0, b1 + 1) if b in chrom_bins]
         if not parts:
             return np.empty(0, dtype=np.int64)
 
@@ -235,7 +227,9 @@ class _SortedFeatureIndex:
     def __init__(self, features: pd.DataFrame, key: str) -> None:
         self._features = features.reset_index(drop=True)
         self._key = key
-        self._by_key: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        self._by_key: Dict[
+            Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]
+        ] = {}
 
         chroms = self._features["chrom"].astype(str).to_numpy()
         strands = _normalise_strands(self._features["strand"])
@@ -296,6 +290,7 @@ class _SortedFeatureIndex:
         strands = np.concatenate([e[2] for e in present])
         order = np.argsort(vals, kind="mergesort")
         return vals[order], rows[order], strands[order]
+
 
 class TSSIndex(_SortedFeatureIndex):
     """Sorted transcription-start-site index for nearest-TSS queries."""
@@ -417,8 +412,12 @@ class SpanIndex(_SortedFeatureIndex):
         self._spans = features.reset_index(drop=True)
         self._starts = self._spans["start"].to_numpy(dtype=np.int64, copy=False)
         self._ends = self._spans["end"].to_numpy(dtype=np.int64, copy=False)
-        self._by_key: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
-        self._by_end: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        self._by_key: Dict[
+            Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]
+        ] = {}
+        self._by_end: Dict[
+            Tuple[str, str], Tuple[np.ndarray, np.ndarray, np.ndarray]
+        ] = {}
 
         chroms = self._spans["chrom"].astype(str).to_numpy()
         strands = _normalise_strands(self._spans["strand"])

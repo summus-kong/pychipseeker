@@ -50,15 +50,8 @@ def test_alias_map_and_harmonize_frame() -> None:
 
 
 def test_detect_assembly_from_sizes_and_names() -> None:
-    assert (
-        detect_assembly(
-            chrom_sizes={"chr1": 248956422, "chr2": 242193529}
-        )
-        == "hg38"
-    )
-    assert (
-        detect_assembly(chrom_sizes={"1": 195471971, "2": 182113224}) == "mm10"
-    )
+    assert detect_assembly(chrom_sizes={"chr1": 248956422, "chr2": 242193529}) == "hg38"
+    assert detect_assembly(chrom_sizes={"1": 195471971, "2": 182113224}) == "mm10"
     assert detect_assembly(peaks=pd.DataFrame({"chrom": ["I", "II"]})) == "sacCer3"
     with pytest.raises(ValueError, match="hg38/hg19"):
         detect_assembly(peaks=pd.DataFrame({"chrom": ["chr1", "chr2"]}))

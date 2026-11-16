@@ -146,9 +146,9 @@ def peaks_per_gene(
         ascending.append(False)
     sort_columns.append("gene_name")
     ascending.append(True)
-    out = out.sort_values(
-        sort_columns, ascending=ascending, kind="stable"
-    ).reset_index(drop=True)
+    out = out.sort_values(sort_columns, ascending=ascending, kind="stable").reset_index(
+        drop=True
+    )
     return out
 
 

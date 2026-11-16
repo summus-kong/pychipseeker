@@ -71,9 +71,7 @@ def test_parallel_map_avoids_child_pools_inside_daemons(
     class DaemonProcess:
         daemon = True
 
-    monkeypatch.setattr(
-        parallel_mod.mp, "current_process", lambda: DaemonProcess()
-    )
+    monkeypatch.setattr(parallel_mod.mp, "current_process", lambda: DaemonProcess())
     seen: list[str] = []
     result = parallel_map(
         lambda value: value * 3,
@@ -101,9 +99,7 @@ def test_annotate_peak_parallel_matches_sequential(examples_dir: Path) -> None:
     sequential = pcs.annotate_peak(peaks, TxDb=annotation, n_jobs=1)
     parallel = pcs.annotate_peak(peaks, TxDb=annotation, n_jobs=2)
 
-    pd.testing.assert_frame_equal(
-        sequential.to_dataframe(), parallel.to_dataframe()
-    )
+    pd.testing.assert_frame_equal(sequential.to_dataframe(), parallel.to_dataframe())
     pd.testing.assert_frame_equal(sequential.anno_stat(), parallel.anno_stat())
 
 
@@ -186,9 +182,7 @@ def test_bigwig_tss_matrix_parallel_matches_sequential(
     sequential = plotting.extract_tss_matrix(
         path, genes, window=100, n_bins=8, n_jobs=1
     )
-    parallel = plotting.extract_tss_matrix(
-        path, genes, window=100, n_bins=8, n_jobs=2
-    )
+    parallel = plotting.extract_tss_matrix(path, genes, window=100, n_bins=8, n_jobs=2)
     np.testing.assert_allclose(sequential, parallel, equal_nan=True)
     assert sequential.shape == (n, 8)
 
@@ -256,4 +250,3 @@ def test_peak_coverage_tag_matrix_parallel_matches_sequential(
     )
     np.testing.assert_allclose(sequential, parallel)
     pd.testing.assert_frame_equal(kept_seq, kept_par)
-

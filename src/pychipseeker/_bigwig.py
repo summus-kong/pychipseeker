@@ -48,23 +48,17 @@ class IntervalIntegrator:
         self.values = table[:, 2]
         self.lengths = (self.ends - self.starts).astype(np.float64)
         self.cum_len = np.concatenate([[0.0], np.cumsum(self.lengths)])
-        self.cum_val = np.concatenate(
-            [[0.0], np.cumsum(self.values * self.lengths)]
-        )
+        self.cum_val = np.concatenate([[0.0], np.cumsum(self.values * self.lengths)])
         self.count = len(self.starts)
 
-    def integrate(
-        self, points: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def integrate(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Return covered bases and integrated signal before each point."""
 
         index = np.searchsorted(self.ends, points, side="right")
         cursor = np.minimum(index, self.count - 1)
         part = np.where(
             index < self.count,
-            np.clip(
-                points - self.starts[cursor], 0.0, self.lengths[cursor]
-            ),
+            np.clip(points - self.starts[cursor], 0.0, self.lengths[cursor]),
             0.0,
         )
         return (
@@ -111,9 +105,9 @@ def window_matrix(
     starts = np.asarray(starts, dtype=np.int64)
     ends = np.asarray(ends, dtype=np.int64)
     widths = ends - starts
-    offsets = (
-        np.arange(n_bins + 1, dtype=np.int64)[None, :] * widths[:, None]
-    ) // int(n_bins)
+    offsets = (np.arange(n_bins + 1, dtype=np.int64)[None, :] * widths[:, None]) // int(
+        n_bins
+    )
     edges = starts[:, None] + offsets
     covered, integral = integrator.integrate(edges.ravel())
     covered = covered.reshape(-1, n_bins + 1)
@@ -216,9 +210,7 @@ def plan_blocks(
     for k in dense_first:
         chrom = str(names[k])
         block_rows = rows[chroms[rows] == chrom]
-        block_rows = block_rows[
-            np.argsort(order_key[block_rows], kind="mergesort")
-        ]
+        block_rows = block_rows[np.argsort(order_key[block_rows], kind="mergesort")]
         for start in range(0, len(block_rows), per_block):
             block = block_rows[start : start + per_block]
             tasks.append(
@@ -263,9 +255,7 @@ def _worker_run(
 
     job = _WORKER_JOB
     chrom, rows, region_start, region_end = task
-    intervals = _WORKER_HANDLE.intervals(
-        str(chrom), int(region_start), int(region_end)
-    )
+    intervals = _WORKER_HANDLE.intervals(str(chrom), int(region_start), int(region_end))
     if not intervals:
         return rows, None
 

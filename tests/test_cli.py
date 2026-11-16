@@ -1,4 +1,3 @@
-
 import json
 import runpy
 import sys
@@ -293,8 +292,7 @@ def test_cli_enrich_local(tmp_path, examples_dir):
 
     gmt = tmp_path / "sets.gmt"
     gmt.write_text(
-        "term A\tdescription\tGeneA\tGeneB\n"
-        "term B\tdescription\tGeneA\tGeneC\n",
+        "term A\tdescription\tGeneA\tGeneB\nterm B\tdescription\tGeneA\tGeneC\n",
         encoding="utf-8",
     )
     background = tmp_path / "background.txt"

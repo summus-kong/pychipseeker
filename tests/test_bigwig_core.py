@@ -23,7 +23,12 @@ from pychipseeker._bigwig import (
 
 
 def test_interval_integrator_rejects_bad_input() -> None:
-    for value in ([], np.empty((0, 3)), np.asarray([0.0, 1.0, 2.0]), np.asarray([[0, 1]])):
+    for value in (
+        [],
+        np.empty((0, 3)),
+        np.asarray([0.0, 1.0, 2.0]),
+        np.asarray([[0, 1]]),
+    ):
         with pytest.raises(ValueError, match="non-empty"):
             IntervalIntegrator(value)
 
@@ -98,14 +103,17 @@ def test_stats_matrix_handles_none_values() -> None:
 
 
 def test_plan_blocks_orders_dense_chromosomes_first() -> None:
-    assert plan_blocks(
-        np.asarray(["chr1"]),
-        np.asarray([0]),
-        np.asarray([0]),
-        np.asarray([10]),
-        np.asarray([], dtype=np.int64),
-        n_blocks=2,
-    ) == []
+    assert (
+        plan_blocks(
+            np.asarray(["chr1"]),
+            np.asarray([0]),
+            np.asarray([0]),
+            np.asarray([10]),
+            np.asarray([], dtype=np.int64),
+            n_blocks=2,
+        )
+        == []
+    )
 
     chroms = np.asarray(["chr1", "chr1", "chr2", "chr2", "chr2"])
     order = np.asarray([4, 3, 2, 1, 0])
@@ -120,7 +128,9 @@ def test_plan_blocks_orders_dense_chromosomes_first() -> None:
         n_blocks=2,
         min_block=1,
     )
-    assert [(chrom, rows.tolist(), start, end) for chrom, rows, start, end in tasks] == [
+    assert [
+        (chrom, rows.tolist(), start, end) for chrom, rows, start, end in tasks
+    ] == [
         ("chr2", [4, 3, 2], 100, 310),
         ("chr1", [1, 0], 0, 110),
     ]
@@ -137,7 +147,9 @@ def _fake_handle(intervals, stats=None):
     return Handle()
 
 
-def test_worker_run_tss_mode_orients_minus_strand(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_worker_run_tss_mode_orients_minus_strand(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     job = BlockJob(
         kind=TSS_MODE,
         bigwig="fake.bw",
@@ -166,7 +178,9 @@ def test_worker_run_tss_mode_orients_minus_strand(monkeypatch: pytest.MonkeyPatc
         _bigwig._worker_run(("chr1", np.asarray([0]), 0, 20))
 
 
-def test_worker_run_window_mode_and_empty_region(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_worker_run_window_mode_and_empty_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     job = BlockJob(
         kind=WINDOW_MODE,
         bigwig="fake.bw",
@@ -201,9 +215,7 @@ def test_worker_run_window_mode_and_empty_region(monkeypatch: pytest.MonkeyPatch
     assert stats_matrix_out.dtype == np.float32
     np.testing.assert_allclose(stats_matrix_out, [[1.0, 3.0]])
 
-    monkeypatch.setattr(
-        _bigwig, "_WORKER_HANDLE", _fake_handle([])
-    )
+    monkeypatch.setattr(_bigwig, "_WORKER_HANDLE", _fake_handle([]))
     rows, empty = _bigwig._worker_run(("chr2", np.asarray([3]), 0, 20))
     assert rows.tolist() == [3]
     assert empty is None

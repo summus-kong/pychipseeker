@@ -235,9 +235,8 @@ def _split_generic_utr(
     if cds.empty:
         return utr5, utr3
 
-    bounds = (
-        cds.groupby("transcript_id", as_index=False)
-        .agg(cds_start=("start", "min"), cds_end=("end", "max"))
+    bounds = cds.groupby("transcript_id", as_index=False).agg(
+        cds_start=("start", "min"), cds_end=("end", "max")
     )
     generic = generic.merge(bounds, on="transcript_id", how="left")
     plus = generic["strand"].astype(str) != "-"
@@ -539,8 +538,10 @@ class GeneAnnotation:
 
         tx_rows = tx_rows.dropna(subset=["transcript_id"]).copy()
         tx_rows["transcript_id"] = tx_rows["transcript_id"].astype(str)
-        tx_rows["gene_id"] = tx_rows["gene_id"].astype(object).fillna(
-            tx_rows["transcript_id"].map(tx2gene)
+        tx_rows["gene_id"] = (
+            tx_rows["gene_id"]
+            .astype(object)
+            .fillna(tx_rows["transcript_id"].map(tx2gene))
         )
         # Some GTF/GFF files place the gene on the exon rows only.
         if tx_rows["gene_id"].isna().any() and not exon_rows.empty:
@@ -638,13 +639,10 @@ class GeneAnnotation:
                 exons["_grank"],
             )
             given = pd.to_numeric(exons["exon_number"], errors="coerce")
-            exons["exon_rank"] = (
-                given.where(given.notna() & (given > 0), pd.Series(calc_rank, index=exons.index))
-                .astype(int)
-            )
-            exons["annotation_id"] = (
-                exons["transcript_id"] + "/" + exons["gene_id"]
-            )
+            exons["exon_rank"] = given.where(
+                given.notna() & (given > 0), pd.Series(calc_rank, index=exons.index)
+            ).astype(int)
+            exons["annotation_id"] = exons["transcript_id"] + "/" + exons["gene_id"]
             exons = exons.drop(columns="_grank")
 
         # ---- introns ---------------------------------------------------
@@ -995,7 +993,9 @@ class PeakAnnotation:
             "peakStrand": "strand",
         }
         out = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-        leading = [c for c in ("seqnames", "start", "end", "strand") if c in out.columns]
+        leading = [
+            c for c in ("seqnames", "start", "end", "strand") if c in out.columns
+        ]
         rest = [c for c in out.columns if c not in leading]
         return out[leading + rest]
 
@@ -1107,7 +1107,9 @@ class PeakAnnotation:
         return seq2gene(
             self.peaks,
             self.gene_annotation,
-            tss_region=tuple(self.tss_region) if tss_region is None else tuple(tss_region),
+            tss_region=tuple(self.tss_region)
+            if tss_region is None
+            else tuple(tss_region),
             flank_distance=flank_distance,
             same_strand=same_strand,
         )
@@ -1121,7 +1123,9 @@ class PeakAnnotation:
         return seq2gene_links(
             self.peaks,
             self.gene_annotation,
-            tss_region=tuple(self.tss_region) if tss_region is None else tuple(tss_region),
+            tss_region=tuple(self.tss_region)
+            if tss_region is None
+            else tuple(tss_region),
             flank_distance=flank_distance,
             same_strand=same_strand,
         )
@@ -1847,9 +1851,7 @@ def _annotate_rows(
             transcript_name = str(feature_arrays["transcript_name"][feature_idx])
             transcript_type_value = feature_arrays["transcript_type"][feature_idx]
             transcript_type = (
-                None
-                if pd.isna(transcript_type_value)
-                else str(transcript_type_value)
+                None if pd.isna(transcript_type_value) else str(transcript_type_value)
             )
 
         detail["genic"] = bool(detail["Exon"] or detail["Intron"])
@@ -1906,9 +1908,7 @@ _WORKER_MODEL: Optional[GeneAnnotation] = None
 _WORKER_CONFIG: Optional[dict[str, object]] = None
 
 
-def _annotation_worker_init(
-    model: GeneAnnotation, config: dict[str, object]
-) -> None:
+def _annotation_worker_init(model: GeneAnnotation, config: dict[str, object]) -> None:
     global _WORKER_MODEL, _WORKER_CONFIG
     _WORKER_MODEL = model
     _WORKER_CONFIG = config
@@ -1941,7 +1941,9 @@ def _annotation_worker(
     if _WORKER_MODEL is None or _WORKER_CONFIG is None:  # pragma: no cover
         raise RuntimeError("annotation worker was not initialised")
     return _annotate_rows(
-        _WORKER_MODEL, chunk, **_WORKER_CONFIG  # type: ignore[arg-type]
+        _WORKER_MODEL,
+        chunk,
+        **_WORKER_CONFIG,  # type: ignore[arg-type]
     )
 
 
@@ -1964,7 +1966,9 @@ def _annotate_peaks_frame(
         workers = min(workers, _ANNOTATION_MAX_AUTO_WORKERS)
     if workers <= 1 or len(peaks_df) < _PARALLEL_MIN_PEAKS:
         return _annotate_rows(
-            model, peaks_df, **config  # type: ignore[arg-type]
+            model,
+            peaks_df,
+            **config,  # type: ignore[arg-type]
         )
 
     bounds = chunk_bounds(len(peaks_df), workers * 4)
@@ -1977,9 +1981,7 @@ def _annotate_peaks_frame(
         # Per-worker counters would interleave and report block-local indices;
         # print one parent-side progress line instead.
         worker_config["verbose"] = False
-        print(
-            f"annotating {len(peaks_df):,} peaks with {workers} workers"
-        )
+        print(f"annotating {len(peaks_df):,} peaks with {workers} workers")
     # Send the model's origin (a small path) when available; rebuilding the
     # six annotation frames in each worker is far cheaper than pickling the
     # several-hundred-megabyte object on every spawn.
@@ -1998,12 +2000,8 @@ def _annotate_peaks_frame(
         initializer=initializer,
         initargs=initargs,
     )
-    records = [
-        record for chunk_records, _, _ in results for record in chunk_records
-    ]
-    details = [
-        detail for _, chunk_details, _ in results for detail in chunk_details
-    ]
+    records = [record for chunk_records, _, _ in results for record in chunk_records]
+    details = [detail for _, chunk_details, _ in results for detail in chunk_details]
     dropped = sum(chunk_dropped for _, _, chunk_dropped in results)
     return records, details, dropped
 
@@ -2153,10 +2151,13 @@ def annotate_peak(
         peaks_df, target_chroms, column="chrom", copy=False
     )
     if peaks_df.empty:
-        empty = pd.DataFrame(columns=_annotation_columns(level, assign_genomic_annotation))
-        detail = pd.DataFrame(columns=list(_DETAIL_KEYS.values()) + [
-            "genic", "Intergenic", "downstream", "distal_intergenic"
-        ])
+        empty = pd.DataFrame(
+            columns=_annotation_columns(level, assign_genomic_annotation)
+        )
+        detail = pd.DataFrame(
+            columns=list(_DETAIL_KEYS.values())
+            + ["genic", "Intergenic", "downstream", "distal_intergenic"]
+        )
         return _finish_annotation(
             PeakAnnotation(
                 peaks=peaks_df,
@@ -2364,15 +2365,13 @@ def get_genomic_anno_stat(
     anno[anno.astype(str).str.startswith("Distal", na=False)] = intergenic_label
 
     if ignore_promoter_subcategory:
-        promoter_labels = ["Promoter"] if (anno.astype(str).str.startswith("Promoter")).any() else []
+        promoter_labels = (
+            ["Promoter"] if (anno.astype(str).str.startswith("Promoter")).any() else []
+        )
         anno[anno.astype(str).str.startswith("Promoter", na=False)] = "Promoter"
     else:
         promoter_labels = sorted(
-            {
-                str(v)
-                for v in anno
-                if str(v).startswith("Promoter")
-            },
+            {str(v) for v in anno if str(v).startswith("Promoter")},
             key=_promoter_sort_key,
         )
 
@@ -2493,7 +2492,10 @@ def seq2gene_links(
         }
         priority = {"host": 3, "promoter": 2, "flanking": 1}
         existing = links.get(key)
-        if existing is None or priority[link_type] > priority[str(existing["link_type"])]:
+        if (
+            existing is None
+            or priority[link_type] > priority[str(existing["link_type"])]
+        ):
             links[key] = record
 
     genes = gene_annotation.genes

@@ -229,9 +229,7 @@ def build_report(
     if bam_path is not None and not bam_path.exists():
         raise FileNotFoundError(bam_path)
 
-    signal_up = (
-        abs(int(tss_region[0])) if upstream is None else abs(int(upstream))
-    )
+    signal_up = abs(int(tss_region[0])) if upstream is None else abs(int(upstream))
     signal_down = (
         abs(int(tss_region[1])) if downstream is None else abs(int(downstream))
     )
@@ -250,7 +248,10 @@ def build_report(
         ("Annotation level", level),
         ("Promoter window", f"{int(tss_region[0]):,} / +{int(tss_region[1]):,} bp"),
         ("Features", f"{total:,}"),
-        ("Top category", "" if top is None else f"{top['Feature']} ({top['Frequency']:.1f}%)"),
+        (
+            "Top category",
+            "" if top is None else f"{top['Feature']} ({top['Frequency']:.1f}%)",
+        ),
         ("Generated", _dt.date.today().isoformat()),
         ("pychipseeker", __version__),
     ]

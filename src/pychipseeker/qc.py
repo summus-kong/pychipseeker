@@ -119,7 +119,9 @@ def peak_qc(
     if chrom_sizes is None and genome is not None:
         chrom_sizes = _chrom_sizes_from_genome(genome)
     if chrom_sizes is not None:
-        frame, _ = harmonize_frame(frame, chrom_sizes.keys(), column="chrom", copy=False)
+        frame, _ = harmonize_frame(
+            frame, chrom_sizes.keys(), column="chrom", copy=False
+        )
 
     widths = (frame["end"] - frame["start"]).to_numpy(dtype=np.int64)
     n_peaks = len(frame)
@@ -246,9 +248,7 @@ def _read_keep_callback(
             return False
         if exclude_duplicates and getattr(read, "is_duplicate", False):
             return False
-        return int(getattr(read, "mapping_quality", 0)) >= int(
-            min_mapping_quality
-        )
+        return int(getattr(read, "mapping_quality", 0)) >= int(min_mapping_quality)
 
     return keep
 
@@ -264,9 +264,7 @@ def _frip_bam(
     merged = _merge_intervals(peaks)
     references = list(getattr(handle, "references", []) or [])
     if references:
-        merged, _ = harmonize_frame(
-            merged, references, column="chrom", copy=False
-        )
+        merged, _ = harmonize_frame(merged, references, column="chrom", copy=False)
     keep = _read_keep_callback(exclude_duplicates, min_mapping_quality)
 
     total = 0
@@ -383,24 +381,18 @@ def _bam_tss_rows(
             if end <= start:
                 continue
             try:
-                coverage = handle.count_coverage(
-                    chrom, start, end, quality_threshold=0
-                )
+                coverage = handle.count_coverage(chrom, start, end, quality_threshold=0)
             except (ValueError, KeyError):
                 continue
             if not coverage:
                 continue
-            values = np.sum(
-                np.asarray(coverage, dtype=np.float64), axis=0
-            )
+            values = np.sum(np.asarray(coverage, dtype=np.float64), axis=0)
             if values.size == 0 or not np.isfinite(values).any():
                 continue
             if values.size == n_bins:
                 binned = values
             else:
-                edges = (
-                    np.arange(n_bins + 1, dtype=np.int64) * values.size
-                ) // n_bins
+                edges = (np.arange(n_bins + 1, dtype=np.int64) * values.size) // n_bins
                 binned = np.array(
                     [
                         values[edges[i] : edges[i + 1]].mean()
@@ -501,7 +493,9 @@ def _profile_score(
     x = np.linspace(-int(upstream), int(downstream), n_bins)
     center = np.abs(x) <= int(center_window)
     if flank_window is None:
-        flank_threshold = max(0, min(int(upstream), int(downstream)) - int(center_window))
+        flank_threshold = max(
+            0, min(int(upstream), int(downstream)) - int(center_window)
+        )
     else:
         flank_threshold = int(flank_window)
     flank = np.abs(x) >= flank_threshold
@@ -600,9 +594,7 @@ def tss_enrichment(
         finally:
             handle.close()
         if references:
-            frame, _ = harmonize_frame(
-                frame, references, column="chrom", copy=False
-            )
+            frame, _ = harmonize_frame(frame, references, column="chrom", copy=False)
         matrix = _bam_tss_matrix(
             bam,
             frame,

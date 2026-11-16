@@ -784,7 +784,12 @@ def _draw_table(ax, ann, used: int) -> None:
     stat = ann.annoStat.reset_index(drop=True)
     colors = _anno_colors(stat)
     rows = [
-        ["\u25a0", str(row.Feature), f"{float(row.Frequency):.2f}", f"{int(row.Count):,}"]
+        [
+            "\u25a0",
+            str(row.Feature),
+            f"{float(row.Frequency):.2f}",
+            f"{int(row.Count):,}",
+        ]
         for row in stat.itertuples(index=False)
     ]
 
@@ -1196,7 +1201,12 @@ def _draw_peaks_per_gene(ax, df: pd.DataFrame) -> None:
         x,
         values,
         width=0.62,
-        color=[OKABE_ITO["blue"], OKABE_ITO["sky"], OKABE_ITO["green"], OKABE_ITO["orange"]],
+        color=[
+            OKABE_ITO["blue"],
+            OKABE_ITO["sky"],
+            OKABE_ITO["green"],
+            OKABE_ITO["orange"],
+        ],
         edgecolor="white",
         linewidth=0.6,
         zorder=2,
@@ -1508,7 +1518,10 @@ def _panel_figures(ann, tag, df, profiles, upstream: int, downstream: int):
     yield _figure_width_box(df), "H_width_by_class"
     yield _figure_signal_violin(df), "I_signal_by_class"
     yield _figure_nonpromoter_distance(df), "J_nonpromoter_distance"
-    yield _figure_profile_quartiles(profiles, upstream, downstream), "K_profile_quartiles"
+    yield (
+        _figure_profile_quartiles(profiles, upstream, downstream),
+        "K_profile_quartiles",
+    )
     yield _figure_width_signal(df), "L_width_vs_signal"
     yield _figure_width_ecdf(df), "M_width_ecdf"
     yield _figure_top_genes(df), "N_top_genes"
@@ -1534,7 +1547,9 @@ def _composite_plate(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
             wspace=0.24,
         )
 
-        _panel_pie(fig, _panel_header(fig, gs[0, 0], "A", "Annotation composition"), ann)
+        _panel_pie(
+            fig, _panel_header(fig, gs[0, 0], "A", "Annotation composition"), ann
+        )
 
         ax_b = fig.add_subplot(
             _panel_header(fig, gs[0, 1], "B", "Peak width distribution")
@@ -1753,9 +1768,7 @@ def _draw_panel(
         raise ValueError(f"unknown panel letter: {letter}")
 
 
-def _composite_analysis(
-    ann, tag, df, caption: str, provenance: str
-) -> plt.Figure:
+def _composite_analysis(ann, tag, df, caption: str, provenance: str) -> plt.Figure:
     with _no_tight_layout():
         fig = plt.figure(figsize=(11.69, 16.54))
         gs = fig.add_gridspec(
@@ -1949,7 +1962,11 @@ def _write_gallery(out: Path, formats: Sequence[str]) -> Path:
         )
 
     plate_specs = (
-        ("encode_figure_plate", "Main plate (A-F)", "Core annotation and coverage story."),
+        (
+            "encode_figure_plate",
+            "Main plate (A-F)",
+            "Core annotation and coverage story.",
+        ),
         (
             "encode_supplementary_plate",
             "Extended plate (G-L)",
@@ -2464,10 +2481,7 @@ def main() -> int:
     for path in custom_written:
         print(f"          {path.name:<38} {path.stat().st_size / 1024:7.1f} KiB")
     print(f"figures : {out / 'encode_figures.pdf'}")
-    print(
-        f"singles : {figdir} ({len(formats)} formats x "
-        f"{len(PANEL_CATALOG)} panels)"
-    )
+    print(f"singles : {figdir} ({len(formats)} formats x {len(PANEL_CATALOG)} panels)")
     print(f"gallery : {gallery}")
     return 0
 

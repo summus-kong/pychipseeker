@@ -120,9 +120,7 @@ def test_coerce_peaks_and_bed_frame_errors() -> None:
     assert list(frame.columns[:4]) == ["chrom", "start", "end", "name"]
 
     identified = _coerce_peaks(
-        pd.DataFrame(
-            {"chrom": ["chr1"], "start": [1], "end": [2], "peakId": ["p1"]}
-        )
+        pd.DataFrame({"chrom": ["chr1"], "start": [1], "end": [2], "peakId": ["p1"]})
     )
     assert identified.loc[0, "peak_id"] == "p1"
 
@@ -135,15 +133,15 @@ def test_peak_variant_suffixes() -> None:
     assert _peak_variant("peaks.txt") is None
 
 
-def test_read_bigbed_with_converter(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_read_bigbed_with_converter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     path = tmp_path / "peaks.bb"
     path.write_bytes(b"fake bigBed")
 
     def fake_run(command, check, stdout, stderr):
         assert check is True
-        Path(command[2]).write_text(
-            "chr1\t10\t20\tp1\t500\t+\n", encoding="utf-8"
-        )
+        Path(command[2]).write_text("chr1\t10\t20\tp1\t500\t+\n", encoding="utf-8")
 
     monkeypatch.setattr(io_mod.shutil, "which", lambda name: "bigBedToBed")
     monkeypatch.setattr(io_mod.subprocess, "run", fake_run)
@@ -152,7 +150,9 @@ def test_read_bigbed_with_converter(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert read_peaks(path, fmt="bb").loc[0, "name"] == "p1"
 
 
-def test_read_bigbed_record_shapes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_read_bigbed_record_shapes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     path = tmp_path / "peaks.bb"
     path.write_bytes(b"fake bigBed")
 
@@ -182,7 +182,9 @@ def test_read_bigbed_record_shapes(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     assert df.loc[1, "name"] == 700
 
 
-def test_read_bam_filters_and_errors(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_read_bam_filters_and_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     path = tmp_path / "reads.bam"
     path.write_bytes(b"fake bam")
     monkeypatch.setitem(sys.modules, "pysam", None)
@@ -245,9 +247,7 @@ def test_read_peaks_dispatch_and_errors(tmp_path: Path) -> None:
         read_peaks(bed, fmt="xlsx")
 
     narrow = tmp_path / "peaks.narrowPeak"
-    narrow.write_text(
-        "chr1\t10\t20\tp1\t500\t+\t1\t2\t3\t4\n", encoding="utf-8"
-    )
+    narrow.write_text("chr1\t10\t20\tp1\t500\t+\t1\t2\t3\t4\n", encoding="utf-8")
     explicit = read_peaks(narrow, fmt="narrowpeak")
     assert explicit.loc[0, "qValue"] == 3
     assert read_peaks(narrow, fmt="bed").loc[0, "name"] == "p1"
@@ -259,9 +259,7 @@ def test_read_peaks_dispatch_and_errors(tmp_path: Path) -> None:
     assert read_peaks(tsv, fmt="tsv").loc[0, "start"] == 1
 
     csv = tmp_path / "peaks.csv"
-    pd.DataFrame({"chrom": ["chr1"], "start": [1], "end": [2]}).to_csv(
-        csv, index=False
-    )
+    pd.DataFrame({"chrom": ["chr1"], "start": [1], "end": [2]}).to_csv(csv, index=False)
     assert read_peaks(csv, fmt="csv").loc[0, "start"] == 1
     assert read_peaks(csv).loc[0, "start"] == 1
 
@@ -291,8 +289,7 @@ def test_read_peaks_header_mapping_branches(tmp_path: Path) -> None:
 
     empty_header = tmp_path / "empty-header.bed"
     empty_header.write_text(
-        "chrom\tstart\tend\t\tcustom\n"
-        "chr1\t10\t20\tignored\tvalue\n",
+        "chrom\tstart\tend\t\tcustom\nchr1\t10\t20\tignored\tvalue\n",
         encoding="utf-8",
     )
     empty_mapped = read_peaks(empty_header)
@@ -301,8 +298,7 @@ def test_read_peaks_header_mapping_branches(tmp_path: Path) -> None:
 
     extra = tmp_path / "extra.bed"
     extra.write_text(
-        "chrom\tstart\tend\tname\tname\tcustom\t\n"
-        "chr1\t10\t20\tp1\tp2\tvalue\tx\n",
+        "chrom\tstart\tend\tname\tname\tcustom\t\nchr1\t10\t20\tp1\tp2\tvalue\tx\n",
         encoding="utf-8",
     )
     extras = read_peaks(extra)
@@ -313,8 +309,7 @@ def test_read_peaks_header_mapping_branches(tmp_path: Path) -> None:
 
     short_header = tmp_path / "short-header.bed"
     short_header.write_text(
-        "chrom\tstart\tend\tname\n"
-        "chr1\t10\t20\tp1\t500\t+\n",
+        "chrom\tstart\tend\tname\nchr1\t10\t20\tp1\t500\t+\n",
         encoding="utf-8",
     )
     padded = read_peaks(short_header)

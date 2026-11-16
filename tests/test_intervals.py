@@ -128,9 +128,7 @@ def test_tss_index_validation_empty_and_nearest() -> None:
     with pytest.raises(ValueError, match="chrom.*tss"):
         TSSIndex(pd.DataFrame({"chrom": ["chr1"], "start": [0]}))
 
-    empty = TSSIndex(
-        pd.DataFrame({"chrom": [], "tss": [], "strand": []})
-    )
+    empty = TSSIndex(pd.DataFrame({"chrom": [], "tss": [], "strand": []}))
     assert empty.nearest("chr1", 100) is None
     assert empty.within("chr1", 0, 100)[0].tolist() == []
     assert empty.follow_precede("chr1", 0, 100) == (None, None)
@@ -175,8 +173,7 @@ def test_tss_index_within_and_strand_views() -> None:
         pd.DataFrame({"chrom": ["chr1"], "tss": [10], "strand": ["-"]})
     )
     assert (
-        minus_only.within("chr1", 0, 50, strand="+", same_strand=True)[0].tolist()
-        == []
+        minus_only.within("chr1", 0, 50, strand="+", same_strand=True)[0].tolist() == []
     )
 
     assert index.overlapping("chr1", 20, 41).tolist() == [1, 2, 3]
@@ -217,9 +214,7 @@ def test_span_index_validation_and_empty() -> None:
     with pytest.raises(ValueError, match="missing columns"):
         SpanIndex(pd.DataFrame({"chrom": ["chr1"], "start": [0]}))
 
-    empty = SpanIndex(
-        pd.DataFrame({"chrom": [], "start": [], "end": [], "strand": []})
-    )
+    empty = SpanIndex(pd.DataFrame({"chrom": [], "start": [], "end": [], "strand": []}))
     assert empty.overlapping("chr1", 0, 10).tolist() == []
     assert empty.follow_precede("chr1", 0, 10) == (None, None)
 
@@ -242,9 +237,7 @@ def test_span_index_overlap_both_candidate_scans() -> None:
 
     # Many features start before the query end, few end before its start:
     # this exercises the end-sorted scan.
-    dense = _features(
-        [("chr1", i, i + 1, "+") for i in range(100)]
-    )
+    dense = _features([("chr1", i, i + 1, "+") for i in range(100)])
     dense_index = SpanIndex(dense)
     assert dense_index.overlapping("chr1", 99, 1000).tolist() == [99]
 
@@ -268,7 +261,9 @@ def test_span_index_strand_views_and_overlap() -> None:
         2,
     ]
     # Only the unknown-strand feature remains for a minus query on chr2.
-    assert index.overlapping("chr2", 0, 100, strand="-", same_strand=True).tolist() == []
+    assert (
+        index.overlapping("chr2", 0, 100, strand="-", same_strand=True).tolist() == []
+    )
     assert index.overlapping("chr1", 0, 100, strand="*", same_strand=True).tolist() == [
         0,
         1,

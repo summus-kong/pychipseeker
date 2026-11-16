@@ -35,7 +35,9 @@ def annotation(examples_dir):
 
 
 def test_get_promoters_and_bio_region(annotation):
-    promoters = get_promoters(annotation=annotation.gene_annotation, upstream=100, downstream=200)
+    promoters = get_promoters(
+        annotation=annotation.gene_annotation, upstream=100, downstream=200
+    )
     assert len(promoters) == 3
     row = promoters.set_index("gene_id").loc["G1"]
     assert row["start"] == 900
@@ -58,7 +60,9 @@ def test_get_promoters_and_bio_region(annotation):
 
 
 def test_tag_matrix_from_peak_coverage(annotation):
-    promoters = get_promoters(annotation=annotation.gene_annotation, upstream=1000, downstream=1000)
+    promoters = get_promoters(
+        annotation=annotation.gene_annotation, upstream=1000, downstream=1000
+    )
     matrix = get_tag_matrix(
         peak=annotation.peaks,
         windows=promoters,
@@ -86,7 +90,9 @@ def test_tag_matrix_from_peak_coverage(annotation):
 
 
 def test_tag_matrix_without_binning(annotation):
-    promoters = get_promoters(annotation=annotation.gene_annotation, upstream=50, downstream=50)
+    promoters = get_promoters(
+        annotation=annotation.gene_annotation, upstream=50, downstream=50
+    )
     matrix = get_tag_matrix(peak=annotation.peaks, windows=promoters)
     assert matrix.shape[1] == 100
     assert matrix.is_binning is False
@@ -146,9 +152,7 @@ def _bruteforce_coverage(peaks, windows, *, n_bins, ignore_strand):
             right = min(end, int(peak["end"]))
             if right <= left:
                 continue
-            per_base[left - start : right - start] += float(
-                peak.get("_weight", 1.0)
-            )
+            per_base[left - start : right - start] += float(peak.get("_weight", 1.0))
         # Integrate the piecewise-constant per-base track at fractional bin
         # edges, matching the half-open semantics of the production code.
         cumulative = np.concatenate([[0.0], np.cumsum(per_base)])
@@ -224,7 +228,9 @@ def test_peak_coverage_matches_bruteforce(ignore_strand, n_bins):
 
 
 def test_profile_and_heatmap_plots(annotation):
-    promoters = get_promoters(annotation=annotation.gene_annotation, upstream=100, downstream=100)
+    promoters = get_promoters(
+        annotation=annotation.gene_annotation, upstream=100, downstream=100
+    )
     matrix = get_tag_matrix(peak=annotation.peaks, windows=promoters, nbin=50)
     fig, ax = plot_avg_prof(matrix, conf=0.95)
     assert "Genomic Region" in ax.get_xlabel()
@@ -452,7 +458,9 @@ def test_bigwig_real_file_extract_tss_matrix():
 
 
 def test_multi_profile(annotation):
-    promoters = get_promoters(annotation=annotation.gene_annotation, upstream=100, downstream=100)
+    promoters = get_promoters(
+        annotation=annotation.gene_annotation, upstream=100, downstream=100
+    )
     matrix = get_tag_matrix(peak=annotation.peaks, windows=promoters, nbin=20)
     fig, ax = plot_multi_prof([matrix, matrix], facet="none")
     assert ax is not None

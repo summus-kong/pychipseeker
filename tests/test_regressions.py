@@ -141,5 +141,3 @@ def test_dataframe_index_is_used_as_peak_id(examples_dir):
         downstream=10,
     )
     assert ann.to_dataframe().loc[0, "peak_id"] == "peakA"
-
-

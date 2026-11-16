@@ -615,6 +615,7 @@ pip install -e ".[dev,bigwig]"
 pytest -q
 pytest -q --cov=pychipseeker --cov-report=term-missing
 python -m ruff check src tests examples scripts
+python -m ruff format --check src tests examples scripts
 python -m mypy
 ```
 

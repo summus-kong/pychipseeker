@@ -64,9 +64,7 @@ fig.savefig(OUT / "tss_heatmap.png", dpi=200, bbox_inches="tight")
 fig.clf()
 
 # ChIPseeker-style peak-coverage tag matrix and profile/heatmap.
-promoters = pcs.getPromoters(
-    TxDb=ann.gene_annotation, upstream=1000, downstream=1000
-)
+promoters = pcs.getPromoters(TxDb=ann.gene_annotation, upstream=1000, downstream=1000)
 tag = pcs.getTagMatrix(peak=ann.peaks, windows=promoters, nbin=50)
 fig, _ = pcs.plotAvgProf(tag, conf=None)
 fig.savefig(OUT / "tag_profile.png", dpi=200, bbox_inches="tight")

@@ -69,7 +69,11 @@ def _cmd_annotate(args: argparse.Namespace) -> int:
         verbose=not args.quiet,
         n_jobs=args.jobs,
     )
-    df = annotation.to_chipseeker() if args.chipseeker_columns else annotation.to_dataframe()
+    df = (
+        annotation.to_chipseeker()
+        if args.chipseeker_columns
+        else annotation.to_dataframe()
+    )
 
     out = Path(args.output)
     write_table(df, out)
@@ -183,7 +187,9 @@ def _cmd_callpeak(args: argparse.Namespace) -> int:
 
     chroms = None
     if args.chroms:
-        chroms = tuple(value.strip() for value in args.chroms.split(",") if value.strip())
+        chroms = tuple(
+            value.strip() for value in args.chroms.split(",") if value.strip()
+        )
     peaks = call_peaks(
         args.bigwig,
         threshold=args.threshold,
@@ -206,7 +212,9 @@ def _cmd_filter(args: argparse.Namespace) -> int:
 
     chroms = None
     if args.chroms:
-        chroms = tuple(value.strip() for value in args.chroms.split(",") if value.strip())
+        chroms = tuple(
+            value.strip() for value in args.chroms.split(",") if value.strip()
+        )
     exclude = None
     if args.exclude_chroms:
         exclude = tuple(
@@ -385,7 +393,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="pychipseeker",
         description="ChIPseeker-style peak annotation and visualization in Python.",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -402,7 +412,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ann.add_argument("--output", required=True, help="output annotation table")
     p_ann.add_argument("--plot-dir", default=None, help="directory for PNG plots")
-    p_ann.add_argument("--summary", action="store_true", help="write ChIPseeker annoStat")
+    p_ann.add_argument(
+        "--summary", action="store_true", help="write ChIPseeker annoStat"
+    )
     p_ann.add_argument(
         "--level",
         choices=("transcript", "gene"),
@@ -414,7 +426,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="promoter region, e.g. -3000,3000 (overrides --upstream/--downstream)",
     )
-    p_ann.add_argument("--upstream", type=int, default=None, help="promoter upstream bp")
+    p_ann.add_argument(
+        "--upstream", type=int, default=None, help="promoter upstream bp"
+    )
     p_ann.add_argument(
         "--downstream", type=int, default=None, help="promoter downstream bp"
     )
@@ -475,7 +489,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ann.set_defaults(func=_cmd_annotate)
 
     p_plot = sub.add_parser("plot", help="plot an existing annotation table")
-    p_plot.add_argument("--annotated", required=True, help="annotation table from `annotate`")
+    p_plot.add_argument(
+        "--annotated", required=True, help="annotation table from `annotate`"
+    )
     p_plot.add_argument("--outdir", required=True, help="output directory")
     p_plot.add_argument("--prefix", default="peak")
     p_plot.add_argument("--dpi", type=int, default=300)
@@ -576,9 +592,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_qc.set_defaults(func=_cmd_qc)
 
-    p_report = sub.add_parser(
-        "report", help="build a multi-page PDF annotation report"
-    )
+    p_report = sub.add_parser("report", help="build a multi-page PDF annotation report")
     p_report.add_argument("--peaks", required=True, help="BED/TSV/CSV peak file")
     report_source = p_report.add_mutually_exclusive_group(required=True)
     report_source.add_argument("--gtf", help="GTF/GFF annotation file")
@@ -600,7 +614,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--upstream", type=int, default=None, help="asymmetric signal window upstream"
     )
     p_report.add_argument(
-        "--downstream", type=int, default=None, help="asymmetric signal window downstream"
+        "--downstream",
+        type=int,
+        default=None,
+        help="asymmetric signal window downstream",
     )
     p_report.add_argument(
         "--sample",
@@ -626,7 +643,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_cache = sub.add_parser("cache", help="manage downloaded genome bundles")
     cache_sub = p_cache.add_subparsers(dest="cache_command", required=True)
     cache_list = cache_sub.add_parser("list", help="list installed and cached bundles")
-    cache_list.add_argument("--json", action="store_true", help="machine-readable output")
+    cache_list.add_argument(
+        "--json", action="store_true", help="machine-readable output"
+    )
     cache_info = cache_sub.add_parser(
         "info", help="show provenance for an assembly or download spec"
     )

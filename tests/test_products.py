@@ -40,9 +40,7 @@ def test_call_peaks_threshold_merge_and_write(tmp_path, monkeypatch):
     fake.open = Handle
     monkeypatch.setitem(sys.modules, "pyBigWig", fake)
 
-    peaks = call_peaks(
-        "fake.bw", threshold=3.0, max_gap=100, min_width=150
-    )
+    peaks = call_peaks("fake.bw", threshold=3.0, max_gap=100, min_width=150)
     assert len(peaks) == 3
     first = peaks.iloc[0]
     assert (first["chrom"], first["start"], first["end"]) == ("chr1", 100, 300)

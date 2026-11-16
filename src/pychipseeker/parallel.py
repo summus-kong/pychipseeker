@@ -66,10 +66,7 @@ def chunk_bounds(n_items: int, n_chunks: int) -> list[tuple[int, int]]:
         return []
     n_chunks = min(n_chunks, n_items)
     size = (n_items + n_chunks - 1) // n_chunks
-    return [
-        (start, min(start + size, n_items))
-        for start in range(0, n_items, size)
-    ]
+    return [(start, min(start + size, n_items)) for start in range(0, n_items, size)]
 
 
 def parallel_map(

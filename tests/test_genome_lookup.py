@@ -43,11 +43,7 @@ def _stringize(frame: pd.DataFrame) -> pd.DataFrame:
         if pd.api.types.is_integer_dtype(out[col]):
             out[col] = out[col].astype(np.int64)
         else:
-            out[col] = (
-                out[col].astype(object)
-                .where(~pd.isna(out[col]), "")
-                .astype(str)
-            )
+            out[col] = out[col].astype(object).where(~pd.isna(out[col]), "").astype(str)
     return out
 
 

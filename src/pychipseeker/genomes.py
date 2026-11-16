@@ -500,9 +500,9 @@ def _encode_frame(frame: pd.DataFrame, table: str) -> Dict[str, Any]:
     return out
 
 
-def save_bundle(model: GeneAnnotation, dest, drop: tuple[str, ...] = (
-    "attributes",
-)) -> None:
+def save_bundle(
+    model: GeneAnnotation, dest, drop: tuple[str, ...] = ("attributes",)
+) -> None:
     """Serialise a :class:`GeneAnnotation` as a bundled npz table.
 
     Shared by the build script and the tests: the bundle reproduces the exact
@@ -528,8 +528,7 @@ def save_bundle(model: GeneAnnotation, dest, drop: tuple[str, ...] = (
 #: URL is a fallback.  ``PYCHIPSEEKER_GENOME_BASE`` (if set) is tried first,
 #: e.g. ``file:///D:/mirror`` or an internal mirror for air-gapped setups.
 RELEASE_BUNDLE_BASE = (
-    "https://github.com/summus-kong/pychipseeker/releases/download/"
-    "genome-data-2026.10"
+    "https://github.com/summus-kong/pychipseeker/releases/download/genome-data-2026.10"
 )
 RAW_BUNDLE_BASE = (
     "https://raw.githubusercontent.com/summus-kong/pychipseeker/main/"
@@ -611,7 +610,10 @@ def _download_file(url: str, dest: Path, tries: int = 4) -> None:
     last_error: Optional[Exception] = None
     for attempt in range(1, tries + 1):
         try:
-            with urllib.request.urlopen(url, timeout=180) as resp, open(tmp, "wb") as fh:
+            with (
+                urllib.request.urlopen(url, timeout=180) as resp,
+                open(tmp, "wb") as fh,
+            ):
                 shutil.copyfileobj(resp, fh)
             break
         except Exception as exc:  # noqa: BLE001 - retry any network error
@@ -1043,9 +1045,7 @@ def cached_genomes() -> list[dict[str, object]]:
                     ),
                 ),
                 "release": record.get("release", source.get("release", "")),
-                "description": record.get(
-                    "description", source.get("description", "")
-                ),
+                "description": record.get("description", source.get("description", "")),
                 "size_mb": (
                     round(path.stat().st_size / 1e6, 1) if path is not None else None
                 ),
@@ -1110,10 +1110,22 @@ def prune_genome_cache() -> list[Path]:
     root = cache_dir()
     gtf_root = root / "gtf"
     targets: list[Path] = []
-    for pattern in ("*.part", "genome_*.npz", "genome_*.json", "genome_*.gtf", "genome_*.gtf.gz"):
+    for pattern in (
+        "*.part",
+        "genome_*.npz",
+        "genome_*.json",
+        "genome_*.gtf",
+        "genome_*.gtf.gz",
+    ):
         targets.extend(sorted(root.glob(pattern)))
     if gtf_root.is_dir():
-        for pattern in ("*.part", "spec_*.npz", "spec_*.json", "spec_*.gtf", "spec_*.gtf.gz"):
+        for pattern in (
+            "*.part",
+            "spec_*.npz",
+            "spec_*.json",
+            "spec_*.gtf",
+            "spec_*.gtf.gz",
+        ):
             targets.extend(sorted(gtf_root.glob(pattern)))
 
     removed: list[Path] = []

@@ -96,19 +96,13 @@ def test_detect_assembly_from_names_and_sizes(
     )
     assert detect_assembly(fly) == "dm6"
 
-    human = pd.DataFrame(
-        {"chrom": ["chr20"], "start": [0], "end": [10]}
-    )
+    human = pd.DataFrame({"chrom": ["chr20"], "start": [0], "end": [10]})
     with pytest.raises(ValueError, match="cannot distinguish hg38"):
         detect_assembly(human)
-    human_short = pd.DataFrame(
-        {"chrom": ["chr1"], "start": [0], "end": [10]}
-    )
+    human_short = pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10]})
     with pytest.raises(ValueError, match="hg38/hg19"):
         detect_assembly(human_short)
-    human_long = pd.DataFrame(
-        {"chrom": ["chr20"], "start": [0], "end": [250_000_000]}
-    )
+    human_long = pd.DataFrame({"chrom": ["chr20"], "start": [0], "end": [250_000_000]})
     with pytest.raises(ValueError, match="hg19, hg38"):
         detect_assembly(human_long)
     with pytest.raises(ValueError, match="could not detect"):
@@ -116,9 +110,7 @@ def test_detect_assembly_from_names_and_sizes(
     with pytest.raises(ValueError, match="could not detect"):
         detect_assembly(chrom_sizes={"chrUn": 100})
 
-    hg38 = detect_assembly(
-        chrom_sizes={"1": 248956422, "2": 242193529}
-    )
+    hg38 = detect_assembly(chrom_sizes={"1": 248956422, "2": 242193529})
     assert hg38 == "hg38"
 
     monkeypatch.setattr(
@@ -151,9 +143,7 @@ def test_detect_assembly_reads_bigwig_header(
         detect_assembly(bigwig="missing.bw")
 
 
-def test_cache_dir_platform_branches(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cache_dir_platform_branches(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     windows_root = tmp_path / "win"
     monkeypatch.setattr(genomes.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(windows_root))
@@ -442,7 +432,9 @@ def test_genome_provenance_shipped_and_downloaded(
 ) -> None:
     monkeypatch.setattr(genomes, "_installed_bundle", lambda name: None)
     monkeypatch.setattr(
-        genomes, "_installed_provenance", lambda name: {"assembly": name, "source": "package"}
+        genomes,
+        "_installed_provenance",
+        lambda name: {"assembly": name, "source": "package"},
     )
     assert genome_provenance("mm10")["source"] == "package"
 
@@ -508,9 +500,7 @@ def test_download_genome_installed_bundled_source_and_custom(
     assert download_genome(custom) == "downloaded"
 
 
-def test_cached_genomes_and_prune(
-    cache: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cached_genomes_and_prune(cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (cache / "genome_good.npz").write_bytes(b"data")
     (cache / "genome_good.json").write_text(
         json.dumps({"provider": "test", "release": "1"}), encoding="utf-8"
@@ -629,6 +619,7 @@ def test_npz_model_roundtrip_preserves_tables(cache: Path) -> None:
     assert restored.source == ("npz", str(path))
     assert len(restored.genes) == len(reference.genes)
     assert list(restored.genes.columns) == list(reference.genes.columns)
-    assert restored.transcripts["chrom"].tolist() == reference.transcripts[
-        "chrom"
-    ].tolist()
+    assert (
+        restored.transcripts["chrom"].tolist()
+        == reference.transcripts["chrom"].tolist()
+    )

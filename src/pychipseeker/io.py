@@ -190,9 +190,7 @@ def read_gtf(
             chunk = chunk.copy()
             chunk["start"] = pd.to_numeric(chunk["start"], errors="coerce")
             chunk["end"] = pd.to_numeric(chunk["end"], errors="coerce")
-            chunk = chunk.dropna(
-                subset=["chrom", "feature", "start", "end"]
-            ).copy()
+            chunk = chunk.dropna(subset=["chrom", "feature", "start", "end"]).copy()
             if chunk.empty:
                 continue
             chunk["start"] = chunk["start"].astype(np.int64) - 1
@@ -302,7 +300,9 @@ def read_gtf(
 
     mask = df["transcript_type"].isna()
     if mask.any():
-        df.loc[mask, "transcript_type"] = _extract_gff(attrs[mask], "transcript_biotype")
+        df.loc[mask, "transcript_type"] = _extract_gff(
+            attrs[mask], "transcript_biotype"
+        )
 
     for col in ("gene_id", "transcript_id"):
         df[col] = _strip_feature_prefix(df[col])
@@ -407,10 +407,15 @@ def _is_bed_header(values: Sequence[object]) -> bool:
     first = str(values[0]).strip().lower()
     second = str(values[1]).strip().lower()
     third = str(values[2]).strip().lower()
-    return first in {"chrom", "chr", "chromosome", "#chrom"} and second in {
-        "start",
-        "chromstart",
-    } and third in {"end", "chromend", "stop"}
+    return (
+        first in {"chrom", "chr", "chromosome", "#chrom"}
+        and second
+        in {
+            "start",
+            "chromstart",
+        }
+        and third in {"end", "chromend", "stop"}
+    )
 
 
 def _open_text(path: Path):
@@ -713,9 +718,7 @@ def read_peaks(
                 columns.append(name)
             if len(columns) < n_cols:
                 columns += standard[len(columns) : n_cols]
-            columns += [
-                f"extra_{i + 1}" for i in range(n_cols - len(columns))
-            ]
+            columns += [f"extra_{i + 1}" for i in range(n_cols - len(columns))]
 
         raw.columns = columns
         raw = raw.reset_index(drop=True)

@@ -124,7 +124,10 @@ def _colors(n: int) -> list[str]:
         return _CHIPSEEKER_COLORS[:n]
     # Linear interpolation, analogous to colorRampPalette().
     base = np.array(
-        [[int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)] for c in _CHIPSEEKER_COLORS],
+        [
+            [int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)]
+            for c in _CHIPSEEKER_COLORS
+        ],
         dtype=float,
     )
     xp = np.linspace(0, 1, len(base))
@@ -286,13 +289,15 @@ def _grouped_stat(
         stat = get_genomic_anno_stat(
             sub["annotation"],
             downstream_distance=downstream_distance,
-            ignore_promoter_subcategory=kwargs.get("ignore_promoter_subcategory", False),
+            ignore_promoter_subcategory=kwargs.get(
+                "ignore_promoter_subcategory", False
+            ),
             ignore_1st_exon=kwargs.get("ignore_1st_exon", False),
             ignore_1st_intron=kwargs.get("ignore_1st_intron", False),
             ignore_downstream=kwargs.get("ignore_downstream", False),
         )
-        rows[str(group)] = (
-            stat.set_index("Feature")["Frequency"].reindex(features, fill_value=0.0)
+        rows[str(group)] = stat.set_index("Feature")["Frequency"].reindex(
+            features, fill_value=0.0
         )
     return pd.DataFrame.from_dict(rows, orient="index")
 
@@ -532,9 +537,7 @@ def plot_dist_to_tss(
     ax.set_xticks(ticks)
     ax.set_xticklabels(["TSS" if t == 0 else f"{abs(int(t))}" for t in ticks])
 
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, color=color_map[f]) for f in feature_order
-    ]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=color_map[f]) for f in feature_order]
     ax.legend(
         handles,
         feature_order,
@@ -575,9 +578,7 @@ def _coerce_signal_frame(signal: Union[str, Path, pd.DataFrame]) -> pd.DataFrame
                     "signal DataFrame must contain chrom,start,end,value columns"
                 )
             first = list(df.columns[:4])
-            df = df.rename(
-                columns=dict(zip(first, columns))
-            )
+            df = df.rename(columns=dict(zip(first, columns)))
     else:
         raise TypeError("signal must be a path or a pandas.DataFrame")
 
@@ -817,17 +818,11 @@ def extract_tss_matrix(
 
         starts = tss - up
         ends = tss + down
-        valid = (
-            (chrom_lengths > 0)
-            & (starts >= 0)
-            & (ends <= chrom_lengths)
-        )
+        valid = (chrom_lengths > 0) & (starts >= 0) & (ends <= chrom_lengths)
         rows = np.flatnonzero(valid)
         matrix: np.ndarray = np.full((len(genes), n_bins), np.nan, dtype=dtype)
         if rows.size == 0:
-            raise ValueError(
-                "no features could be extracted from the bigWig track"
-            )
+            raise ValueError("no features could be extracted from the bigWig track")
 
         # Read each chromosome's intervals once and integrate them with
         # cumulative sums.  This is both much faster and more accurate than
@@ -892,9 +887,7 @@ def extract_tss_matrix(
                 if not intervals:
                     continue
                 integrator = IntervalIntegrator(intervals)
-                arr = tss_matrix(
-                    integrator, tss[index], up, down, n_bins, min_value
-                )
+                arr = tss_matrix(integrator, tss[index], up, down, n_bins, min_value)
                 minus = strands[index] == "-"
                 if minus.any():
                     arr[minus] = arr[minus][:, ::-1]
@@ -1014,7 +1007,9 @@ def plot_tss_heatmap(
     masked = np.ma.masked_invalid(matrix)
     from matplotlib import colormaps
 
-    cmap_obj = colormaps[(kwargs.pop("cmap", None) or cmap)].with_extremes(bad="#f5f5f5")
+    cmap_obj = colormaps[(kwargs.pop("cmap", None) or cmap)].with_extremes(
+        bad="#f5f5f5"
+    )
     im = ax.imshow(
         masked,
         aspect="auto",

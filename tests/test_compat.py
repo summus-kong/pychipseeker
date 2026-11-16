@@ -71,9 +71,7 @@ def test_chipseeker_annotatepeak_wrapper(examples_dir):
     ann2 = annotatePeak(
         examples_dir / "example_peaks.bed",
         gtf=examples_dir / "example.gtf",
-        annoDb=pd.DataFrame(
-            {"gene_id": ["G1", "G2", "G3"], "SYMBOL": ["A", "B", "C"]}
-        ),
+        annoDb=pd.DataFrame({"gene_id": ["G1", "G2", "G3"], "SYMBOL": ["A", "B", "C"]}),
         columns=["SYMBOL"],
     )
     assert "SYMBOL" in ann2.annotation.columns
@@ -210,9 +208,15 @@ def test_overlap_enrichment(annotation):
         nShuffle=3,
         seed=2,
     )
-    assert {"qSample", "tSample", "qLen", "tLen", "N_OL", "pvalue", "p.adjust"}.issubset(
-        result.columns
-    )
+    assert {
+        "qSample",
+        "tSample",
+        "qLen",
+        "tLen",
+        "N_OL",
+        "pvalue",
+        "p.adjust",
+    }.issubset(result.columns)
     assert result["N_OL"].iloc[0] == len(annotation.peaks)
     assert (result["pvalue"] >= 0).all()
     assert (result["pvalue"] <= 1).all()
@@ -239,7 +243,12 @@ def _geo_snapshot() -> pd.DataFrame:
             "series_id": ["GSE1", "GSE1", "GSE2", "GSE3"],
             "gsm": ["GSM1", "GSM2", "GSM3", "GSM4"],
             "gpl": ["GPL1", "GPL1", "GPL2", "GPL2"],
-            "organism": ["Homo sapiens", "Homo sapiens", "Mus musculus", "Homo sapiens"],
+            "organism": [
+                "Homo sapiens",
+                "Homo sapiens",
+                "Mus musculus",
+                "Homo sapiens",
+            ],
             "title": ["t1", "t2", "t3", "t4"],
             "supplementary_file": [
                 "ftp://ftp.ncbi.nlm.nih.gov/geo/samples/GSM1_bed.bed.gz",
@@ -345,7 +354,9 @@ def test_download_gsm_bed_files(monkeypatch, tmp_path):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     snapshot = _geo_snapshot()
-    out = compat.downloadGSMbedFiles(["GSM1", "GSM3"], destDir=tmp_path, gsminfo=snapshot)
+    out = compat.downloadGSMbedFiles(
+        ["GSM1", "GSM3"], destDir=tmp_path, gsminfo=snapshot
+    )
     # GSM3 has no supplementary file; GSM1 is downloaded and ftp->https
     assert len(out) == 1
     dest = out[0]

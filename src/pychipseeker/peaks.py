@@ -259,7 +259,9 @@ def filter_peaks(
         raise TypeError("peaks must be a path or a pandas.DataFrame")
     required = {"chrom", "start", "end"}
     if not required.issubset(frame.columns):
-        raise ValueError(f"peak table is missing columns: {sorted(required - set(frame.columns))}")
+        raise ValueError(
+            f"peak table is missing columns: {sorted(required - set(frame.columns))}"
+        )
 
     frame = frame.copy()
     frame["chrom"] = frame["chrom"].astype(str)
@@ -279,17 +281,13 @@ def filter_peaks(
             raise TypeError("blacklist must be a path or a pandas.DataFrame")
         from .seqlevels import harmonize_frame
 
-        bl, _ = harmonize_frame(
-            bl, frame["chrom"].unique(), column="chrom", copy=True
-        )
+        bl, _ = harmonize_frame(bl, frame["chrom"].unique(), column="chrom", copy=True)
         frame = frame.loc[~_overlaps_any(frame, bl)].copy()
 
     if drop_mito:
         from .seqlevels import canonical_chrom
 
-        frame = frame[
-            frame["chrom"].map(canonical_chrom) != "m"
-        ].copy()
+        frame = frame[frame["chrom"].map(canonical_chrom) != "m"].copy()
 
     if chroms is not None:
         from .seqlevels import canonical_chrom

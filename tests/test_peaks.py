@@ -33,7 +33,11 @@ class FakeBigWig:
         return dict(self._chroms)
 
     def intervals(self, chrom):
-        value = self._intervals.get(str(chrom)) if isinstance(self._intervals, dict) else self._intervals
+        value = (
+            self._intervals.get(str(chrom))
+            if isinstance(self._intervals, dict)
+            else self._intervals
+        )
         return value
 
     def close(self):
@@ -61,7 +65,10 @@ def test_call_peaks_chrom_merges_runs_and_filters_width() -> None:
 
 
 def test_call_peaks_chrom_returns_empty_for_missing_or_weak_signal() -> None:
-    assert _call_peaks_chrom(FakeBigWig({}), "chr1", threshold=1, max_gap=0, min_width=0) == []
+    assert (
+        _call_peaks_chrom(FakeBigWig({}), "chr1", threshold=1, max_gap=0, min_width=0)
+        == []
+    )
     assert (
         _call_peaks_chrom(
             FakeBigWig(np.empty((0, 3))),

@@ -155,9 +155,7 @@ def main() -> int:
 
     plate = _composite_plate(ann, tag)
     plate.savefig(OUT / "pychipseeker_figure_plate.pdf", bbox_inches="tight")
-    plate.savefig(
-        OUT / "pychipseeker_figure_plate.png", dpi=220, bbox_inches="tight"
-    )
+    plate.savefig(OUT / "pychipseeker_figure_plate.png", dpi=220, bbox_inches="tight")
     plt.close(plate)
 
     print(ann.annoStat.to_string(index=False))

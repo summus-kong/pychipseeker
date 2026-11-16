@@ -12,14 +12,14 @@ import pandas as pd
 import pytest
 
 from pychipseeker import annotate_peak, compat
+from pychipseeker._stats import hypergeom_sf as _hypergeom_sf
+from pychipseeker._stats import log_comb as _log_comb
 from pychipseeker.compat import (
     _annotation_gene_ids,
     _as_annotation_df,
     _chrom_sizes_from_peaks,
     _count_query_overlaps,
-    _hypergeom_sf,
     _load_gsminfo,
-    _log_comb,
     _p_adjust,
     _set_elements,
     annotate_db,
@@ -213,7 +213,9 @@ def test_combine_cs_anno_guards(annotation, examples_dir) -> None:
 
 
 def test_set_elements_variants(annotation) -> None:
-    assert _set_elements(annotation) == set(annotation.annotation["peak_id"].astype(str))
+    assert _set_elements(annotation) == set(
+        annotation.annotation["peak_id"].astype(str)
+    )
 
     no_ids = copy.deepcopy(annotation)
     no_ids.annotation = no_ids.annotation.drop(columns=["peak_id"])
@@ -348,9 +350,7 @@ def test_p_adjust_methods() -> None:
     np.testing.assert_allclose(_p_adjust([0.01, 0.2], "none"), [0.01, 0.2])
     np.testing.assert_allclose(_p_adjust([0.01, 0.2], "nop"), [0.01, 0.2])
     assert _p_adjust([], "bonferroni").size == 0
-    np.testing.assert_allclose(
-        _p_adjust([0.01, 0.2], "bonferroni"), [0.02, 0.4]
-    )
+    np.testing.assert_allclose(_p_adjust([0.01, 0.2], "bonferroni"), [0.02, 0.4])
     with pytest.raises(ValueError, match="pAdjustMethod"):
         _p_adjust([0.1], "holm")
 
@@ -367,17 +367,13 @@ def test_enrich_peak_overlap_dataframe_sizes_and_no_shuffle(annotation) -> None:
     assert result["N_OL"].iloc[0] == len(annotation.peaks)
     assert 0 < result["pvalue"].iloc[0] <= 1
 
-    static = enrich_peak_overlap(
-        annotation.peaks, annotation.peaks, nShuffle=0, seed=1
-    )
+    static = enrich_peak_overlap(annotation.peaks, annotation.peaks, nShuffle=0, seed=1)
     assert np.isnan(static["pvalue"].iloc[0])
     assert static["p.adjust"].iloc[0] == 1.0
 
     query = pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10]})
     target = pd.DataFrame({"chrom": ["chr1"], "start": [100], "end": [110]})
-    disjoint = enrich_peak_overlap(
-        query, target, chrom_sizes=sizes, nShuffle=2, seed=1
-    )
+    disjoint = enrich_peak_overlap(query, target, chrom_sizes=sizes, nShuffle=2, seed=1)
     assert disjoint["N_OL"].iloc[0] == 0
     assert disjoint["pvalue"].iloc[0] == 1.0
 
@@ -389,7 +385,9 @@ def test_hypergeom_helpers_bounds() -> None:
     assert _hypergeom_sf(11, 100, 10, 20) == 0.0
 
 
-def test_annotation_gene_ids_errors(annotation, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_annotation_gene_ids_errors(
+    annotation, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with pytest.raises(ValueError, match="provide TxDb"):
         _annotation_gene_ids(annotation.peaks)
 

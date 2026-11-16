@@ -178,9 +178,18 @@ def build_gsminfo(
         rows: list[dict[str, str]] = []
         for raw in _query_gsm_rows(con, gpls):
             (
-                gsm, series_id, gpl, organism, title, characteristics,
-                source_name, extract_protocol, description, data_processing,
-                submission_date, supplementary_file,
+                gsm,
+                series_id,
+                gpl,
+                organism,
+                title,
+                characteristics,
+                source_name,
+                extract_protocol,
+                description,
+                data_processing,
+                submission_date,
+                supplementary_file,
             ) = ["" if v is None else str(v) for v in raw]
             series_seen.append(series_id)
             for url in _iter_supp_files(supplementary_file):
@@ -246,16 +255,20 @@ def main(argv=None) -> int:
     )
     parser.add_argument("sqlite", help="path to GEOmetadb.sqlite")
     parser.add_argument(
-        "-o", "--output", default="gsminfo.csv.gz",
+        "-o",
+        "--output",
+        default="gsminfo.csv.gz",
         help="output CSV (.csv or .csv.gz, default: gsminfo.csv.gz)",
     )
     parser.add_argument(
-        "--ucsc-release", default=None,
+        "--ucsc-release",
+        default=None,
         help="ucsc_release CSV (default: scripts/ucsc_release.csv.gz bundled "
-             "in this folder, or pass a copy elsewhere)",
+        "in this folder, or pass a copy elsewhere)",
     )
     parser.add_argument(
-        "--keep-unicode", action="store_true",
+        "--keep-unicode",
+        action="store_true",
         help="keep non-ASCII text (upstream strips it with iconv)",
     )
     parser.add_argument("--quiet", action="store_true")
@@ -268,15 +281,15 @@ def main(argv=None) -> int:
         count = build_gsminfo(
             sqlite_path,
             Path(args.output),
-            ucsc_release_path=(
-                Path(args.ucsc_release) if args.ucsc_release else None
-            ),
+            ucsc_release_path=(Path(args.ucsc_release) if args.ucsc_release else None),
             keep_unicode=args.keep_unicode,
             quiet=args.quiet,
         )
     except sqlite3.OperationalError as exc:
-        print(f"error: {exc}\nIs {sqlite_path} really a GEOmetadb.sqlite?",
-              file=sys.stderr)
+        print(
+            f"error: {exc}\nIs {sqlite_path} really a GEOmetadb.sqlite?",
+            file=sys.stderr,
+        )
         return 2
     if count == 0:
         print("warning: no BED-like supplementary files matched", file=sys.stderr)

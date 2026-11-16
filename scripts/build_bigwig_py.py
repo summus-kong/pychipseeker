@@ -163,6 +163,7 @@ def write_bigwig(path, chrom_sizes, entries, compresslevel=9):
 # fixed header + chromosome B+ tree ("circles" tree)
 # ---------------------------------------------------------------------------
 
+
 def _pack_header():
     header = bytearray(_HEADER_SIZE)
     header[0:4] = pack("<I", BIGWIG_MAGIC)
@@ -218,6 +219,7 @@ def _pack_chrom_tree(chrom_sizes):
 # data sections: 24-byte section header + bedGraph items, zlib compressed
 # ---------------------------------------------------------------------------
 
+
 def _pack_data_sections(items, compresslevel):
     """Pack bedGraph items into zlib-compressed data sections."""
     sections = []
@@ -248,8 +250,7 @@ def _pack_data_sections(items, compresslevel):
             flush_section()
         if (
             section_items
-            and _SECTION_HEADER_SIZE
-            + (len(section_items) + 1) * _BEDGRAPH_ITEM_SIZE
+            and _SECTION_HEADER_SIZE + (len(section_items) + 1) * _BEDGRAPH_ITEM_SIZE
             > UNCOMPRESSED_BLOCK_SIZE
         ):
             flush_section()
@@ -280,6 +281,7 @@ def _pack_data_sections(items, compresslevel):
 # ---------------------------------------------------------------------------
 # total summary + R-tree index
 # ---------------------------------------------------------------------------
+
 
 def _pack_summary(items):
     n_bases = sum(end - start for _tid, start, end, _value in items)
@@ -421,6 +423,7 @@ def _pack_rtree(blocks, index_start):
 # in-place header patches
 # ---------------------------------------------------------------------------
 
+
 def _patch_u16(fh, offset, value):
     fh.seek(offset)
     fh.write(pack("<H", value))
@@ -439,6 +442,7 @@ def _patch_u64(fh, offset, value):
 # ---------------------------------------------------------------------------
 # CLI: bedGraph text + chrom sizes -> bigWig
 # ---------------------------------------------------------------------------
+
 
 def _main(argv=None):
     parser = argparse.ArgumentParser(

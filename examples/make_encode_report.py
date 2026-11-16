@@ -149,7 +149,9 @@ def _methods_page(ann, bigwig: Path) -> plt.Figure:
         "   python examples/make_encode_report.py\n"
         "   python examples/make_encode_plate.py"
     )
-    fig.text(0.06, 0.84, body, fontsize=10, va="top", family="monospace", linespacing=1.45)
+    fig.text(
+        0.06, 0.84, body, fontsize=10, va="top", family="monospace", linespacing=1.45
+    )
     fig.text(0.06, 0.06, f"pychipseeker {__version__}", fontsize=9, color="0.4")
     return fig
 
@@ -159,7 +161,9 @@ def main() -> int:
     parser.add_argument("--peaks", default=str(HERE / "encode_peaks.bed"))
     parser.add_argument("--bigwig", default=str(_default_bigwig()))
     parser.add_argument("--txdb", default="mm10")
-    parser.add_argument("--out", default=str(HERE / "output" / "encode" / "encode_report.pdf"))
+    parser.add_argument(
+        "--out", default=str(HERE / "output" / "encode" / "encode_report.pdf")
+    )
     args = parser.parse_args()
 
     bigwig = Path(args.bigwig)
@@ -184,9 +188,7 @@ def main() -> int:
     transcripts = ann.gene_annotation.features("transcript")
     n_signal = min(3000, len(transcripts))
     tss_subset = transcripts.sample(n=n_signal, random_state=20261026)
-    signal_matrix = pcs.extract_tss_matrix(
-        bigwig, tss_subset, window=2000, n_bins=100
-    )
+    signal_matrix = pcs.extract_tss_matrix(bigwig, tss_subset, window=2000, n_bins=100)
 
     pages = [(ann.plot_anno_pie()[0], "Annotation distribution (pie)")]
     pages.append((ann.plot_anno_bar()[0], "Annotation distribution (bar)"))

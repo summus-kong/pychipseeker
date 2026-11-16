@@ -68,9 +68,7 @@ def test_frip_bigwig_harmonises_chromosomes() -> None:
 
 def test_tss_enrichment_uses_center_and_flanks() -> None:
     pytest.importorskip("pyBigWig")
-    genes = pd.DataFrame(
-        {"chrom": ["chr5"], "tss": [121_712_100], "strand": ["+"]}
-    )
+    genes = pd.DataFrame({"chrom": ["chr5"], "tss": [121_712_100], "strand": ["+"]})
     result = tss_enrichment(
         genes,
         bigwig=example_signal_path(),
@@ -214,9 +212,7 @@ def test_frip_bam_real_file(small_bam: Path) -> None:
     # MAPQ 10 drops the low-quality read from the denominator.
     assert frip(peaks, bam=small_bam, min_mapping_quality=10) == pytest.approx(2 / 5)
     # Keeping duplicates adds one read both inside and outside the peak.
-    assert frip(
-        peaks, bam=small_bam, exclude_duplicates=False
-    ) == pytest.approx(3 / 7)
+    assert frip(peaks, bam=small_bam, exclude_duplicates=False) == pytest.approx(3 / 7)
 
 
 def test_frip_bam_indexed_counting_path(
@@ -354,9 +350,7 @@ def test_bam_tag_matrix_real_file(small_bam: Path) -> None:
             "strand": ["+", "-"],
         }
     )
-    matrix = get_tag_matrix_from_bam(
-        small_bam, windows, nbin=4, value_type="mean"
-    )
+    matrix = get_tag_matrix_from_bam(small_bam, windows, nbin=4, value_type="mean")
     assert matrix.shape == (2, 4)
     # The reverse-strand row is the forward profile flipped.
     np.testing.assert_allclose(matrix[1], matrix[0][::-1])

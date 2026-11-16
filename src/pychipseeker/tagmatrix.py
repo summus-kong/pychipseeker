@@ -193,10 +193,14 @@ def _make_region_table(
     else:
         if region_type == "start_site":
             # 0-based TSS base: gene start on '+', gene end-1 on '-'.
-            tss = df["tss"].to_numpy(dtype=np.int64) if "tss" in df.columns else np.where(
-                df["strand"].to_numpy() == "-",
-                df["end"].to_numpy(dtype=np.int64) - 1,
-                df["start"].to_numpy(dtype=np.int64),
+            tss = (
+                df["tss"].to_numpy(dtype=np.int64)
+                if "tss" in df.columns
+                else np.where(
+                    df["strand"].to_numpy() == "-",
+                    df["end"].to_numpy(dtype=np.int64) - 1,
+                    df["start"].to_numpy(dtype=np.int64),
+                )
             )
             plus = df["strand"].to_numpy() == "+"
             minus = df["strand"].to_numpy() == "-"
@@ -212,8 +216,12 @@ def _make_region_table(
         else:  # end_site
             plus = df["strand"].to_numpy() == "+"
             minus = df["strand"].to_numpy() == "-"
-            start = np.where(plus, df["end"].to_numpy() - int(upstream), df["start"].to_numpy())
-            end = np.where(plus, df["end"].to_numpy() + int(downstream), df["end"].to_numpy())
+            start = np.where(
+                plus, df["end"].to_numpy() - int(upstream), df["start"].to_numpy()
+            )
+            end = np.where(
+                plus, df["end"].to_numpy() + int(downstream), df["end"].to_numpy()
+            )
             start = np.where(minus, df["start"].to_numpy() + 1 - int(downstream), start)
             end = np.where(minus, df["start"].to_numpy() + 1 + int(upstream), end)
             unknown = ~(plus | minus)
@@ -377,13 +385,11 @@ def _coverage_track(
     starts = starts[valid]
     ends = ends[valid]
     weights = weights[valid]
-    coords, inverse = np.unique(
-        np.concatenate([starts, ends]), return_inverse=True
-    )
+    coords, inverse = np.unique(np.concatenate([starts, ends]), return_inverse=True)
     changes = np.concatenate([weights, -weights])
-    deltas = np.bincount(
-        inverse, weights=changes, minlength=coords.size
-    ).astype(float, copy=False)
+    deltas = np.bincount(inverse, weights=changes, minlength=coords.size).astype(
+        float, copy=False
+    )
     # Track how many peaks are active in each segment so rounding residues in
     # the cumulative weight cannot leak phantom coverage into peak-free gaps.
     active_changes = np.concatenate(
@@ -525,7 +531,9 @@ def _coverage_parallel_floor() -> int:
     return _COVERAGE_MIN_WINDOWS
 
 
-_COVERAGE_WORKER: Optional[tuple[dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]], Optional[int], bool]] = None
+_COVERAGE_WORKER: Optional[
+    tuple[dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]], Optional[int], bool]
+] = None
 
 
 def _coverage_worker_init(
@@ -568,10 +576,7 @@ def _coverage_matrix(
 
     by_chrom = _peak_arrays(peaks)
     workers = effective_jobs(n_jobs, tasks=len(windows))
-    if (
-        workers > 1
-        and len(windows) >= _coverage_parallel_floor() * workers
-    ):
+    if workers > 1 and len(windows) >= _coverage_parallel_floor() * workers:
         chunks = [
             windows.iloc[start:stop].reset_index(drop=True)
             for start, stop in chunk_bounds(len(windows), workers * 4)
@@ -625,8 +630,7 @@ def _bigwig_matrix(
 
     if str(value_type) not in {"sum", "mean", "max", "min", "coverage", "std"}:
         raise ValueError(
-            "unsupported bigWig value_type; choose sum, mean, max, min, "
-            "coverage or std"
+            "unsupported bigWig value_type; choose sum, mean, max, min, coverage or std"
         )
 
     bw = pyBigWig.open(str(bigwig))
@@ -646,9 +650,7 @@ def _bigwig_matrix(
         starts = pd.to_numeric(windows["start"], errors="coerce").to_numpy(
             dtype=np.int64
         )
-        ends = pd.to_numeric(windows["end"], errors="coerce").to_numpy(
-            dtype=np.int64
-        )
+        ends = pd.to_numeric(windows["end"], errors="coerce").to_numpy(dtype=np.int64)
         chroms = windows["chrom"].astype(str).to_numpy()
         strands = windows["strand"].astype(str).to_numpy()
         chrom_lengths = np.array(
@@ -711,9 +713,9 @@ def _bigwig_matrix(
                 if block is not None:
                     matrix[np.searchsorted(rows_idx, block_rows)] = block
         else:
-            vectorised = intervals_fn is not None and str(
-                value_type
-            ) in VECTORISED_VALUE_TYPES
+            vectorised = (
+                intervals_fn is not None and str(value_type) in VECTORISED_VALUE_TYPES
+            )
             if vectorised:
                 assert intervals_fn is not None
                 # Read each chromosome once and integrate the intervals at the
@@ -759,7 +761,9 @@ def _bigwig_matrix(
         bw.close()
 
 
-def _bin_signal(values: np.ndarray, n_bins: Optional[int], value_type: str) -> np.ndarray:
+def _bin_signal(
+    values: np.ndarray, n_bins: Optional[int], value_type: str
+) -> np.ndarray:
     """Aggregate per-base coverage into ``n_bins`` bins."""
 
     values = np.asarray(values, dtype=float)
@@ -817,9 +821,7 @@ def _bam_matrix_rows(
         references = list(getattr(handle, "references", []) or [])
         windows = windows.reset_index(drop=True)
         if references:
-            windows, _ = harmonize_frame(
-                windows, references, column="chrom", copy=True
-            )
+            windows, _ = harmonize_frame(windows, references, column="chrom", copy=True)
         strands = windows["strand"].astype(str).to_numpy()
         rows: list[np.ndarray] = []
         kept: list[pd.Series] = []
@@ -835,12 +837,14 @@ def _bam_matrix_rows(
                     start,
                     end,
                     quality_threshold=0,
-                    read_callback=lambda read: not (
-                        read.is_unmapped
-                        or read.is_secondary
-                        or read.is_supplementary
-                        or (exclude_duplicates and read.is_duplicate)
-                        or int(read.mapping_quality) < int(min_mapping_quality)
+                    read_callback=lambda read: (
+                        not (
+                            read.is_unmapped
+                            or read.is_secondary
+                            or read.is_supplementary
+                            or (exclude_duplicates and read.is_duplicate)
+                            or int(read.mapping_quality) < int(min_mapping_quality)
+                        )
                     ),
                 )
             except (ValueError, KeyError):
@@ -858,7 +862,9 @@ def _bam_matrix_rows(
 
         if not rows:
             width = int(n_bins) if n_bins is not None else 0
-            return np.empty((0, width), dtype=float), pd.DataFrame(columns=windows.columns)
+            return np.empty((0, width), dtype=float), pd.DataFrame(
+                columns=windows.columns
+            )
         return np.vstack(rows), pd.DataFrame(kept).reset_index(drop=True)
     finally:
         handle.close()
@@ -1089,9 +1095,13 @@ def get_tag_matrix(
         )
     else:
         windows_df = _window_frame(windows)
-        upstream = int(upstream) if upstream is not None else windows_df.attrs.get("upstream")
+        upstream = (
+            int(upstream) if upstream is not None else windows_df.attrs.get("upstream")
+        )
         downstream = (
-            int(downstream) if downstream is not None else windows_df.attrs.get("downstream")
+            int(downstream)
+            if downstream is not None
+            else windows_df.attrs.get("downstream")
         )
         if by == "gene" and windows_df.attrs.get("by"):
             by = str(windows_df.attrs["by"])
@@ -1129,7 +1139,9 @@ def get_tag_matrix(
                 # Preserve extra BED columns through _normalise_peaks; common
                 # weight columns are named in the BED extra columns.
                 raise KeyError(f"weight column not found: {weightCol}")
-            peaks["_weight"] = pd.to_numeric(peaks[weightCol], errors="coerce").fillna(0.0)
+            peaks["_weight"] = pd.to_numeric(peaks[weightCol], errors="coerce").fillna(
+                0.0
+            )
         matrix, kept, is_binning = _coverage_matrix(
             peaks,
             windows_df,
@@ -1248,11 +1260,19 @@ def example_signal_provenance() -> dict:
 
 def _as_matrix(tag_matrix) -> tuple[np.ndarray, Optional[int], Optional[int]]:
     if isinstance(tag_matrix, TagMatrix):
-        return np.asarray(tag_matrix, dtype=float), tag_matrix.upstream, tag_matrix.downstream
+        return (
+            np.asarray(tag_matrix, dtype=float),
+            tag_matrix.upstream,
+            tag_matrix.downstream,
+        )
     arr = np.asarray(tag_matrix, dtype=float)
     if arr.ndim != 2:
         raise ValueError("tagMatrix must be 2-dimensional")
-    return arr, getattr(tag_matrix, "upstream", None), getattr(tag_matrix, "downstream", None)
+    return (
+        arr,
+        getattr(tag_matrix, "upstream", None),
+        getattr(tag_matrix, "downstream", None),
+    )
 
 
 def _x_coordinates(

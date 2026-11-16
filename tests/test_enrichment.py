@@ -50,8 +50,7 @@ def test_ora_hypergeometric_and_bh():
     assert first["QuerySize"] == 5
     assert first["FoldEnrichment"] == pytest.approx(6.0)
     expected = sum(
-        math.comb(10, k) * math.comb(90, 5 - k) / math.comb(100, 5)
-        for k in range(3, 6)
+        math.comb(10, k) * math.comb(90, 5 - k) / math.comb(100, 5) for k in range(3, 6)
     )
     assert first["PValue"] == pytest.approx(expected)
     # BH values are monotone in the original p-value order.
@@ -65,9 +64,7 @@ def test_ora_hypergeometric_and_bh():
 def test_ora_gmt_and_min_overlap(tmp_path):
     gmt = tmp_path / "sets.gmt"
     gmt.write_text(
-        "term A\tdesc\tg1\tg2\tg3\n"
-        "term B\tdesc\tg1\tg4\tg5\n"
-        "term C\tdesc\tg9\tg10\n",
+        "term A\tdesc\tg1\tg2\tg3\nterm B\tdesc\tg1\tg4\tg5\nterm C\tdesc\tg9\tg10\n",
         encoding="utf-8",
     )
     sets = read_gmt(gmt)

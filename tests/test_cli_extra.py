@@ -51,9 +51,9 @@ def test_parse_ints_rejects_wrong_arity(tmp_path: Path, examples_dir: Path) -> N
 
 def test_read_gene_list_table_and_text(tmp_path: Path) -> None:
     table = tmp_path / "genes.tsv"
-    pd.DataFrame(
-        {"gene_name": ["A", "B", "A", None], "score": [1, 2, 3, 4]}
-    ).to_csv(table, sep="\t", index=False)
+    pd.DataFrame({"gene_name": ["A", "B", "A", None], "score": [1, 2, 3, 4]}).to_csv(
+        table, sep="\t", index=False
+    )
     assert _read_gene_list(table) == ["A", "B"]
 
     gene_id_table = tmp_path / "genes.csv"
@@ -72,9 +72,7 @@ def test_enrich_validation_errors(tmp_path: Path, examples_dir: Path) -> None:
         main(["enrich", "--annotated", str(missing_column), "--outdir", str(tmp_path)])
 
     empty_genes = tmp_path / "empty-genes.tsv"
-    pd.DataFrame({"gene_name": [None, None]}).to_csv(
-        empty_genes, sep="\t", index=False
-    )
+    pd.DataFrame({"gene_name": [None, None]}).to_csv(empty_genes, sep="\t", index=False)
     with pytest.raises(SystemExit, match="no genes to enrich"):
         main(
             [
@@ -87,11 +85,18 @@ def test_enrich_validation_errors(tmp_path: Path, examples_dir: Path) -> None:
         )
 
     annotated = tmp_path / "annotated.tsv"
-    pd.DataFrame({"gene_name": ["GeneA"]}).to_csv(
-        annotated, sep="\t", index=False
-    )
+    pd.DataFrame({"gene_name": ["GeneA"]}).to_csv(annotated, sep="\t", index=False)
     with pytest.raises(SystemExit, match="--local requires --gmt"):
-        main(["enrich", "--annotated", str(annotated), "--local", "--outdir", str(tmp_path)])
+        main(
+            [
+                "enrich",
+                "--annotated",
+                str(annotated),
+                "--local",
+                "--outdir",
+                str(tmp_path),
+            ]
+        )
 
 
 def test_enrich_remote_and_plot(

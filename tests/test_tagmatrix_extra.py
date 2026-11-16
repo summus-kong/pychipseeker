@@ -57,9 +57,7 @@ def model(examples_dir) -> GeneAnnotation:
 
 @pytest.fixture
 def windows() -> pd.DataFrame:
-    return pd.DataFrame(
-        {"chrom": ["chr1"], "start": [0], "end": [10], "strand": ["+"]}
-    )
+    return pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10], "strand": ["+"]})
 
 
 def test_tag_matrix_metadata_helpers():
@@ -94,9 +92,7 @@ def test_resolve_annotation_from_paths_and_frames(examples_dir, monkeypatch):
     assert _resolve_annotation(annotation="hg38") is sentinel
 
     spec = "ensembl:test"
-    monkeypatch.setattr(
-        genomes, "is_genome_spec", lambda value: str(value) == spec
-    )
+    monkeypatch.setattr(genomes, "is_genome_spec", lambda value: str(value) == spec)
     monkeypatch.setattr(genomes, "load_annotation", lambda value: sentinel)
     assert _resolve_annotation(annotation=spec) is sentinel
 
@@ -209,9 +205,7 @@ def test_window_frame_path_and_validation(tmp_path):
     assert _window_frame(frame)["strand"].tolist() == ["*"]
 
     from_file = _window_frame(
-        pd.DataFrame(
-            {"chrom": ["chr1"], "start": [0], "end": [10], "strand": ["?"]}
-        )
+        pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10], "strand": ["?"]})
     )
     assert from_file["strand"].tolist() == ["*"]
 
@@ -222,16 +216,22 @@ def test_window_frame_path_and_validation(tmp_path):
 
 
 def test_coverage_track_and_row_edge_cases(windows):
-    assert _coverage_track(
-        np.array([], dtype=np.int64),
-        np.array([], dtype=np.int64),
-        np.array([], dtype=float),
-    ) is None
-    assert _coverage_track(
-        np.array([10], dtype=np.int64),
-        np.array([10], dtype=np.int64),
-        np.array([1.0]),
-    ) is None
+    assert (
+        _coverage_track(
+            np.array([], dtype=np.int64),
+            np.array([], dtype=np.int64),
+            np.array([], dtype=float),
+        )
+        is None
+    )
+    assert (
+        _coverage_track(
+            np.array([10], dtype=np.int64),
+            np.array([10], dtype=np.int64),
+            np.array([1.0]),
+        )
+        is None
+    )
 
     empty = pd.DataFrame({"chrom": [], "start": [], "end": [], "strand": []})
     matrix, kept = _coverage_rows({}, empty, n_bins=4, ignore_strand=False)
@@ -362,9 +362,7 @@ def test_bigwig_matrix_validation(monkeypatch, windows):
             "x.bw", windows, n_bins=2, ignore_strand=False, value_type="median"
         )
     with pytest.raises(ValueError, match="windows is empty"):
-        _bigwig_matrix(
-            "x.bw", windows.iloc[0:0], n_bins=2, ignore_strand=False
-        )
+        _bigwig_matrix("x.bw", windows.iloc[0:0], n_bins=2, ignore_strand=False)
 
     unequal = pd.DataFrame(
         {
@@ -463,7 +461,9 @@ def test_bin_signal_value_types_and_validation():
     np.testing.assert_allclose(_bin_signal(values, 2, "sum"), [2.0, 4.0])
     np.testing.assert_allclose(_bin_signal(values, 2, "max"), [2.0, 4.0])
     np.testing.assert_allclose(_bin_signal(values, 2, "coverage"), [0.5, 0.5])
-    np.testing.assert_allclose(_bin_signal(values, 5, "mean"), [0.0, 0.0, 2.0, 4.0, 0.0])
+    np.testing.assert_allclose(
+        _bin_signal(values, 5, "mean"), [0.0, 0.0, 2.0, 4.0, 0.0]
+    )
 
 
 class _FakeAlignmentFile:
@@ -552,9 +552,7 @@ def test_bam_matrix_validation(monkeypatch, windows):
             "x.bam", windows, n_bins=2, ignore_strand=False, value_type="median"
         )
     with pytest.raises(ValueError, match="no windows overlap"):
-        _bam_matrix(
-            "x.bam", windows.iloc[0:0], n_bins=2, ignore_strand=False
-        )
+        _bam_matrix("x.bam", windows.iloc[0:0], n_bins=2, ignore_strand=False)
 
     unequal = pd.DataFrame(
         {
@@ -634,18 +632,14 @@ def test_get_tag_matrix_dispatch_errors(windows):
 
     peaks = pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10]})
     with pytest.raises(KeyError, match="weight column not found"):
-        get_tag_matrix(
-            peak=peaks, windows=windows, weightCol="missing", nbin=2
-        )
+        get_tag_matrix(peak=peaks, windows=windows, weightCol="missing", nbin=2)
 
 
 def test_get_tag_matrix_defaults_and_verbose(model, capsys):
     peaks = pd.DataFrame(
         {"chrom": ["chr1", "chr2"], "start": [1000, 5000], "end": [1100, 5100]}
     )
-    matrix = get_tag_matrix(
-        peak=peaks, annotation=model, nbin=5, verbose=True
-    )
+    matrix = get_tag_matrix(peak=peaks, annotation=model, nbin=5, verbose=True)
     assert matrix.upstream == 3000
     assert matrix.downstream == 3000
     assert "tag matrix:" in capsys.readouterr().out

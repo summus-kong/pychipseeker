@@ -232,7 +232,9 @@ def test_from_gtf_rejects_invalid_inputs() -> None:
     with pytest.raises(TypeError, match="path or a pandas"):
         GeneAnnotation.from_gtf(123)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="'feature' column"):
-        GeneAnnotation.from_gtf(pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [1]}))
+        GeneAnnotation.from_gtf(
+            pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [1]})
+        )
     with pytest.raises(ValueError, match="no valid feature records"):
         GeneAnnotation.from_gtf(
             pd.DataFrame(
@@ -515,34 +517,45 @@ def test_normalise_peaks_ids_and_renames() -> None:
     with pytest.raises(ValueError, match="missing columns"):
         _normalise_peaks(pd.DataFrame({"chrom": ["chr1"]}))
     with pytest.raises(ValueError, match="non-numeric"):
-        _normalise_peaks(
-            pd.DataFrame({"chrom": ["chr1"], "start": ["x"], "end": [10]})
-        )
+        _normalise_peaks(pd.DataFrame({"chrom": ["chr1"], "start": ["x"], "end": [10]}))
 
     peak_id_only = _normalise_peaks(
-        pd.DataFrame(
-            {"chrom": ["chr1"], "start": [0], "end": [10], "peak_id": ["p1"]}
-        )
+        pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10], "peak_id": ["p1"]})
     )
     assert peak_id_only.loc[0, "name"] == "p1"
 
     missing_names = _normalise_peaks(
         pd.DataFrame(
-            {"chrom": ["chr1", "chr1"], "start": [0, 10], "end": [10, 20], "name": [np.nan, "."]}
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 10],
+                "end": [10, 20],
+                "name": [np.nan, "."],
+            }
         )
     )
     assert list(missing_names["peak_id"]) == ["peak_1", "peak_2"]
 
     invalid_names = _normalise_peaks(
         pd.DataFrame(
-            {"chrom": ["chr1", "chr1"], "start": [0, 10], "end": [10, 20], "name": ["", "p2"]}
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 10],
+                "end": [10, 20],
+                "name": ["", "p2"],
+            }
         )
     )
     assert list(invalid_names["name"]) == ["peak_1", "p2"]
 
     duplicate_names = _normalise_peaks(
         pd.DataFrame(
-            {"chrom": ["chr1", "chr1"], "start": [0, 10], "end": [10, 20], "name": ["p", "p"]}
+            {
+                "chrom": ["chr1", "chr1"],
+                "start": [0, 10],
+                "end": [10, 20],
+                "name": ["p", "p"],
+            }
         )
     )
     assert list(duplicate_names["peak_id"]) == ["p", "p_2"]
@@ -645,9 +658,7 @@ def test_annotate_peak_ignore_neighbour_flags(examples_dir: Path) -> None:
 
 def test_annotate_peak_empty_and_all_dropped(examples_dir: Path) -> None:
     model = GeneAnnotation.from_gtf(examples_dir / "example.gtf")
-    empty = annotate_peak(
-        pd.DataFrame(columns=["chrom", "start", "end"]), gtf=model
-    )
+    empty = annotate_peak(pd.DataFrame(columns=["chrom", "start", "end"]), gtf=model)
     assert empty.annotation.empty
     assert empty.detail_genomic_annotation.empty
 
@@ -943,9 +954,7 @@ def test_annotate_peaks_frame_parallel_paths(
 
     model.source = ("gtf", str(examples_dir / "example.gtf"))
     config = _config(total=n_peaks, verbose=True)
-    records, details, dropped = _annotate_peaks_frame(
-        model, peaks, config, n_jobs=-1
-    )
+    records, details, dropped = _annotate_peaks_frame(model, peaks, config, n_jobs=-1)
     assert captured["workers"] == 4
     assert captured["chunks"] > 1
     assert len(records) + dropped == n_peaks

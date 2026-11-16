@@ -124,8 +124,7 @@ def test_stats_page_renders_features(examples_dir: Path) -> None:
     fig = _stats_page(annotation)
     cells = fig.axes[0].tables[0]
     features = {
-        _cell(cells[(row, 0)])
-        for row in range(1, len(annotation.anno_stat()) + 1)
+        _cell(cells[(row, 0)]) for row in range(1, len(annotation.anno_stat()) + 1)
     }
     assert any(feature.startswith("Promoter") for feature in features)
     assert "Distal Intergenic" in features

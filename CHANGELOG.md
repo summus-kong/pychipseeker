@@ -4,6 +4,17 @@ All notable changes to pychipseeker are documented here.  The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- `ruff format` is applied across `src`, `tests`, `examples` and `scripts`,
+  and CI now fails when formatting drifts.
+- The duplicated binomial/hypergeometric/p-value helpers in `compat.py` and
+  `enrichment.py` now live once in the private `_stats` module.  Both call
+  sites accept the union of the previously supported method spellings
+  (`BH`/`fdr`, `Bonferroni`/`bonf`, `none`/`no`/`nop`/`raw`).
+
 ## [0.8.5] - 2026-11-16
 
 ### Changed

@@ -1,6 +1,5 @@
 """Tests for the bundled ENCODE H3K4me3 demo signal bigWig."""
 
-
 import pytest
 
 from pychipseeker.tagmatrix import example_signal_path, example_signal_provenance
@@ -12,7 +11,13 @@ def _bundle_path():
     except FileNotFoundError:  # pragma: no cover - package-data fallback
         from pathlib import Path
 
-        path = Path(__file__).resolve().parent / "src" / "pychipseeker" / "data" / "ENCODE_demo_signal.bw"
+        path = (
+            Path(__file__).resolve().parent
+            / "src"
+            / "pychipseeker"
+            / "data"
+            / "ENCODE_demo_signal.bw"
+        )
         return path if path.exists() else None
 
 

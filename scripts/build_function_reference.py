@@ -360,41 +360,107 @@ PARAM_DOCS: Dict[str, str] = {
 
 
 OVERRIDES: Dict[Tuple[str, str], str] = {
-    ("annotate_peak", "peaks"): "Peak file or DataFrame to annotate. Required unless supplied through a compatibility alias.",
-    ("annotate_peak", "gtf"): "Gene model to annotate against; mutually exclusive with `TxDb`.",
-    ("annotate_peak", "TxDb"): "Assembly name, GTF/GFF path, DataFrame or `GeneAnnotation`; mutually exclusive with `gtf`.",
-    ("annotate_peak", "tss_region"): "Promoter window `(upstream, downstream)` in bp; negative upstream, positive downstream.",
-    ("annotate_peak", "level"): "`transcript` (default) or `gene`; controls which feature set supplies TSSs.",
-    ("annotate_peak", "upstream"): "Convenience alias for the upstream side of `tss_region`.",
-    ("annotate_peak", "downstream"): "Convenience alias for the downstream side of `tss_region`.",
-    ("annotate_peak", "promoter_bins"): "Promoter bin edges in bp; defaults to `tss_region` plus ChIPseeker's standard bins.",
-    ("annotate_peak", "overlap"): "`TSS` assigns features only near the TSS; `all` considers every overlapping feature span.",
-    ("annotate_peak", "n_jobs"): "`None`/`1` sequential, `-1` all cores, or an explicit worker count.",
-    ("annotate_peak", "kwargs"): "R-style aliases such as `tssRegion`, `genomicAnnotationPriority`, `peak`, `annotation`, `annoDb` and `columns`.",
-    ("annotate_db", "annotation"): "Annotated result whose gene columns should be extended.",
-    ("annotate_db", "anno_db"): "Gene annotation table/mapping/path keyed by `gene_id`.",
-    ("seq2gene", "gtf"): "Gene model used to link peaks to genes; mutually exclusive with `gene_annotation`.",
-    ("seq2gene", "gene_annotation"): "Prebuilt `GeneAnnotation`; mutually exclusive with `gtf`.",
+    (
+        "annotate_peak",
+        "peaks",
+    ): "Peak file or DataFrame to annotate. Required unless supplied through a compatibility alias.",
+    (
+        "annotate_peak",
+        "gtf",
+    ): "Gene model to annotate against; mutually exclusive with `TxDb`.",
+    (
+        "annotate_peak",
+        "TxDb",
+    ): "Assembly name, GTF/GFF path, DataFrame or `GeneAnnotation`; mutually exclusive with `gtf`.",
+    (
+        "annotate_peak",
+        "tss_region",
+    ): "Promoter window `(upstream, downstream)` in bp; negative upstream, positive downstream.",
+    (
+        "annotate_peak",
+        "level",
+    ): "`transcript` (default) or `gene`; controls which feature set supplies TSSs.",
+    (
+        "annotate_peak",
+        "upstream",
+    ): "Convenience alias for the upstream side of `tss_region`.",
+    (
+        "annotate_peak",
+        "downstream",
+    ): "Convenience alias for the downstream side of `tss_region`.",
+    (
+        "annotate_peak",
+        "promoter_bins",
+    ): "Promoter bin edges in bp; defaults to `tss_region` plus ChIPseeker's standard bins.",
+    (
+        "annotate_peak",
+        "overlap",
+    ): "`TSS` assigns features only near the TSS; `all` considers every overlapping feature span.",
+    (
+        "annotate_peak",
+        "n_jobs",
+    ): "`None`/`1` sequential, `-1` all cores, or an explicit worker count.",
+    (
+        "annotate_peak",
+        "kwargs",
+    ): "R-style aliases such as `tssRegion`, `genomicAnnotationPriority`, `peak`, `annotation`, `annoDb` and `columns`.",
+    (
+        "annotate_db",
+        "annotation",
+    ): "Annotated result whose gene columns should be extended.",
+    (
+        "annotate_db",
+        "anno_db",
+    ): "Gene annotation table/mapping/path keyed by `gene_id`.",
+    (
+        "seq2gene",
+        "gtf",
+    ): "Gene model used to link peaks to genes; mutually exclusive with `gene_annotation`.",
+    (
+        "seq2gene",
+        "gene_annotation",
+    ): "Prebuilt `GeneAnnotation`; mutually exclusive with `gtf`.",
     ("seq2gene", "tss_region"): "Promoter window used for the link.",
-    ("seq2gene", "flank_distance"): "Flank window used when a peak is not in a promoter.",
+    (
+        "seq2gene",
+        "flank_distance",
+    ): "Flank window used when a peak is not in a promoter.",
     ("seq2gene_links", "gtf"): "Gene model used to build the peak-to-gene link table.",
     ("get_flanking_genes", "model"): "`GeneAnnotation` that supplies the gene models.",
     ("get_flanking_genes", "peaks"): "Peaks whose flanking genes should be found.",
-    ("get_genomic_anno_stat", "annotations"): "Annotation labels, usually `ann.detail['annotation']`.",
-    ("get_genomic_anno_stat", "downstream_distance"): "Downstream distance used by the `Downstream` label.",
+    (
+        "get_genomic_anno_stat",
+        "annotations",
+    ): "Annotation labels, usually `ann.detail['annotation']`.",
+    (
+        "get_genomic_anno_stat",
+        "downstream_distance",
+    ): "Downstream distance used by the `Downstream` label.",
     ("promoter_label", "distance"): "Signed distance from the peak to the TSS.",
     ("promoter_label", "bins"): "Promoter bin edges in bp.",
-    ("group_annotation", "annotation"): "Detailed ChIPseeker label to collapse to a major class.",
+    (
+        "group_annotation",
+        "annotation",
+    ): "Detailed ChIPseeker label to collapse to a major class.",
     ("read_gtf", "features"): "Feature types to keep; `None` reads all records.",
-    ("read_peaks", "fmt"): "Input format override; inferred from the suffix when omitted.",
-    ("read_peaks", "path"): "BED, narrowPeak/broadPeak/gappedPeak, bigBed, BAM, TSV or CSV file.",
+    (
+        "read_peaks",
+        "fmt",
+    ): "Input format override; inferred from the suffix when omitted.",
+    (
+        "read_peaks",
+        "path",
+    ): "BED, narrowPeak/broadPeak/gappedPeak, bigBed, BAM, TSV or CSV file.",
     ("read_peak_file", "as_type"): "`dataframe` (default) or `GRanges`-like table.",
     ("read_peak_file", "kwargs"): "Forwarded to `read_peaks` and the format reader.",
     ("write_table", "df"): "Table to write as TSV.",
     ("write_table", "path"): "Destination TSV path.",
     ("write_peaks", "peaks"): "Peak table to write as BED6+.",
     ("write_peaks", "path"): "Destination BED path.",
-    ("filter_peaks", "blacklist"): "Blacklist BED path/DataFrame; any overlap removes the peak.",
+    (
+        "filter_peaks",
+        "blacklist",
+    ): "Blacklist BED path/DataFrame; any overlap removes the peak.",
     ("filter_peaks", "drop_mito"): "Remove `chrM`/`MT` peaks.",
     ("filter_peaks", "min_width"): "Keep peaks at least this wide.",
     ("filter_peaks", "max_width"): "Keep peaks at most this wide.",
@@ -405,44 +471,95 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("call_peaks", "threshold"): "Minimum signal for a base to belong to a peak.",
     ("call_peaks", "max_gap"): "Merge runs separated by at most this many bases.",
     ("call_peaks", "min_width"): "Discard merged runs shorter than this width.",
-    ("call_peaks", "sample"): "Optional downsampling of the signal track for quick tests.",
+    (
+        "call_peaks",
+        "sample",
+    ): "Optional downsampling of the signal track for quick tests.",
     ("call_peaks_macs", "treatment"): "Treatment BAM/CRAM file.",
     ("call_peaks_macs", "control"): "Optional control BAM/CRAM file.",
     ("call_peaks_macs", "genome"): "Genome name understood by MACS.",
     ("call_peaks_macs", "backend"): "`macs2` or `macs3`.",
     ("call_peaks_macs", "extra_args"): "Extra MACS command-line arguments.",
-    ("combine_cs_anno", "annotations"): "Two or more `PeakAnnotation` objects to combine.",
+    (
+        "combine_cs_anno",
+        "annotations",
+    ): "Two or more `PeakAnnotation` objects to combine.",
     ("drop_anno", "annotation"): "`PeakAnnotation` or annotation table to filter.",
-    ("drop_anno", "distance_to_tss_cutoff"): "Keep peaks with `abs(distance_to_tss) < cutoff`.",
+    (
+        "drop_anno",
+        "distance_to_tss_cutoff",
+    ): "Keep peaks with `abs(distance_to_tss) < cutoff`.",
     ("get_anno_stat", "annotation"): "`PeakAnnotation` or annotation table.",
-    ("detail_genomic_annotation", "annotation"): "`PeakAnnotation` or annotation table.",
-    ("annotation_summary", "annotation"): "`PeakAnnotation` or a DataFrame with `chrom`, `start`, `end` and `annotation`.",
-    ("peaks_per_gene", "annotation"): "`PeakAnnotation` or annotation table with gene columns.",
+    (
+        "detail_genomic_annotation",
+        "annotation",
+    ): "`PeakAnnotation` or annotation table.",
+    (
+        "annotation_summary",
+        "annotation",
+    ): "`PeakAnnotation` or a DataFrame with `chrom`, `start`, `end` and `annotation`.",
+    (
+        "peaks_per_gene",
+        "annotation",
+    ): "`PeakAnnotation` or annotation table with gene columns.",
     ("top_genes", "n"): "Number of top genes to return.",
-    ("gene_type_summary", "top"): "Number of biotypes kept before folding the rest into `Other`.",
-    ("distance_summary", "thresholds"): "Distance cutoffs in bp used for the percentage rows.",
+    (
+        "gene_type_summary",
+        "top",
+    ): "Number of biotypes kept before folding the rest into `Other`.",
+    (
+        "distance_summary",
+        "thresholds",
+    ): "Distance cutoffs in bp used for the percentage rows.",
     ("signal_groups", "tag"): "Tag matrix whose rows are assigned to groups.",
-    ("signal_groups", "n_groups"): "Number of balanced groups; capped at the number of rows.",
-    ("tss_enrichment_by_quartile", "tag"): "Tag matrix used to compute centre/flank coverage.",
+    (
+        "signal_groups",
+        "n_groups",
+    ): "Number of balanced groups; capped at the number of rows.",
+    (
+        "tss_enrichment_by_quartile",
+        "tag",
+    ): "Tag matrix used to compute centre/flank coverage.",
     ("tss_enrichment_by_quartile", "n_groups"): "Number of signal groups.",
-    ("tss_enrichment_by_quartile", "center_fraction"): "Fraction of bins in the central window (default 5 %).",
-    ("tss_enrichment_by_quartile", "flank_fraction"): "Fraction of bins in the outer flanks (default 10 %).",
+    (
+        "tss_enrichment_by_quartile",
+        "center_fraction",
+    ): "Fraction of bins in the central window (default 5 %).",
+    (
+        "tss_enrichment_by_quartile",
+        "flank_fraction",
+    ): "Fraction of bins in the outer flanks (default 10 %).",
     ("get_promoters", "TxDb"): "Gene model used to build promoters.",
     ("get_promoters", "by"): "`gene` (default) or `transcript`.",
     ("get_promoters", "type"): "Anchor type; promoters use `start_site`.",
-    ("get_promoters", "annotation"): "Explicit `GeneAnnotation`, GTF path or DataFrame.",
+    (
+        "get_promoters",
+        "annotation",
+    ): "Explicit `GeneAnnotation`, GTF path or DataFrame.",
     ("get_promoters", "gtf"): "GTF/GFF path used when `TxDb`/`annotation` is omitted.",
     ("get_bio_region", "type"): "`start_site`, `end_site` or `body`.",
     ("get_bio_region", "by"): "`gene` or `transcript`.",
-    ("make_bio_region_from_granges", "gr"): "Interval table with `chrom`, `start`, `end` and optionally `strand`/`tss`.",
+    (
+        "make_bio_region_from_granges",
+        "gr",
+    ): "Interval table with `chrom`, `start`, `end` and optionally `strand`/`tss`.",
     ("make_bio_region_from_granges", "by"): "Feature level label stored in the output.",
     ("make_bio_region_from_granges", "type"): "`start_site`, `end_site` or `body`.",
-    ("get_tag_matrix", "peak"): "Peak file/DataFrame, or a bigWig path when `bigwig` is omitted.",
-    ("get_tag_matrix", "windows"): "Pre-built windows; a sequence returns a list of matrices.",
+    (
+        "get_tag_matrix",
+        "peak",
+    ): "Peak file/DataFrame, or a bigWig path when `bigwig` is omitted.",
+    (
+        "get_tag_matrix",
+        "windows",
+    ): "Pre-built windows; a sequence returns a list of matrices.",
     ("get_tag_matrix", "TxDb"): "Gene model used when `windows` is omitted.",
     ("get_tag_matrix", "type"): "Region type used when building windows.",
     ("get_tag_matrix", "by"): "`gene` or `transcript`.",
-    ("get_tag_matrix", "weightCol"): "Peak column used as weight instead of 1 per peak.",
+    (
+        "get_tag_matrix",
+        "weightCol",
+    ): "Peak column used as weight instead of 1 per peak.",
     ("get_tag_matrix", "nbin"): "Bins per window.",
     ("get_tag_matrix", "ignore_strand"): "Ignore window strand.",
     ("get_tag_matrix", "bigwig"): "Use signal coverage instead of peak coverage.",
@@ -452,17 +569,38 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("get_tag_matrix", "exclude_duplicates"): "Ignore duplicate BAM reads.",
     ("get_tag_matrix", "n_jobs"): "Parallel worker count for bigWig/BAM extraction.",
     ("get_tag_matrix_from_bigwig", "windows"): "Window table (one row per region).",
-    ("get_tag_matrix_from_bigwig", "value_type"): "`sum`, `mean`, `max`, `min`, `coverage` or `std`.",
+    (
+        "get_tag_matrix_from_bigwig",
+        "value_type",
+    ): "`sum`, `mean`, `max`, `min`, `coverage` or `std`.",
     ("get_tag_matrix_from_bam", "windows"): "Window table (one row per region).",
-    ("get_tag_matrix_from_bam", "value_type"): "`mean` (default) or another supported summary.",
-    ("extract_tss_matrix", "genes"): "TSS feature table; use `ann.gene_annotation.features('transcript')`.",
-    ("extract_tss_matrix", "window"): "Symmetric window size in bp when `upstream`/`downstream` are omitted.",
+    (
+        "get_tag_matrix_from_bam",
+        "value_type",
+    ): "`mean` (default) or another supported summary.",
+    (
+        "extract_tss_matrix",
+        "genes",
+    ): "TSS feature table; use `ann.gene_annotation.features('transcript')`.",
+    (
+        "extract_tss_matrix",
+        "window",
+    ): "Symmetric window size in bp when `upstream`/`downstream` are omitted.",
     ("extract_tss_matrix", "min_value"): "Values below this are treated as empty.",
     ("extract_tss_matrix", "drop_empty"): "Drop features with no signal.",
-    ("extract_tss_matrix", "return_mask"): "Return `(matrix, mask)` instead of only the matrix.",
+    (
+        "extract_tss_matrix",
+        "return_mask",
+    ): "Return `(matrix, mask)` instead of only the matrix.",
     ("extract_tss_matrix", "dtype"): "Output dtype (default `float64`).",
-    ("extract_tss_matrix_from_signal", "signal"): "bigWig path or precomputed signal table.",
-    ("extract_tss_matrix_from_signal", "chrom_sizes"): "Chromosome lengths used to clip windows.",
+    (
+        "extract_tss_matrix_from_signal",
+        "signal",
+    ): "bigWig path or precomputed signal table.",
+    (
+        "extract_tss_matrix_from_signal",
+        "chrom_sizes",
+    ): "Chromosome lengths used to clip windows.",
     ("plot_avg_prof", "tagMatrix"): "Tag matrix to average.",
     ("plot_avg_prof", "xlim"): "X-axis limits in bp relative to the anchor.",
     ("plot_avg_prof", "conf"): "Bootstrap confidence level; `None` hides the band.",
@@ -473,20 +611,32 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("plotAvgProf2", "peak"): "Peaks used to build the matrix.",
     ("plotAvgProf2", "upstream"): "Upstream window in bp.",
     ("plotAvgProf2", "downstream"): "Downstream window in bp.",
-    ("plot_peak_prof", "tagMatrix"): "Optional precomputed matrix; otherwise built from `peak`.",
+    (
+        "plot_peak_prof",
+        "tagMatrix",
+    ): "Optional precomputed matrix; otherwise built from `peak`.",
     ("plot_peak_prof", "windows_name"): "Names for multiple window sets.",
-    ("plot_peak_prof_multi_windows", "windows"): "Sequence of window tables to compare.",
+    (
+        "plot_peak_prof_multi_windows",
+        "windows",
+    ): "Sequence of window tables to compare.",
     ("plot_peak_prof_multi_windows", "windows_name"): "Labels for the window sets.",
     ("plot_multi_prof", "tagMatrices"): "Sequence of matrices to compare.",
     ("tag_heatmap", "tagMatrix"): "Matrix to draw.",
     ("tag_heatmap", "palette"): "Colormap name.",
     ("peak_heatmap", "peak"): "Peaks used to build the matrix.",
     ("peak_heatmap", "windows"): "Optional pre-built windows.",
-    ("peak_heatmap_multiple_sets", "peaks"): "Peak sets to compare; one heatmap row block per set.",
+    (
+        "peak_heatmap_multiple_sets",
+        "peaks",
+    ): "Peak sets to compare; one heatmap row block per set.",
     ("peak_heatmap_multiple_sets", "labels"): "Labels for the peak sets.",
     ("peak_profile_heatmap", "peak"): "Peaks used for the profile/heatmap pair.",
     ("plot_tss_profile", "matrix"): "Features x bins signal matrix.",
-    ("plot_tss_profile", "window"): "Symmetric window size when `upstream`/`downstream` are omitted.",
+    (
+        "plot_tss_profile",
+        "window",
+    ): "Symmetric window size when `upstream`/`downstream` are omitted.",
     ("plot_tss_profile", "show_sem"): "Draw the standard-error band.",
     ("plot_tss_heatmap", "matrix"): "Features x bins signal matrix.",
     ("plot_tss_heatmap", "sort_rows"): "Sort rows by mean signal.",
@@ -528,8 +678,14 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("enrich_kegg", "organism"): "Enrichr organism.",
     ("enrich_kegg", "outdir"): "Output directory.",
     ("enrich_peak_genes", "annotation"): "`PeakAnnotation` or annotation table.",
-    ("enrich_peak_genes", "upstream"): "Upstream promoter window for peak-to-gene links.",
-    ("enrich_peak_genes", "downstream"): "Downstream promoter window for peak-to-gene links.",
+    (
+        "enrich_peak_genes",
+        "upstream",
+    ): "Upstream promoter window for peak-to-gene links.",
+    (
+        "enrich_peak_genes",
+        "downstream",
+    ): "Downstream promoter window for peak-to-gene links.",
     ("enrich_peak_genes", "include_gene_body"): "Include gene-body links.",
     ("enrich_peak_genes", "gene_column"): "Gene identifier column.",
     ("enrich_peak_genes", "kwargs"): "Forwarded to `enrichr`.",
@@ -548,16 +704,28 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("plot_enrichment", "kind"): "`bar` or `dot`.",
     ("detect_assembly", "peaks"): "Peak table used to infer the assembly.",
     ("detect_assembly", "chrom_sizes"): "Chromosome sizes used for a stronger match.",
-    ("detect_assembly", "bigwig"): "bigWig header used to infer chromosome names/sizes.",
+    (
+        "detect_assembly",
+        "bigwig",
+    ): "bigWig header used to infer chromosome names/sizes.",
     ("detect_assembly", "tolerance"): "Relative size tolerance for the match.",
-    ("load_genome", "assembly"): "Assembly name; `None` loads the default supported bundle.",
+    (
+        "load_genome",
+        "assembly",
+    ): "Assembly name; `None` loads the default supported bundle.",
     ("load_genome", "refresh"): "Rebuild/re-download even when cached.",
     ("load_annotation", "spec"): "Assembly name or `ensembl:`/`gencode:`/`url:` spec.",
     ("download_genome", "assembly"): "Assembly to download.",
     ("download_gtf", "spec"): "Ensembl/GENCODE/URL spec.",
     ("download_gtf", "dest"): "Destination GTF path.",
-    ("clear_genome_cache", "assembly"): "Assembly to clear; `None` clears all user-cached genomes.",
-    ("genome_provenance", "assembly"): "Assembly whose provenance record should be returned.",
+    (
+        "clear_genome_cache",
+        "assembly",
+    ): "Assembly to clear; `None` clears all user-cached genomes.",
+    (
+        "genome_provenance",
+        "assembly",
+    ): "Assembly whose provenance record should be returned.",
     ("canonical_chrom", "value"): "Chromosome name to normalize.",
     ("chromosome_style", "names"): "Chromosome names to classify.",
     ("harmonize_frame", "frame"): "DataFrame to harmonize.",
@@ -575,7 +743,10 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("vennplot_peakfile", "peakfiles"): "Peak files to compare.",
     ("vennpie", "annotation"): "`PeakAnnotation` whose detailed labels are summarized.",
     ("vennpie", "r"): "Inner radius of the nested pie.",
-    ("upsetplot", "annotation"): "`PeakAnnotation` whose annotation flags are compared.",
+    (
+        "upsetplot",
+        "annotation",
+    ): "`PeakAnnotation` whose annotation flags are compared.",
     ("upsetplot", "order_by"): "`freq` or `degree`.",
     ("upsetplot", "vennpie"): "Add a nested pie alongside the UpSet plot.",
     ("upsetplot", "n_intersections"): "Maximum intersections shown.",
@@ -681,9 +852,17 @@ CLASS_NOTES: Dict[str, str] = {
 CLASS_ATTRIBUTES: Dict[str, Sequence[Tuple[str, str, str]]] = {
     "PeakAnnotation": (
         ("peaks", "DataFrame", "Input peak table, including `score` when available."),
-        ("annotation", "DataFrame", "One row per annotated peak with snake_case columns."),
+        (
+            "annotation",
+            "DataFrame",
+            "One row per annotated peak with snake_case columns.",
+        ),
         ("gene_annotation", "GeneAnnotation", "Gene model used for annotation."),
-        ("tss_region", "tuple[int, int]", "Promoter window `(upstream, downstream)` in bp."),
+        (
+            "tss_region",
+            "tuple[int, int]",
+            "Promoter window `(upstream, downstream)` in bp.",
+        ),
         ("level", "str", "`transcript` (default) or `gene`."),
         ("promoter_bins", "tuple[int, ...]", "Promoter bin edges used for labels."),
         (
@@ -691,7 +870,11 @@ CLASS_ATTRIBUTES: Dict[str, Sequence[Tuple[str, str, str]]] = {
             "tuple[str, ...]",
             "Feature priority used for overlapping annotations.",
         ),
-        ("downstream_distance", "int", "Downstream window used by the `Downstream` label."),
+        (
+            "downstream_distance",
+            "int",
+            "Downstream window used by the `Downstream` label.",
+        ),
         (
             "detail_genomic_annotation",
             "DataFrame",
@@ -715,7 +898,11 @@ CLASS_ATTRIBUTES: Dict[str, Sequence[Tuple[str, str, str]]] = {
         ("utr5", "DataFrame", "5' UTR feature table."),
         ("utr3", "DataFrame", "3' UTR feature table."),
         ("gene_index", "BinnedIntervalIndex", "Binned interval index over genes."),
-        ("transcript_index", "BinnedIntervalIndex", "Binned interval index over transcripts."),
+        (
+            "transcript_index",
+            "BinnedIntervalIndex",
+            "Binned interval index over transcripts.",
+        ),
         ("exon_index", "BinnedIntervalIndex", "Binned interval index over exons."),
         ("intron_index", "BinnedIntervalIndex", "Binned interval index over introns."),
         ("utr5_index", "BinnedIntervalIndex", "Binned interval index over 5' UTRs."),
@@ -735,38 +922,80 @@ CLASS_ATTRIBUTES: Dict[str, Sequence[Tuple[str, str, str]]] = {
 }
 
 METHOD_SUMMARIES: Dict[Tuple[str, str], str] = {
-    ("PeakAnnotation", "to_dataframe"): "Return one row per annotated peak with snake_case columns.",
-    ("PeakAnnotation", "to_chipseeker"): "Return a table with ChIPseeker-style column names.",
+    (
+        "PeakAnnotation",
+        "to_dataframe",
+    ): "Return one row per annotated peak with snake_case columns.",
+    (
+        "PeakAnnotation",
+        "to_chipseeker",
+    ): "Return a table with ChIPseeker-style column names.",
     ("PeakAnnotation", "as_data_frame"): "ChIPseeker `as.data.frame(csAnno)` analogue.",
-    ("PeakAnnotation", "as_granges"): "Return a GRanges-like table with `seqnames/start/end/strand`.",
+    (
+        "PeakAnnotation",
+        "as_granges",
+    ): "Return a GRanges-like table with `seqnames/start/end/strand`.",
     ("PeakAnnotation", "get_anno_stat"): "Return the ChIPseeker `getAnnoStat` table.",
     ("PeakAnnotation", "drop_anno"): "Keep peaks within `abs(distanceToTSS) < cutoff`.",
     ("PeakAnnotation", "anno_stat"): "Summarize major annotation classes.",
-    ("PeakAnnotation", "summary"): "Count peaks per class and optionally per metadata group.",
-    ("PeakAnnotation", "seq2gene"): "Return gene IDs linked to peaks through promoters or flanks.",
-    ("PeakAnnotation", "seq2gene_links"): "Return a peak-to-gene link table for enrichment.",
+    (
+        "PeakAnnotation",
+        "summary",
+    ): "Count peaks per class and optionally per metadata group.",
+    (
+        "PeakAnnotation",
+        "seq2gene",
+    ): "Return gene IDs linked to peaks through promoters or flanks.",
+    (
+        "PeakAnnotation",
+        "seq2gene_links",
+    ): "Return a peak-to-gene link table for enrichment.",
     ("PeakAnnotation", "plot_anno_pie"): "Draw the annotation composition pie chart.",
     ("PeakAnnotation", "plot_anno_bar"): "Draw annotation composition as grouped bars.",
     ("PeakAnnotation", "plot_dist_to_tss"): "Draw the TSS-distance distribution.",
-    ("PeakAnnotation", "vennpie"): "Draw a nested Venn-pie summary of annotation flags.",
+    (
+        "PeakAnnotation",
+        "vennpie",
+    ): "Draw a nested Venn-pie summary of annotation flags.",
     ("PeakAnnotation", "upsetplot"): "Draw an UpSet plot of annotation flags.",
-    ("PeakAnnotation", "get_tag_matrix"): "Build a ChIPseeker-style tag matrix from this annotation.",
+    (
+        "PeakAnnotation",
+        "get_tag_matrix",
+    ): "Build a ChIPseeker-style tag matrix from this annotation.",
     ("PeakAnnotation", "plot_peak_prof"): "Plot the average peak-centered profile.",
     ("PeakAnnotation", "peak_heatmap"): "Draw a peak-centered coverage heatmap.",
     ("PeakAnnotation", "plot_tss_profile"): "Plot a bigWig, BAM or matrix TSS profile.",
     ("PeakAnnotation", "plot_tss_heatmap"): "Draw a bigWig, BAM or matrix TSS heatmap.",
-    ("GeneAnnotation", "from_gtf"): "Build a `GeneAnnotation` from a GTF/GFF path or feature table.",
+    (
+        "GeneAnnotation",
+        "from_gtf",
+    ): "Build a `GeneAnnotation` from a GTF/GFF path or feature table.",
     ("GeneAnnotation", "features"): "Return the gene or transcript feature table.",
-    ("GeneAnnotation", "tss_index_for"): "Return (and cache) the TSS index for a level.",
-    ("GeneAnnotation", "span_index_for"): "Return (and cache) the span index for a level.",
+    (
+        "GeneAnnotation",
+        "tss_index_for",
+    ): "Return (and cache) the TSS index for a level.",
+    (
+        "GeneAnnotation",
+        "span_index_for",
+    ): "Return (and cache) the span index for a level.",
     ("GeneAnnotation", "feature_by_id"): "Look up one feature row by ID.",
     ("GeneAnnotation", "feature_row"): "Return a feature row by positional index.",
-    ("GeneAnnotation", "category_table"): "Return the exon, intron or UTR table for a category.",
-    ("GeneAnnotation", "category_index"): "Return the binned index for a feature category.",
+    (
+        "GeneAnnotation",
+        "category_table",
+    ): "Return the exon, intron or UTR table for a category.",
+    (
+        "GeneAnnotation",
+        "category_index",
+    ): "Return the binned index for a feature category.",
     ("GeneAnnotation", "gene_row"): "Look up a gene row by gene ID.",
     ("GeneAnnotation", "nearest_gene"): "Return the nearest gene and signed distance.",
     ("GeneAnnotation", "choose_gene"): "Choose the closest gene among candidate IDs.",
-    ("GeneAnnotation", "promoter_gene"): "Return the gene whose promoter contains `pos`.",
+    (
+        "GeneAnnotation",
+        "promoter_gene",
+    ): "Return the gene whose promoter contains `pos`.",
     ("GeneAnnotation", "promoter_label"): "Map a TSS distance to a promoter-bin label.",
 }
 
@@ -797,7 +1026,10 @@ METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
     ("PeakAnnotation.to_dataframe", "include_peak_metadata"): (
         "Merge peak metadata columns (`name`, `score`, `strand`) into the result."
     ),
-    ("PeakAnnotation.summary", "normalize"): "Return percentages instead of raw counts.",
+    (
+        "PeakAnnotation.summary",
+        "normalize",
+    ): "Return percentages instead of raw counts.",
     ("PeakAnnotation.get_tag_matrix", "peak"): (
         "Peaks used to build the matrix; defaults to `ann.peaks`."
     ),
@@ -807,12 +1039,18 @@ METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
         "bigWig signal file; requires the optional `pyBigWig` dependency."
     ),
     ("PeakAnnotation.plot_tss_profile", "matrix"): "Features x bins signal matrix.",
-    ("PeakAnnotation.plot_tss_profile", "signal"): "bigWig path or precomputed signal table.",
+    (
+        "PeakAnnotation.plot_tss_profile",
+        "signal",
+    ): "bigWig path or precomputed signal table.",
     ("PeakAnnotation.plot_tss_heatmap", "bigwig"): (
         "bigWig signal file; requires the optional `pyBigWig` dependency."
     ),
     ("PeakAnnotation.plot_tss_heatmap", "matrix"): "Features x bins signal matrix.",
-    ("PeakAnnotation.plot_tss_heatmap", "signal"): "bigWig path or precomputed signal table.",
+    (
+        "PeakAnnotation.plot_tss_heatmap",
+        "signal",
+    ): "bigWig path or precomputed signal table.",
     ("GeneAnnotation.from_gtf", "gtf"): "GTF/GFF path or a feature DataFrame.",
     ("GeneAnnotation.features", "level"): "`transcript` (default) or `gene`.",
     ("GeneAnnotation.tss_index_for", "level"): "`transcript` or `gene`.",
@@ -820,14 +1058,29 @@ METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
     ("GeneAnnotation.feature_by_id", "level"): "`transcript` or `gene`.",
     ("GeneAnnotation.feature_by_id", "feature_id"): "Feature identifier to look up.",
     ("GeneAnnotation.feature_row", "level"): "`transcript` or `gene`.",
-    ("GeneAnnotation.feature_row", "row_index"): "Zero-based row index in the feature table.",
-    ("GeneAnnotation.category_table", "category"): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
-    ("GeneAnnotation.category_index", "category"): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
+    (
+        "GeneAnnotation.feature_row",
+        "row_index",
+    ): "Zero-based row index in the feature table.",
+    (
+        "GeneAnnotation.category_table",
+        "category",
+    ): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
+    (
+        "GeneAnnotation.category_index",
+        "category",
+    ): "`Exon`, `Intron`, `5UTR` or `3UTR`.",
     ("GeneAnnotation.nearest_gene", "chrom"): "Chromosome name.",
     ("GeneAnnotation.nearest_gene", "pos"): "0-based genomic position.",
-    ("GeneAnnotation.choose_gene", "gene_ids"): "Candidate gene identifiers to compare.",
+    (
+        "GeneAnnotation.choose_gene",
+        "gene_ids",
+    ): "Candidate gene identifiers to compare.",
     ("GeneAnnotation.choose_gene", "pos"): "0-based genomic position.",
-    ("GeneAnnotation.promoter_label", "distance"): "Signed distance from the peak to the TSS.",
+    (
+        "GeneAnnotation.promoter_label",
+        "distance",
+    ): "Signed distance from the peak to the TSS.",
     ("GeneAnnotation.promoter_label", "bins"): "Promoter bin edges in bp.",
     ("PeakAnnotation", "peaks"): "Peak table to annotate.",
     ("PeakAnnotation", "annotation"): "One row per annotated peak.",
@@ -839,7 +1092,10 @@ METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
         "PeakAnnotation",
         "genomic_annotation_priority",
     ): "Feature priority used for overlapping annotations.",
-    ("PeakAnnotation", "downstream_distance"): "Downstream window used by the `Downstream` label.",
+    (
+        "PeakAnnotation",
+        "downstream_distance",
+    ): "Downstream window used by the `Downstream` label.",
     (
         "PeakAnnotation",
         "detail_genomic_annotation",
@@ -849,7 +1105,10 @@ METHOD_OVERRIDES: Dict[Tuple[str, str], str] = {
         "has_genomic_annotation",
     ): "Whether genomic features were assigned.",
     ("PeakAnnotation", "add_flank_gene_info"): "Whether flanking genes were added.",
-    ("PeakAnnotation", "flank_distance"): "Flank distance used for flanking-gene searches.",
+    (
+        "PeakAnnotation",
+        "flank_distance",
+    ): "Flank distance used for flanking-gene searches.",
     ("TagMatrix", "matrix"): "Numeric features x bins matrix.",
     ("TagMatrix", "upstream"): "Upstream window size in bp.",
     ("TagMatrix", "downstream"): "Downstream window size in bp.",
@@ -1070,7 +1329,9 @@ def _render_class(class_name: str) -> str:
         lines += ["#### Methods", ""]
         alias_rows: List[Tuple[str, str]] = []
         for canonical, obj, aliases, drop_first in members:
-            lines.append(_render_method(class_name, canonical, obj, aliases, drop_first))
+            lines.append(
+                _render_method(class_name, canonical, obj, aliases, drop_first)
+            )
             for alias in aliases:
                 alias_rows.append((alias, canonical))
         if alias_rows:
@@ -1128,7 +1389,7 @@ def main() -> int:
         "generated from the installed signatures, so required parameters, defaults",
         "and type hints always match the code.",
         "",
-        "!!! tip \"How to read this page\"",
+        '!!! tip "How to read this page"',
         "",
         "    - **Required** parameters have no default (`—`).",
         "    - `None` usually means *automatic* or *not supplied*.",

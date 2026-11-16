@@ -16,6 +16,9 @@ from typing import Iterable, Mapping, Optional, Sequence, Union
 import numpy as np
 import pandas as pd
 
+from ._stats import hypergeom_sf as _hypergeom_sf
+from ._stats import p_adjust as _p_adjust_array
+
 
 def _require_gseapy():
     try:
@@ -35,59 +38,9 @@ def _clean_genes(gene_list: Iterable[str]) -> list[str]:
 
 
 def _p_adjust(pvalues: Sequence[float], method: str = "BH") -> list[float]:
-    """Benjamini-Hochberg or Bonferroni adjustment, without SciPy."""
+    """Return the shared adjustment result as a plain list."""
 
-    values = [float(p) for p in pvalues]
-    n = len(values)
-    if n == 0:
-        return []
-    key = str(method).strip().lower()
-    if key in {"none", "no", "raw"}:
-        return values
-    if key in {"bonferroni", "bonf"}:
-        return [min(1.0, p * n) for p in values]
-    if key not in {"bh", "fdr", "benjamini-hochberg"}:
-        raise ValueError("p_adjust must be one of BH, Bonferroni or none")
-
-    order = sorted(range(n), key=lambda i: values[i])
-    adjusted = [1.0] * n
-    running = 1.0
-    for rank in range(n, 0, -1):
-        index = order[rank - 1]
-        running = min(running, values[index] * n / rank)
-        adjusted[index] = min(1.0, running)
-    return adjusted
-
-
-def _log_comb(n: int, k: int) -> float:
-    if k < 0 or k > n:
-        return float("-inf")
-    return math.lgamma(n + 1) - math.lgamma(k + 1) - math.lgamma(n - k + 1)
-
-
-def _hypergeom_sf(k: int, M: int, n: int, N: int) -> float:
-    """P(X >= k) for a hypergeometric distribution.
-
-    ``M`` is the background size, ``n`` the query size and ``N`` the gene-set
-    size.  The sum is evaluated in log space so that large backgrounds remain
-    numerically stable.
-    """
-
-    if k <= 0:
-        return 1.0
-    upper = min(n, N)
-    if k > upper:
-        return 0.0
-    terms = []
-    for i in range(int(k), int(upper) + 1):
-        terms.append(
-            math.exp(
-                _log_comb(n, i)
-                + _log_comb(M - n, N - i)
-                - _log_comb(M, N)
-            )
-        )
-    return float(min(max(math.fsum(terms), 0.0), 1.0))
+    return _p_adjust_array(pvalues, method).tolist()
 
 
 def read_gmt(path: Union[str, Path]) -> dict[str, list[str]]:
@@ -205,9 +158,9 @@ def ora(
         raise ValueError("no gene set overlapped the query genes")
     table = pd.DataFrame.from_records(rows)
     table["AdjustedPValue"] = _p_adjust(table["PValue"].tolist(), p_adjust)
-    return table.sort_values(
-        ["PValue", "Term"], ascending=[True, True]
-    ).reset_index(drop=True)
+    return table.sort_values(["PValue", "Term"], ascending=[True, True]).reset_index(
+        drop=True
+    )
 
 
 def _odds_ratio_ci(
@@ -278,9 +231,8 @@ def _normal_quantile(probability: float) -> float:
     phigh = 1.0 - plow
     if p < plow:
         q = math.sqrt(-2.0 * math.log(p))
-        return (
-            (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5])
-            / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0)
+        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
         )
     if p > phigh:
         q = math.sqrt(-2.0 * math.log(1.0 - p))
@@ -291,7 +243,8 @@ def _normal_quantile(probability: float) -> float:
     q = p - 0.5
     r = q * q
     return (
-        (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q
+        (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5])
+        * q
         / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0)
     )
 
@@ -335,9 +288,7 @@ def enrichr(
     results = enr.results
     if p_adjust is not None and "P-value" in results.columns and not results.empty:
         results = results.copy()
-        results["Adjusted P-value"] = _p_adjust(
-            results["P-value"].tolist(), p_adjust
-        )
+        results["Adjusted P-value"] = _p_adjust(results["P-value"].tolist(), p_adjust)
     return results
 
 
@@ -430,7 +381,10 @@ def _as_ranked_frame(
         )
     elif isinstance(gene_list, Mapping):
         frame = pd.DataFrame(
-            {"gene": [str(gene) for gene in gene_list], "score": list(gene_list.values())}
+            {
+                "gene": [str(gene) for gene in gene_list],
+                "score": list(gene_list.values()),
+            }
         )
     else:
         genes = _clean_genes(gene_list)
@@ -587,9 +541,9 @@ def _enrichment_plot_frame(result: pd.DataFrame) -> pd.DataFrame:
         {
             "Term": term.to_numpy(),
             "padj": padj.to_numpy(dtype=float),
-            "count": (count if count is not None else pd.Series(np.ones(len(result)))).to_numpy(
-                dtype=float
-            ),
+            "count": (
+                count if count is not None else pd.Series(np.ones(len(result)))
+            ).to_numpy(dtype=float),
             "ratio": (
                 ratio if ratio is not None else pd.Series(np.full(len(result), np.nan))
             ).to_numpy(dtype=float),

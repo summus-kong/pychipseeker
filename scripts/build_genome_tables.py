@@ -94,8 +94,13 @@ def _gencode_species(assembly: str) -> str:
     return "mouse" if assembly in {"mm10", "mm9"} else "human"
 
 
-def download_gtf(assembly: str, release: str, filename: str,
-                 cache_dir: Path, url: Optional[str] = None) -> tuple[Path, str]:
+def download_gtf(
+    assembly: str,
+    release: str,
+    filename: str,
+    cache_dir: Path,
+    url: Optional[str] = None,
+) -> tuple[Path, str]:
     source_url = url or (
         f"{GENCODE_BASE}/Gencode_{_gencode_species(assembly)}/{release}/{filename}"
     )
@@ -109,7 +114,10 @@ def download_gtf(assembly: str, release: str, filename: str,
     last_error: Optional[Exception] = None
     for attempt in range(1, 8):
         try:
-            with urllib.request.urlopen(source_url, timeout=120) as resp, open(tmp, "wb") as fh:
+            with (
+                urllib.request.urlopen(source_url, timeout=120) as resp,
+                open(tmp, "wb") as fh,
+            ):
                 shutil.copyfileobj(resp, fh)
             break
         except Exception as exc:  # noqa: BLE001 - retry ANY network error
@@ -170,16 +178,24 @@ def build_bundle(
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--assembly", required=True, choices=SUPPORTED_GENOMES)
-    parser.add_argument("--gtf", type=Path, default=None,
-                        help="local GENCODE GTF to convert (skips download)")
-    parser.add_argument("--release", default=None,
-                        help="GENCODE release name (default: known release)")
-    parser.add_argument("--url", default=None,
-                        help="explicit download URL (default: known file)")
-    parser.add_argument("--out", type=Path,
-                        default=REPO_ROOT / "src" / "pychipseeker" / "data")
-    parser.add_argument("--cache-dir", type=Path,
-                        default=REPO_ROOT / "build" / "gtf_cache")
+    parser.add_argument(
+        "--gtf",
+        type=Path,
+        default=None,
+        help="local GENCODE GTF to convert (skips download)",
+    )
+    parser.add_argument(
+        "--release", default=None, help="GENCODE release name (default: known release)"
+    )
+    parser.add_argument(
+        "--url", default=None, help="explicit download URL (default: known file)"
+    )
+    parser.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "src" / "pychipseeker" / "data"
+    )
+    parser.add_argument(
+        "--cache-dir", type=Path, default=REPO_ROOT / "build" / "gtf_cache"
+    )
     parser.add_argument("--license-note", default=None)
     args = parser.parse_args(argv)
 
@@ -189,9 +205,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         source_url = args.url or "(local file)"
     else:
         filename = (
-            args.url.rsplit("/", 1)[-1]
-            if args.url
-            else DEFAULT_FILES[args.assembly]
+            args.url.rsplit("/", 1)[-1] if args.url else DEFAULT_FILES[args.assembly]
         )
         gtf_path, source_url = download_gtf(
             args.assembly, release, filename, args.cache_dir, args.url

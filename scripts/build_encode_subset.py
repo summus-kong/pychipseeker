@@ -154,9 +154,7 @@ def main(argv=None):
     print(f"source: {args.source}")
     digest = _md5(args.source)
     if digest != SOURCE_MD5:
-        raise SystemExit(
-            f"source md5 mismatch: got {digest}, expected {SOURCE_MD5}"
-        )
+        raise SystemExit(f"source md5 mismatch: got {digest}, expected {SOURCE_MD5}")
     print("md5 verified:", digest)
 
     bw = pyBigWig.open(args.source)
@@ -177,10 +175,7 @@ def main(argv=None):
     )
     bw.close()
     all_bins = (window_end - window_start) // args.bin_bp
-    print(
-        f"entries: {len(entries)} / {all_bins} bins "
-        f"(threshold {args.min_value})"
-    )
+    print(f"entries: {len(entries)} / {all_bins} bins (threshold {args.min_value})")
 
     bundle_name = "ENCODE_demo_signal.bw"
     bundle_path = os.path.join(args.out_dir, bundle_name)
@@ -244,7 +239,9 @@ def main(argv=None):
     b_chroms = check.chroms()
     assert dict(b_chroms) == {chrom: chrom_size}, b_chroms
     sampled = check.intervals(chrom, window_start, window_start + 200_000) or []
-    expected_here = [e for e in entries if window_start <= e[1] < window_start + 200_000]
+    expected_here = [
+        e for e in entries if window_start <= e[1] < window_start + 200_000
+    ]
     assert len(sampled) == len(expected_here), (
         len(sampled),
         len(expected_here),
@@ -259,9 +256,7 @@ def main(argv=None):
             ee,
             ev,
         )
-    stats_mean = check.stats(
-        chrom, window_start, window_end, nBins=1, type="mean"
-    )
+    stats_mean = check.stats(chrom, window_start, window_end, nBins=1, type="mean")
     check.close()
     print(
         "read-back OK:",
