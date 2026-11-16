@@ -14,6 +14,17 @@ All notable changes to pychipseeker are documented here.  The format follows
   `enrichment.py` now live once in the private `_stats` module.  Both call
   sites accept the union of the previously supported method spellings
   (`BH`/`fdr`, `Bonferroni`/`bonf`, `none`/`no`/`nop`/`raw`).
+- Packaging metadata now uses the PEP 639 SPDX form (`license = "MIT"`) and
+  explicit `license-files`, removing the deprecated license table and
+  classifier.  The build requires setuptools 77 or newer.
+- CI builds both the sdist and the wheel and runs `twine check`, so release
+  artifacts are validated on every push.
+
+### Fixed
+
+- The defensive guard that skips a cache file disappearing between globbing
+  and deletion is now covered, bringing every shipped module to 100%
+  coverage.
 
 ## [0.8.5] - 2026-11-16
 

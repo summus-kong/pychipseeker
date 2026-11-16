@@ -29,6 +29,20 @@ def test_installed_metadata_matches_module_version() -> None:
     )
 
 
+def test_installed_metadata_uses_spdx_license() -> None:
+    try:
+        meta = importlib.metadata.metadata("pychipseeker")
+    except importlib.metadata.PackageNotFoundError:  # pragma: no cover
+        pytest.skip("pychipseeker is not installed in this environment")
+    assert meta.get("License-Expression") == "MIT", (
+        "installed metadata does not use the SPDX license expression; reinstall "
+        "with `pip install -e .` to refresh the distribution metadata"
+    )
+    assert "License :: OSI Approved :: MIT License" not in meta.get_all(
+        "Classifier", []
+    )
+
+
 def test_changelog_documents_current_version() -> None:
     text = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     assert f"## [{pcs.__version__}]" in text

@@ -530,6 +530,23 @@ def test_cached_genomes_and_prune(cache: Path, monkeypatch: pytest.MonkeyPatch) 
     assert not (gtf / "spec_bad.json").exists()
 
 
+def test_prune_genome_cache_skips_file_that_vanished(
+    cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vanished = cache / "genome_vanished.npz"
+    vanished.write_bytes(b"data")
+    original_exists = Path.exists
+
+    def fake_exists(self: Path) -> bool:
+        if self == vanished:
+            return False
+        return original_exists(self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+    assert prune_genome_cache() == []
+    assert original_exists(vanished)
+
+
 def test_cached_genomes_invalid_provenance(cache: Path) -> None:
     gtf = cache / "gtf"
     gtf.mkdir()
