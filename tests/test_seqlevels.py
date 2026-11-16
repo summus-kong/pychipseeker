@@ -42,6 +42,11 @@ def test_alias_map_and_harmonize_frame() -> None:
     assert chromosome_style(["chr1", "chr2"]) == "ucsc"
     assert chromosome_style(["1", "2"]) == "ensembl"
     assert chromosome_style(["chr1", "2"]) == "mixed"
+    assert chromosome_style([]) == "mixed"
+    assert chromosome_style(["", "  "]) == "mixed"
+
+    with pytest.raises(KeyError, match="no 'chrom'"):
+        harmonize_frame(pd.DataFrame({"seqnames": ["chr1"]}), ["1"])
 
 
 def test_detect_assembly_from_sizes_and_names() -> None:

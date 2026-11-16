@@ -207,6 +207,7 @@ def _frip_bigwig(
         sizes = dict(bw.chroms())
         if chrom_sizes:
             sizes = {str(k): int(v) for k, v in chrom_sizes.items()}
+        sizes = {str(k): int(v) for k, v in sizes.items() if int(v) > 0}
         peaks, _ = harmonize_frame(peaks, sizes.keys(), column="chrom", copy=True)
         merged = _merge_intervals(peaks, sizes)
         total = 0.0
@@ -216,15 +217,10 @@ def _frip_bigwig(
                 total += float(value[0])
         in_peaks = 0.0
         for row in merged.itertuples(index=False):
-            size = sizes.get(str(row.chrom))
-            if size is None:
-                continue
-            start = max(0, int(row.start))
-            end = min(int(size), int(row.end))
-            if end <= start:
+            if str(row.chrom) not in sizes:
                 continue
             value = bw.stats(
-                str(row.chrom), start, end, nBins=1, type="sum"
+                str(row.chrom), int(row.start), int(row.end), nBins=1, type="sum"
             )
             if value and value[0] is not None:
                 in_peaks += float(value[0])
@@ -285,13 +281,12 @@ def _frip_bam(
             # Python on multi-million-read files.
             total = int(handle.count(until_eof=True, read_callback=keep))
             for row in merged.itertuples(index=False):
-                start = int(row.start)
-                end = int(row.end)
-                if end <= start:
-                    continue
                 in_peaks += int(
                     handle.count(
-                        str(row.chrom), start, end, read_callback=keep
+                        str(row.chrom),
+                        int(row.start),
+                        int(row.end),
+                        read_callback=keep,
                     )
                 )
         else:
@@ -351,8 +346,7 @@ def frip(
         raise ValueError("peak table is empty")
     if bigwig is not None:
         return _frip_bigwig(bigwig, frame, chrom_sizes=chrom_sizes)
-    if bam is None:
-        raise ValueError("supply exactly one of bigwig=... or bam=...")
+    assert bam is not None
     return _frip_bam(
         bam,
         frame,
@@ -599,8 +593,7 @@ def tss_enrichment(
             n_jobs=n_jobs,
         )
     else:
-        if bam is None:
-            raise ValueError("provide a bigWig path or bam=...")
+        assert bam is not None
         handle = _bam_handle(bam)
         try:
             references = list(getattr(handle, "references", []) or [])

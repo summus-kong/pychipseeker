@@ -10,7 +10,7 @@ import pytest
 
 import pychipseeker as pcs
 from pychipseeker.annotation import GeneAnnotation
-from pychipseeker.parallel import chunk_bounds, effective_jobs
+from pychipseeker.parallel import chunk_bounds, effective_jobs, parallel_map
 from pychipseeker.tagmatrix import get_tag_matrix_from_bam
 
 
@@ -34,6 +34,56 @@ def test_chunk_bounds_cover_every_row() -> None:
     assert [stop - start for start, stop in bounds] == [4, 4, 2]
     assert chunk_bounds(0, 4) == []
     assert chunk_bounds(3, 10) == [(0, 1), (1, 2), (2, 3)]
+
+
+def test_parallel_map_runs_initializer_in_sequential_mode() -> None:
+    seen: list[str] = []
+
+    def initializer(value: str) -> None:
+        seen.append(value)
+
+    result = parallel_map(
+        lambda value: value * 2,
+        [1, 2, 3],
+        n_jobs=1,
+        initializer=initializer,
+        initargs=("worker",),
+    )
+    assert result == [2, 4, 6]
+    assert seen == ["worker"]
+
+    single = parallel_map(
+        lambda value: value + 1,
+        [1],
+        n_jobs=4,
+        initializer=initializer,
+        initargs=("single",),
+    )
+    assert single == [2]
+    assert seen == ["worker", "single"]
+
+
+def test_parallel_map_avoids_child_pools_inside_daemons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pychipseeker.parallel as parallel_mod
+
+    class DaemonProcess:
+        daemon = True
+
+    monkeypatch.setattr(
+        parallel_mod.mp, "current_process", lambda: DaemonProcess()
+    )
+    seen: list[str] = []
+    result = parallel_map(
+        lambda value: value * 3,
+        [1, 2],
+        n_jobs=2,
+        initializer=seen.append,
+        initargs=("daemon",),
+    )
+    assert result == [3, 6]
+    assert seen == ["daemon"]
 
 
 def test_annotate_peak_parallel_matches_sequential(examples_dir: Path) -> None:

@@ -1,5 +1,7 @@
 
 import json
+import runpy
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -345,3 +347,11 @@ def test_cli_cache_download(tmp_path, monkeypatch, capsys):
 
     assert main(["cache", "download", "dm6"]) == 0
     assert "dm6" in capsys.readouterr().out
+
+
+def test_module_entrypoint_runs_help(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["pychipseeker", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("pychipseeker", run_name="__main__")
+    assert exc.value.code == 0
+    assert "usage:" in capsys.readouterr().out.lower()

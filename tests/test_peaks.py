@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from pychipseeker.io import read_peaks
 from pychipseeker.peaks import (
     _call_peaks_chrom,
     _callpeak_worker,
@@ -69,6 +72,17 @@ def test_call_peaks_chrom_returns_empty_for_missing_or_weak_signal() -> None:
         )
         == []
     )
+    # Malformed interval payloads are ignored instead of failing on shape.
+    assert (
+        _call_peaks_chrom(
+            FakeBigWig(np.asarray([1.0, 2.0])),
+            "chr1",
+            threshold=1,
+            max_gap=0,
+            min_width=0,
+        )
+        == []
+    )
     assert (
         _call_peaks_chrom(
             FakeBigWig([(0, 10, 0.1), (20, 30, np.nan)]),
@@ -107,6 +121,45 @@ def test_call_peaks_real_bigwig_sample_and_errors() -> None:
         call_peaks(bigwig, min_width=-1)
 
 
+def test_call_peaks_reports_unopenable_bigwig(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = types.ModuleType("pyBigWig")
+    fake.open = lambda _path: None
+    monkeypatch.setitem(sys.modules, "pyBigWig", fake)
+    with pytest.raises(ValueError, match="could not open bigWig"):
+        call_peaks("broken.bw")
+
+
+def test_call_peaks_samples_large_result_sets() -> None:
+    bigwig = Path(__file__).parent / "data" / "test.bw"
+    pytest.importorskip("pyBigWig")
+    peaks = call_peaks(
+        bigwig,
+        threshold=0.05,
+        max_gap=10,
+        min_width=1,
+        chroms=["1"],
+        sample=1,
+        seed=11,
+        n_jobs=1,
+    )
+    assert len(peaks) == 1
+    assert peaks.iloc[0]["name"] == "Peak_1"
+
+
+def test_call_peaks_parallel_chromosomes() -> None:
+    bigwig = Path(__file__).parent / "data" / "test.bw"
+    pytest.importorskip("pyBigWig")
+    peaks = call_peaks(
+        bigwig,
+        threshold=0.05,
+        max_gap=10,
+        min_width=1,
+        chroms=["1", "10"],
+        n_jobs=2,
+    )
+    assert set(peaks["chrom"]) == {"1", "10"}
+
+
 def test_callpeak_worker_uses_initialiser(monkeypatch: pytest.MonkeyPatch) -> None:
     bigwig = Path(__file__).parent / "data" / "test.bw"
     pytest.importorskip("pyBigWig")
@@ -140,7 +193,7 @@ def test_overlaps_any_handles_nan_and_missing_columns() -> None:
         _overlaps_any(peaks, pd.DataFrame({"chrom": ["chr1"]}))
 
 
-def test_filter_peaks_dataframe_and_path_filters() -> None:
+def test_filter_peaks_dataframe_and_path_filters(tmp_path: Path) -> None:
     peaks = pd.DataFrame(
         {
             "chrom": ["chr1", "1", "chrM", "MT", "chr2", "chr3"],
@@ -172,6 +225,11 @@ def test_filter_peaks_dataframe_and_path_filters() -> None:
     path = Path(__file__).resolve().parents[1] / "examples" / "example_peaks.bed"
     loaded = filter_peaks(path, chroms=["chr1"], min_width=10)
     assert not loaded.empty
+
+    blacklist_path = tmp_path / "blacklist.bed"
+    blacklist_path.write_text("chr1\t950\t1060\n", encoding="utf-8")
+    path_filtered = filter_peaks(path, blacklist=blacklist_path)
+    assert len(path_filtered) < len(read_peaks(path))
 
 
 def test_filter_peaks_type_and_column_errors() -> None:

@@ -6,8 +6,10 @@ import hashlib
 import json
 import sys
 import types
+from importlib import resources
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -20,6 +22,7 @@ from pychipseeker.genomes import (
     _installed_bundle,
     _installed_provenance,
     _npz_model,
+    _rebuild_frame,
     cached_genomes,
     clear_genome_cache,
     detect_assembly,
@@ -72,11 +75,16 @@ def test_parse_genome_spec_aliases_and_validation() -> None:
 def test_detect_assembly_from_names_and_sizes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    assert genomes.is_genome_spec(None) is False
     with pytest.raises(ValueError, match="without peaks"):
         detect_assembly()
 
     with pytest.raises(ValueError, match="chrom column"):
         detect_assembly(peaks=pd.DataFrame({"start": [0]}))
+
+    peaks_path = EXAMPLE_GTF.parent / "example_peaks.bed"
+    with pytest.raises(ValueError, match="hg38/hg19"):
+        detect_assembly(peaks_path)
 
     yeast = pd.DataFrame(
         {"chrom": ["I", "II", "III"], "start": [0, 0, 0], "end": [10, 10, 10]}
@@ -98,8 +106,15 @@ def test_detect_assembly_from_names_and_sizes(
     )
     with pytest.raises(ValueError, match="hg38/hg19"):
         detect_assembly(human_short)
+    human_long = pd.DataFrame(
+        {"chrom": ["chr20"], "start": [0], "end": [250_000_000]}
+    )
+    with pytest.raises(ValueError, match="hg19, hg38"):
+        detect_assembly(human_long)
     with pytest.raises(ValueError, match="could not detect"):
         detect_assembly(pd.DataFrame({"chrom": ["chrUn"], "start": [0], "end": [1]}))
+    with pytest.raises(ValueError, match="could not detect"):
+        detect_assembly(chrom_sizes={"chrUn": 100})
 
     hg38 = detect_assembly(
         chrom_sizes={"1": 248956422, "2": 242193529}
@@ -161,6 +176,52 @@ def test_installed_and_cache_lookup(cache: Path) -> None:
     good = cache / "genome_good.npz"
     good.write_bytes(b"data")
     assert _cache_bundle("good") == good
+
+
+def test_installed_bundle_and_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    bundle = data / "genome_demo.npz"
+    bundle.write_bytes(b"data")
+    (data / "genome_demo.json").write_text(
+        json.dumps({"provider": "test"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(resources, "files", lambda package: tmp_path)
+    assert _installed_bundle("demo") == bundle
+    assert _installed_provenance("demo") == {"provider": "test"}
+
+    def broken(package):
+        raise FileNotFoundError(package)
+
+    monkeypatch.setattr(resources, "files", broken)
+    assert _installed_bundle("demo") is None
+    assert _installed_provenance("demo") is None
+
+
+def test_rebuild_frame_handles_int_na_and_string_modes(tmp_path: Path) -> None:
+    path = tmp_path / "crafted.npz"
+    specs = [["ints", "int64"], ["bytes", "<M8"], ["objs", "object"]]
+    np.savez(
+        path,
+        genes__cols=np.array(json.dumps(specs).encode()),
+        genes__ints=np.array([1, 0], dtype=np.int64),
+        genes__ints__na=np.array([False, True]),
+        genes__bytes__dict=np.array([b"a", b"b"]),
+        genes__bytes__idx=np.array([0, 1], dtype=np.int64),
+        genes__bytes__na=np.array([False, False]),
+        genes__objs__dict=np.array(["x", "y"]),
+        genes__objs__idx=np.array([1, 0], dtype=np.int64),
+        genes__objs__na=np.array([False, True]),
+    )
+    with np.load(path) as npz:
+        frame = _rebuild_frame(npz, "genes")
+    assert frame["ints"].iloc[0] == 1
+    assert pd.isna(frame["ints"].iloc[1])
+    assert frame["bytes"].tolist() == [b"a", b"b"]
+    assert frame["objs"].iloc[0] == "y"
+    assert pd.isna(frame["objs"].iloc[1])
 
 
 def test_download_file_retries_and_fails(
@@ -320,6 +381,7 @@ def test_load_annotation_refresh_reparses(
     monkeypatch.setattr(genomes, "_loaded_specs", {})
     third = load_annotation(spec)
     assert len(third.genes) == len(first.genes)
+    assert load_annotation(spec) is third
 
 
 def test_build_manifest_bundle_and_load(
@@ -343,6 +405,11 @@ def test_build_manifest_bundle_and_load(
         dest.write_bytes(EXAMPLE_GTF.read_bytes())
 
     monkeypatch.setattr(genomes, "_download_file", fake_download)
+    monkeypatch.setattr(genomes, "_loaded", {})
+    direct = load_genome(name)
+    assert not direct.genes.empty
+    assert (cache / f"genome_{name}.npz").is_file()
+
     npz_path = download_genome(name)
     assert npz_path.is_file()
     assert (cache / "genome_demogenome.json").is_file()
@@ -368,6 +435,77 @@ def test_genome_provenance_spec_and_manifest(
     manifest = genome_provenance("mm39")
     assert manifest["downloaded"] is False
     assert manifest["provider"] == "ensembl"
+
+
+def test_genome_provenance_shipped_and_downloaded(
+    cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(genomes, "_installed_bundle", lambda name: None)
+    monkeypatch.setattr(
+        genomes, "_installed_provenance", lambda name: {"assembly": name, "source": "package"}
+    )
+    assert genome_provenance("mm10")["source"] == "package"
+
+    name = "customprov"
+    monkeypatch.setitem(genomes.GENOME_ALIASES, name, name)
+    monkeypatch.setattr(genomes, "_installed_provenance", lambda name: None)
+
+    def fake_download(target: str) -> Path:
+        (cache / f"genome_{target}.json").write_text(
+            json.dumps({"provider": "remote"}), encoding="utf-8"
+        )
+        return cache / f"genome_{target}.npz"
+
+    monkeypatch.setattr(genomes, "_download_bundle", fake_download)
+    record = genome_provenance(name)
+    assert record["provider"] == "remote"
+
+
+def test_genome_provenance_installed_json(
+    cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = cache / "installed.npz"
+    bundle.write_bytes(b"data")
+    bundle.with_suffix(".json").write_text(
+        json.dumps({"provider": "package"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(genomes, "_installed_bundle", lambda name: bundle)
+    assert genome_provenance("mm10")["provider"] == "package"
+
+
+def test_download_genome_installed_bundled_source_and_custom(
+    cache: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed = cache / "genome_hg38.npz"
+    installed.write_bytes(b"data")
+    monkeypatch.setattr(
+        genomes, "_installed_bundle", lambda name: installed if name == "hg38" else None
+    )
+    monkeypatch.setattr(genomes, "_cache_bundle", lambda name: None)
+    assert download_genome("hg38") == installed
+
+    monkeypatch.setattr(genomes, "_installed_bundle", lambda name: None)
+    monkeypatch.setattr(genomes, "_download_bundle", lambda name: "downloaded")
+    assert download_genome("hg38") == "downloaded"
+
+    name = "sourcegenome"
+    monkeypatch.setitem(genomes.GENOME_ALIASES, name, name)
+    monkeypatch.setitem(
+        genomes.GENOME_SOURCES,
+        name,
+        {
+            "provider": "test",
+            "release": "1",
+            "url": "https://example.org/source.gtf",
+            "description": "source",
+        },
+    )
+    monkeypatch.setattr(genomes, "_build_manifest_bundle", lambda target: "manifest")
+    assert download_genome(name) == "manifest"
+
+    custom = "downloadcustom"
+    monkeypatch.setitem(genomes.GENOME_ALIASES, custom, custom)
+    assert download_genome(custom) == "downloaded"
 
 
 def test_cached_genomes_and_prune(
@@ -400,6 +538,21 @@ def test_cached_genomes_and_prune(
     assert (cache / "genome_good.npz").exists()
     assert not (cache / "genome_zero.npz").exists()
     assert not (gtf / "spec_bad.json").exists()
+
+
+def test_cached_genomes_invalid_provenance(cache: Path) -> None:
+    gtf = cache / "gtf"
+    gtf.mkdir()
+    (gtf / "spec_bad.npz").write_bytes(b"spec")
+    (gtf / "spec_bad.json").write_text("not json", encoding="utf-8")
+    (cache / "genome_bad.npz").write_bytes(b"data")
+    (cache / "genome_bad.json").write_text("not json", encoding="utf-8")
+
+    rows = {row["assembly"]: row for row in cached_genomes()}
+    assert rows["spec_bad"]["source"] == "spec-cache"
+    assert rows["spec_bad"]["provider"] == ""
+    assert rows["bad"]["source"] == "cache"
+    assert rows["bad"]["provider"] == ""
 
 
 def test_clear_genome_cache_specific_and_all(

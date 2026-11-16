@@ -357,8 +357,6 @@ def tss_enrichment_by_quartile(
     for index in range(int(groups["group"].max()) + 1):
         mask = groups["group"].to_numpy() == index
         block = matrix[mask]
-        if block.size == 0:
-            continue
         profile = np.nanmean(block, axis=0)
         center_mean = float(np.nanmean(profile[center_lo:center_hi]))
         flank_parts = []

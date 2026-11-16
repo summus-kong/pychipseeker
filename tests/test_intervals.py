@@ -171,6 +171,14 @@ def test_tss_index_within_and_strand_views() -> None:
     assert rows.tolist() == [0, 1, 2, 3]
     assert index.within("chrZ", 0, 50)[0].tolist() == []
 
+    minus_only = TSSIndex(
+        pd.DataFrame({"chrom": ["chr1"], "tss": [10], "strand": ["-"]})
+    )
+    assert (
+        minus_only.within("chr1", 0, 50, strand="+", same_strand=True)[0].tolist()
+        == []
+    )
+
     assert index.overlapping("chr1", 20, 41).tolist() == [1, 2, 3]
     assert index.overlapping("chr1", 10, 10).tolist() == []
 

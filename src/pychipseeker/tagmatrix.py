@@ -377,13 +377,9 @@ def _coverage_track(
     starts = starts[valid]
     ends = ends[valid]
     weights = weights[valid]
-    if starts.size == 0:
-        return None
     coords, inverse = np.unique(
         np.concatenate([starts, ends]), return_inverse=True
     )
-    if coords.size < 2:
-        return None
     changes = np.concatenate([weights, -weights])
     deltas = np.bincount(
         inverse, weights=changes, minlength=coords.size
@@ -683,12 +679,7 @@ def _bigwig_matrix(
         rows_idx = np.flatnonzero(valid)
         if rows_idx.size == 0:
             raise ValueError("no windows overlap the bigWig track")
-        unique_bins = np.unique(bins_per_row[rows_idx])
-        if unique_bins.size != 1:
-            raise ValueError(
-                "windows must have equal widths when nbin is not supplied"
-            )
-        n_bins_eff = int(unique_bins[0])
+        n_bins_eff = int(np.unique(bins_per_row[rows_idx])[0])
         matrix = np.zeros((rows_idx.size, n_bins_eff), dtype=float)
 
         intervals_fn = getattr(bw, "intervals", None)
@@ -724,13 +715,12 @@ def _bigwig_matrix(
                 value_type
             ) in VECTORISED_VALUE_TYPES
             if vectorised:
+                assert intervals_fn is not None
                 # Read each chromosome once and integrate the intervals at the
                 # bin edges.  This replaces one bw.stats() call per window,
                 # which dominates the runtime for transcript-scale matrices.
                 for chrom in pd.unique(chroms[rows_idx]):
                     index = rows_idx[chroms[rows_idx] == chrom]
-                    if intervals_fn is None:
-                        continue
                     intervals = intervals_fn(str(chrom))
                     if not intervals:
                         continue
@@ -993,11 +983,6 @@ def _bam_matrix(
 
     if matrix.size == 0:
         raise ValueError("no windows overlap the BAM file")
-    lengths = {row.size for row in matrix}
-    if len(lengths) != 1:
-        raise ValueError(
-            "windows must have equal widths when nbin is not supplied"
-        )
     return matrix, kept.reset_index(drop=True), n_bins is not None
 
 

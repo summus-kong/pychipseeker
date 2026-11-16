@@ -310,6 +310,41 @@ def test_tss_enrichment_real_bam(small_bam: Path) -> None:
     assert result["TSS enrichment"] > 0
 
 
+def test_tss_enrichment_bam_zeroes_non_finite_bins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Handle:
+        references = ["chr1"]
+
+        def count_coverage(
+            self, chrom, start, end, quality_threshold=0, read_callback="all"
+        ):
+            values = np.array([1.0, np.nan, 1.0, 1.0])
+            zeros = np.zeros_like(values)
+            return (values, zeros, zeros, zeros)
+
+        def close(self) -> None:
+            return None
+
+    fake = types.ModuleType("pysam")
+    fake.AlignmentFile = lambda *args, **kwargs: Handle()
+    monkeypatch.setitem(sys.modules, "pysam", fake)
+
+    genes = pd.DataFrame({"chrom": ["chr1"], "tss": [100], "strand": ["+"]})
+    result = tss_enrichment(
+        genes,
+        bam="fake.bam",
+        upstream=2,
+        downstream=2,
+        n_bins=4,
+        sample=None,
+        center_window=1,
+        flank_window=1,
+    )
+    assert result["TSS features"] == 1
+    assert np.isfinite(result["TSS enrichment"])
+
+
 def test_bam_tag_matrix_real_file(small_bam: Path) -> None:
     windows = pd.DataFrame(
         {

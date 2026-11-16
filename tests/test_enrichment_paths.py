@@ -17,7 +17,9 @@ from pychipseeker.enrichment import (
     _as_ranked_frame,
     _enrichment_plot_frame,
     _hypergeom_sf,
+    _log_comb,
     _normal_quantile,
+    _odds_ratio_ci,
     _p_adjust,
     enrich_go,
     enrich_kegg,
@@ -93,6 +95,16 @@ def test_ora_haldane_correction_keeps_odds_finite() -> None:
     row = result.iloc[0]
     assert math.isfinite(row["OddsRatio"])
     assert row["ORLower"] <= row["OddsRatio"] <= row["ORUpper"]
+
+
+def test_odds_ratio_and_log_comb_bounds() -> None:
+    assert _log_comb(5, -1) == float("-inf")
+    assert _log_comb(5, 6) == float("-inf")
+
+    assert all(np.isnan(value) for value in _odds_ratio_ci(-1, 1, 1, 1))
+    odds, lower, upper = _odds_ratio_ci(1e308, 1, 1, 1e308)
+    assert math.isinf(odds)
+    assert math.isnan(lower) and math.isnan(upper)
 
 
 def test_normal_quantile_tails_and_validation() -> None:
@@ -291,6 +303,12 @@ def test_gsea_peak_genes_restricts_to_links(monkeypatch: pytest.MonkeyPatch) -> 
 def test_enrichment_plot_frame_normalises_columns() -> None:
     with pytest.raises(ValueError, match="result is empty"):
         _enrichment_plot_frame(pd.DataFrame())
+
+    records = _enrichment_plot_frame([{"Term": "A", "PValue": 0.01}])
+    assert records["Term"].tolist() == ["A"]
+
+    unnamed = _enrichment_plot_frame(pd.DataFrame({"PValue": [0.01]}, index=["A"]))
+    assert unnamed["Term"].tolist() == ["A"]
 
     indexed = pd.DataFrame({"PValue": [0.01, 0.2]}, index=["A", "B"])
     indexed.index.name = "Term"

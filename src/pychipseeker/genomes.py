@@ -406,7 +406,6 @@ def detect_assembly(
         )
 
     keys = {canonical_chrom(name) for name in names}
-    human = {str(i) for i in range(1, 23)} | {"x", "y", "m"}
     mouse = {str(i) for i in range(1, 20)} | {"x", "y", "m"}
 
     if keys & {"20", "21", "22"}:
@@ -419,21 +418,10 @@ def detect_assembly(
             f"TxDb='{candidates[0]}' explicitly or use bigwig=... to detect it"
         )
     if keys <= mouse and (keys & {str(i) for i in range(1, 20)}):
-        if keys <= human:
-            raise ValueError(
-                "chromosome names are compatible with both hg38/hg19 and "
-                "mm10/mm39/mm9; pass an explicit TxDb or use bigwig=... to "
-                "detect the assembly"
-            )
         raise ValueError(
-            "chromosome names look mouse-like, but mm10/mm39/mm9 cannot be "
-            "distinguished without chromosome sizes; pass an explicit TxDb "
-            "or use bigwig=... to detect it"
-        )
-    if keys <= human and any(key.isdigit() for key in keys):
-        raise ValueError(
-            "chromosome names are compatible with hg38/hg19; pass an explicit "
-            "TxDb or use bigwig=... to detect the assembly"
+            "chromosome names are compatible with both hg38/hg19 and "
+            "mm10/mm39/mm9; pass an explicit TxDb or use bigwig=... to "
+            "detect the assembly"
         )
     if keys & {"i", "ii", "iii", "iv", "v"}:
         return "sacCer3"
@@ -468,21 +456,9 @@ def _encode_column(table: str, values: pd.Series) -> Dict[str, np.ndarray]:
     prefix = f"{table}__{name}"
     tag = str(values.dtype)
     if tag == "int64":
-        raw = values.to_numpy(dtype=object)
-        missing = pd.isna(raw)
-        if missing.any():
-            arr = np.array(
-                [0 if m else int(v) for v, m in zip(raw, missing)], dtype=np.int64
-            )
-        else:
-            arr = raw.astype(np.int64)
+        arr = values.to_numpy(dtype=np.int64)
         if int(np.max(arr, initial=0)) < np.iinfo(np.int32).max:
             arr = arr.astype(np.int32)
-        if missing.any():
-            return {
-                prefix: arr,
-                f"{prefix}__na": np.ascontiguousarray(missing, dtype=bool),
-            }
         return {prefix: arr}
     flat = values.to_numpy(dtype=object)
     missing = pd.isna(flat)

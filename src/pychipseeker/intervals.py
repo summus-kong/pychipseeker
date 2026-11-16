@@ -317,9 +317,6 @@ class TSSIndex(_SortedFeatureIndex):
             return None
 
         arr, rows, _ = entry
-        if len(arr) == 0:
-            return None
-
         i = int(np.searchsorted(arr, int(pos), side="left"))
         candidates: list[int] = []
         if i > 0:
@@ -379,9 +376,6 @@ class TSSIndex(_SortedFeatureIndex):
             return None, None
 
         vals, rows, _ = entry
-        if len(vals) == 0:
-            return None, None
-
         q = _normalise_strand(strand) if same_strand else "*"
         end_inclusive = int(peak_end) - 1
         start = int(peak_start)

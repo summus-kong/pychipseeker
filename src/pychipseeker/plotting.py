@@ -618,8 +618,6 @@ def _mean_in_interval(
     if not valid.any():
         return float("nan")
     total = float(np.sum(lengths[valid]))
-    if total <= 0:
-        return float("nan")
     return float(np.sum(values[lo:hi][valid] * lengths[valid]) / total)
 
 

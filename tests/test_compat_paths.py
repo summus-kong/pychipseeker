@@ -71,11 +71,16 @@ def test_as_granges_and_detail_accept_dataframes() -> None:
     detail = detail_genomic_annotation(frame)
     assert detail is not frame
     assert detail.equals(frame)
-
     with pytest.raises(TypeError, match="PeakAnnotation or pandas.DataFrame"):
         as_granges("peaks.bed")
     with pytest.raises(TypeError, match="PeakAnnotation or pandas.DataFrame"):
         detail_genomic_annotation("peaks.bed")
+
+
+def test_detail_genomic_annotation_from_peak_annotation(annotation) -> None:
+    detail = detail_genomic_annotation(annotation)
+    assert detail.equals(annotation.detail_genomic_annotation)
+    assert detail is not annotation.detail_genomic_annotation
 
 
 def test_read_peak_file_accepts_a_dataframe() -> None:
@@ -136,6 +141,12 @@ def test_annotate_db_dataframe_and_mapping(annotation) -> None:
     table = pd.DataFrame({"geneId": ["G1", "G2"], "SYMBOL": ["A", "B"]})
     result = annotate_db(copy.deepcopy(annotation), table, columns=["SYMBOL"])
     assert set(result.annotation["SYMBOL"].dropna()) == {"A", "B"}
+
+    fallback = pd.DataFrame({"identifier": ["G1", "G2"], "SYMBOL": ["A", "B"]})
+    mapped_fallback = annotate_db(
+        copy.deepcopy(annotation), fallback, columns=["SYMBOL"]
+    )
+    assert set(mapped_fallback.annotation["SYMBOL"].dropna()) == {"A", "B"}
 
     mapping = {"G1": {"SYMBOL": "A", "ENTREZID": "1"}, "G2": {"SYMBOL": "B"}}
     mapped = annotate_db(copy.deepcopy(annotation), mapping, columns=["SYMBOL"])
@@ -362,6 +373,14 @@ def test_enrich_peak_overlap_dataframe_sizes_and_no_shuffle(annotation) -> None:
     assert np.isnan(static["pvalue"].iloc[0])
     assert static["p.adjust"].iloc[0] == 1.0
 
+    query = pd.DataFrame({"chrom": ["chr1"], "start": [0], "end": [10]})
+    target = pd.DataFrame({"chrom": ["chr1"], "start": [100], "end": [110]})
+    disjoint = enrich_peak_overlap(
+        query, target, chrom_sizes=sizes, nShuffle=2, seed=1
+    )
+    assert disjoint["N_OL"].iloc[0] == 0
+    assert disjoint["pvalue"].iloc[0] == 1.0
+
 
 def test_hypergeom_helpers_bounds() -> None:
     assert _log_comb(5, -1) == float("-inf")
@@ -400,6 +419,9 @@ def test_upsetplot_guards_and_options(annotation) -> None:
     fig, ax = upsetplot(annotation, order_by="degree")
     assert "Annotation intersections" == ax.get_title()
     plt.close(fig)
+
+    with pytest.raises(ValueError, match="no non-empty annotation intersections"):
+        upsetplot(annotation, n_intersections=0)
 
     fig, ax = plt.subplots()
     returned_fig, returned_ax = upsetplot(annotation, ax=ax)
