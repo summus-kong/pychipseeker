@@ -31,6 +31,11 @@ All notable changes to pychipseeker are documented here.  The format follows
 
 ### Fixed
 
+- `enrich_peak_genes(..., include_gene_body=False)` now keeps only promoter and
+  flanking links, dropping host-gene (exon/intron) links; the flag was
+  previously accepted but ignored.
+- `plot_avg_prof(origin_label=...)` now draws the anchor label instead of
+  ignoring it.
 - `annotate_peak(..., drop_unmapped=False)` now keeps peaks whose chromosome
   is absent from the annotation as `Unmapped` rows with missing gene and
   distance fields.  Previously the argument was accepted but ignored, so those

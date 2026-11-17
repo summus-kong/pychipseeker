@@ -651,6 +651,15 @@ def test_plot_avg_prof_uses_xlim():
     x = ax.lines[0].get_xdata()
     assert x[0] == -2
     assert x[-1] == 3
+    assert [t.get_text() for t in ax.texts] == ["TSS"]
+    plt.close(fig)
+
+    fig, ax = plot_avg_prof(matrix, origin_label="TES")
+    assert [t.get_text() for t in ax.texts] == ["TES"]
+    plt.close(fig)
+
+    fig, ax = plot_avg_prof(matrix, origin_label="")
+    assert not ax.texts
     plt.close(fig)
 
 

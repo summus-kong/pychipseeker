@@ -82,7 +82,7 @@ class TagMatrix(np.ndarray):
     def matrix(self) -> np.ndarray:
         return np.asarray(self)
 
-    def __array_wrap__(self, out_arr, context=None, return_scalar=False):
+    def __array_wrap__(self, out_arr, _context=None, _return_scalar=False):
         # Keep ordinary numpy ufuncs returning plain ndarrays; metadata is only
         # meaningful for the original matrix, not for a derived mean/std.
         if out_arr.ndim == 0:
@@ -1360,6 +1360,17 @@ def plot_avg_prof(
             )
 
     ax.axvline(0, color="#555555", linewidth=0.8, linestyle="--")
+    if origin_label:
+        ax.text(
+            0,
+            0.98,
+            origin_label,
+            transform=ax.get_xaxis_transform(),
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="#555555",
+        )
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
     if label:

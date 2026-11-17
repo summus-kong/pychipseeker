@@ -337,8 +337,9 @@ def enrich_peak_genes(
 ) -> pd.DataFrame:
     """Map peaks to genes with ``seq2gene`` and run Enrichr.
 
-    ``include_gene_body`` is retained for backwards compatibility; host-gene
-    (exon/intron) links are always included by ``seq2gene_links``.
+    ``include_gene_body=False`` keeps only promoter and flanking links, dropping
+    host-gene (exon/intron) links, which mirrors ChIPseeker's
+    ``includeGeneBody=FALSE``.
 
     For offline analysis pass ``local=True`` to use :func:`ora` instead of
     Enrichr; all remaining keyword arguments are forwarded accordingly.
@@ -352,6 +353,8 @@ def enrich_peak_genes(
             else (-int(upstream or 0), int(downstream or 0))
         ),
     )
+    if not include_gene_body and "link_type" in links.columns:
+        links = links[links["link_type"] != "host"]
     if links.empty:
         raise ValueError("no peak-gene links were found")
     if gene_column not in links.columns:

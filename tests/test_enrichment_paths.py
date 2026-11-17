@@ -187,6 +187,36 @@ class FakeLinksAnnotation:
         return self.links
 
 
+def test_enrich_peak_genes_include_gene_body_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    links = pd.DataFrame(
+        {
+            "gene_name": ["Promoter", "Host"],
+            "link_type": ["promoter", "host"],
+        }
+    )
+    annotation = FakeLinksAnnotation(links)
+    captured = {}
+    monkeypatch.setattr(
+        enrichment, "ora", lambda genes, **kwargs: captured.update(genes=genes)
+    )
+    enrich_peak_genes(annotation, local=True, include_gene_body=False)
+    assert captured["genes"] == ["Promoter"]
+
+    monkeypatch.setattr(
+        enrichment, "enrichr", lambda genes, **kwargs: captured.update(genes=genes)
+    )
+    enrich_peak_genes(annotation, include_gene_body=False)
+    assert captured["genes"] == ["Promoter"]
+
+    host_only = FakeLinksAnnotation(
+        pd.DataFrame({"gene_name": ["Host"], "link_type": ["host"]})
+    )
+    with pytest.raises(ValueError, match="no peak-gene links"):
+        enrich_peak_genes(host_only, local=True, include_gene_body=False)
+
+
 def test_enrich_peak_genes_local_and_remote(monkeypatch: pytest.MonkeyPatch) -> None:
     links = pd.DataFrame({"gene_name": ["A", "B", "A"], "gene_id": ["g1", "g2", "g1"]})
     annotation = FakeLinksAnnotation(links)
