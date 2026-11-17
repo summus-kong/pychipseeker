@@ -808,7 +808,7 @@ def _bam_matrix_rows(
     """Extract coverage rows for one block of windows."""
 
     try:
-        import pysam  # type: ignore
+        import pysam
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pysam is required for BAM-backed tag matrices; install with "
@@ -934,7 +934,7 @@ def _bam_matrix(
 
     # Fail early with the friendly optional-dependency message.
     try:
-        import pysam  # type: ignore  # noqa: F401
+        import pysam  # noqa: F401
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise ImportError(
             "pysam is required for BAM-backed tag matrices; install with "

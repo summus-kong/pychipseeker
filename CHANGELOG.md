@@ -19,9 +19,14 @@ All notable changes to pychipseeker are documented here.  The format follows
   classifier.  The build requires setuptools 77 or newer.
 - CI builds both the sdist and the wheel and runs `twine check`, so release
   artifacts are validated on every push.
+- Mypy now checks the bodies of unannotated functions and rejects unused
+  `type: ignore` comments and redundant casts.
 
 ### Fixed
 
+- Source distributions now include the test fixtures and example inputs, so
+  the test suite can run from an unpacked sdist instead of failing on missing
+  `examples/` files.
 - The defensive guard that skips a cache file disappearing between globbing
   and deletion is now covered, bringing every shipped module to 100%
   coverage.

@@ -135,6 +135,26 @@ jobs:
         run: python -m pip install --upgrade pip build twine && python -m build
       - name: Check distribution metadata
         run: python -m twine check dist/*
+      - name: Check sdist fixtures
+        shell: python
+        run: |
+          import glob
+          import tarfile
+
+          sdist = glob.glob("dist/*.tar.gz")[0]
+          with tarfile.open(sdist) as archive:
+              names = archive.getnames()
+          required = (
+              "tests/data/test.bw",
+              "examples/example.gtf",
+              "examples/example_peaks.bed",
+          )
+          missing = [
+              item
+              for item in required
+              if not any(name.endswith(item) for name in names)
+          ]
+          assert not missing, f"missing from sdist: {missing}"
       - name: Install core wheel
         run: |
           $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1

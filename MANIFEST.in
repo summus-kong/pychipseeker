@@ -1,0 +1,7 @@
+# Source distributions ship the files needed to run the test suite and the
+# reproducible examples after unpacking.
+include tests/data/*
+recursive-include tests *.py
+include examples/*.bed
+include examples/*.gtf
+include examples/*.py

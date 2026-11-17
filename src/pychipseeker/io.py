@@ -528,7 +528,7 @@ def _read_bigbed(path: Path) -> pd.DataFrame:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     try:
-        import pybigtools  # type: ignore
+        import pybigtools
     except ImportError as exc:
         raise ImportError(
             "reading .bb/.bigBed files requires the UCSC bigBedToBed utility "
@@ -563,7 +563,7 @@ def _read_bam(path: Path) -> pd.DataFrame:
     """Read aligned reads from a BAM/CRAM file with pysam."""
 
     try:
-        import pysam  # type: ignore
+        import pysam
     except ImportError as exc:
         raise ImportError(
             "reading .bam/.cram files requires the optional pysam package "

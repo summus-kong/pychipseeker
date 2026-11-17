@@ -126,9 +126,9 @@ ignore = [
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
-warn_unused_ignores = false
-warn_redundant_casts = false
-check_untyped_defs = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
 files = ["src/pychipseeker"]
 exclude = ["examples/output", "build", "dist"]
 
