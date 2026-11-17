@@ -23,6 +23,8 @@ All notable changes to pychipseeker are documented here.  The format follows
   `type: ignore` comments and redundant casts.
 - CI tests Python 3.14 and uses the current major versions of the checkout,
   setup-python and GitHub Pages actions.
+- CI now builds the MkDocs site on every push and pull request, so
+  documentation errors are caught before the Pages workflow runs.
 
 ### Fixed
 

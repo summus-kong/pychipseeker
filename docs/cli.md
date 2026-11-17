@@ -1,6 +1,7 @@
 # Command line
 
 ```text
+pychipseeker --version
 pychipseeker annotate --peaks PEAKS (--gtf GTF | --txdb TXDB) --output OUT
 pychipseeker plot     --annotated TABLE --outdir DIR
 pychipseeker enrich   --annotated TABLE [--gmt GMT --local] [--plot]
@@ -11,6 +12,9 @@ pychipseeker report   --peaks PEAKS (--gtf GTF | --txdb TXDB) --output PDF
 pychipseeker cache    list [--json] | info NAME | prune |
                       download ASSEMBLY... | clear [ASSEMBLY...] [--all]
 ```
+
+Run `pychipseeker --help` for the top-level command list and `--version` to
+print the installed package version.
 
 ## annotate
 
