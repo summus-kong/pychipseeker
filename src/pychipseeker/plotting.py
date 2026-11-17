@@ -1021,6 +1021,8 @@ def plot_tss_heatmap(
     ax.axvline(0, color="white", linewidth=0.8, linestyle="--")
     ax.set_xlabel("Distance to TSS (bp)")
     ax.set_ylabel("Features")
+    if title:
+        ax.set_title(title)
     fig.colorbar(im, ax=ax, label="Signal")
     fig.tight_layout()
     return fig, ax

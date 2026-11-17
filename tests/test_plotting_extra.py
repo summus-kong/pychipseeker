@@ -424,3 +424,18 @@ def test_tss_heatmap_sorts_rows():
     assert drawn[0, 2] == 3.0
     assert drawn[-1, 2] == 1.0
     plt.close(fig)
+
+
+def test_tss_heatmap_title():
+    matrix = np.ones((2, 5), dtype=float)
+    fig, ax = plot_tss_heatmap(matrix)
+    assert ax.get_title() == "TSS heatmap"
+    plt.close(fig)
+
+    fig, ax = plot_tss_heatmap(matrix, title="Signal around TSS")
+    assert ax.get_title() == "Signal around TSS"
+    plt.close(fig)
+
+    fig, ax = plot_tss_heatmap(matrix, title="")
+    assert ax.get_title() == ""
+    plt.close(fig)

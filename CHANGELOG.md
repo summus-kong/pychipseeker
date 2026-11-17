@@ -31,6 +31,16 @@ All notable changes to pychipseeker are documented here.  The format follows
 
 ### Fixed
 
+- `plot_tss_heatmap(title=...)` now sets the axes title instead of ignoring it.
+- `vennpie(r=...)` uses the ChIPseeker convention of ring radii `2r`, `3r`
+  and `4r`, validates `r`, and accepts `legend=False` for inset use.
+- `upsetplot(vennpie=True)` now draws the nested pie inset in the empty corner
+  instead of ignoring the flag.
+- `enrich_peak_overlap(pool=...)` pools several target peak sets into one test
+  when `True` (the ChIPseeker default) and tests each set separately when
+  `False`.
+- `plot_peak_prof(windows_name=...)` uses the supplied names as legend/facet
+  labels instead of ignoring them.
 - `enrich_peak_genes(..., include_gene_body=False)` now keeps only promoter and
   flanking links, dropping host-gene (exon/intron) links; the flag was
   previously accepted but ignored.

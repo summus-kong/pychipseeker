@@ -447,11 +447,24 @@ def vennplot_peakfile(
     return vennplot(sets, labels=labels, **kwargs)
 
 
-def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=None):
-    """Draw nested pies summarising ChIPseeker's genomic annotation detail."""
+def vennpie(
+    annotation: PeakAnnotation,
+    r: float = 0.2,
+    figsize=(6.0, 5.0),
+    ax=None,
+    legend: bool = True,
+):
+    """Draw nested pies summarising ChIPseeker's genomic annotation detail.
+
+    ``r`` is the base radius, as in ChIPseeker: the three rings use ``2r``,
+    ``3r`` and ``4r``.  Set ``legend=False`` to suppress the category legend.
+    """
 
     if not isinstance(annotation, PeakAnnotation):
         raise TypeError("vennpie expects a PeakAnnotation")
+    base = float(r)
+    if base <= 0:
+        raise ValueError("r must be positive")
     detail = annotation.detail_genomic_annotation
     if detail.empty:
         raise ValueError("annotation has no detailGenomicAnnotation")
@@ -475,29 +488,31 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
     plt = _plt()
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
+        created = True
     else:
         fig = ax.figure
+        created = False
     outer_vals = [genic, intergenic]
     outer_labels = ["Genic", "Intergenic"]
     outer_colors = ["#3182bd", "#fec44f"]
     ax.pie(
         outer_vals,
-        radius=1.0,
+        radius=4 * base,
         colors=outer_colors,
         startangle=90,
         counterclock=False,
-        wedgeprops=dict(width=0.28, edgecolor="white"),
+        wedgeprops=dict(width=base, edgecolor="white"),
     )
     mid_vals = [exon, intron, other_genic]
     mid_labels = ["Exon", "Intron", "Other genic"]
     mid_colors = ["#9ecae1", "#fc9272", "#bebada"]
     ax.pie(
         mid_vals,
-        radius=0.70,
+        radius=3 * base,
         colors=mid_colors,
         startangle=90,
         counterclock=False,
-        wedgeprops=dict(width=0.26, edgecolor="white"),
+        wedgeprops=dict(width=base, edgecolor="white"),
     )
     inner_vals = [
         upstream,
@@ -509,11 +524,11 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
     inner_colors = ["#ffeda0", "#fee0d2", "#d95f0e", "#d9d9d9"]
     ax.pie(
         inner_vals,
-        radius=0.42,
+        radius=2 * base,
         colors=inner_colors,
         startangle=90,
         counterclock=False,
-        wedgeprops=dict(width=0.24, edgecolor="white"),
+        wedgeprops=dict(width=base, edgecolor="white"),
     )
     ax.text(0, 0, f"n={total}", ha="center", va="center", fontsize=9)
     handles = [
@@ -527,13 +542,24 @@ def vennpie(annotation: PeakAnnotation, r: float = 0.2, figsize=(6.0, 5.0), ax=N
             outer_vals + mid_vals + inner_vals,
         )
     ]
-    ax.legend(
-        handles, labels, loc="center left", bbox_to_anchor=(1.0, 0.5), frameon=False
-    )
+    if legend:
+        ax.legend(
+            handles,
+            labels,
+            loc="center left",
+            bbox_to_anchor=(1.0, 0.5),
+            frameon=False,
+        )
     ax.set_aspect("equal")
     ax.set_title("Genomic annotation")
-    fig.tight_layout()
+    if created:
+        fig.tight_layout()
     return fig, ax
+
+
+# Keep a module-level handle: ``upsetplot(vennpie=True)`` shadows the function
+# name with its boolean argument.
+_vennpie_plot = vennpie
 
 
 # ----------------------------------------------------------------------
@@ -775,6 +801,10 @@ def enrich_peak_overlap(
         size_col = "size" if "size" in chrom_sizes.columns else "end"
         chrom_sizes = dict(zip(chrom_sizes["chrom"].astype(str), chrom_sizes[size_col]))
     sizes = {str(k): int(v) for k, v in dict(chrom_sizes).items()}
+    if bool(pool) and len(targets) > 1:
+        targets = [
+            pd.concat([_normalise_peaks(item) for item in targets], ignore_index=True)
+        ]
     rng = np.random.default_rng(seed)
     rows = []
     for target in targets:
@@ -1016,6 +1046,11 @@ def upsetplot(
     for spine in sizes.spines.values():
         spine.set_visible(False)
     sizes.set_ylim(matrix.get_ylim())
+
+    if vennpie:
+        corner = fig.add_subplot(grid[0, 0])
+        _vennpie_plot(annotation, ax=corner, legend=False)
+        corner.set_title("")
 
     fig.subplots_adjust(
         left=0.20, right=0.98, top=0.90, bottom=0.12, wspace=0.55, hspace=0.06

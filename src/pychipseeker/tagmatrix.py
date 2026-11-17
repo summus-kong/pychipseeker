@@ -1310,6 +1310,10 @@ def plot_avg_prof(
     a percentile bootstrap of the row-wise mean (ChIPseeker uses a bootstrap
     confidence interval as well); exact interval values are not intended to be
     byte-identical.
+
+    ``facet`` and ``free_y`` are accepted so single- and multi-matrix callers
+    can share one signature; faceting is only applied by :func:`plot_multi_prof`
+    because this function draws exactly one profile.
     """
 
     plt = _plt()
@@ -1456,6 +1460,10 @@ def plot_peak_prof(
 
     if tagMatrix is not None:
         if isinstance(tagMatrix, (list, tuple)):
+            if windows_name is not None:
+                for matrix, name in zip(tagMatrix, windows_name):
+                    if hasattr(matrix, "label"):
+                        matrix.label = name
             return plot_multi_prof(
                 tagMatrix,
                 xlab=xlab,
@@ -1465,6 +1473,8 @@ def plot_peak_prof(
                 free_y=free_y,
                 **kwargs,
             )
+        if windows_name:
+            kwargs.setdefault("label", windows_name[0])
         return plot_avg_prof(
             tagMatrix,
             xlab=xlab,
@@ -1477,6 +1487,8 @@ def plot_peak_prof(
 
     if peak is None:
         raise ValueError("provide tagMatrix or peak")
+    if windows_name:
+        kwargs.setdefault("label", windows_name[0])
     return plot_peak_prof2(
         peak=peak,
         upstream=3000 if upstream is None else upstream,

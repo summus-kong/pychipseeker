@@ -677,8 +677,12 @@ def test_plot_peak_prof_builds_from_peaks(model):
         upstream=100,
         downstream=100,
         nbin=10,
+        windows_name=["Promoter"],
     )
     assert "Genomic Region" in ax.get_xlabel()
+    legend = ax.get_legend()
+    assert legend is not None
+    assert [t.get_text() for t in legend.get_texts()] == ["Promoter"]
     plt.close(fig)
 
 
@@ -695,6 +699,27 @@ def test_plot_preconditions_and_list_dispatch():
 
     fig, axes = plot_peak_prof([matrix, matrix], facet="row")
     assert axes is not None
+    plt.close(fig)
+
+    tagged = [TagMatrix(np.ones((2, 5))), TagMatrix(np.ones((2, 5)))]
+    fig, axes = plot_peak_prof(
+        tagged, windows_name=["Gene body", "Promoter"], facet="row"
+    )
+    labels = [
+        axis.get_legend().get_texts()[0].get_text()
+        for axis in fig.axes
+        if axis.get_legend() is not None
+    ]
+    assert labels == ["Gene body", "Promoter"]
+    plt.close(fig)
+
+    fig, axes = plot_peak_prof([matrix, matrix], windows_name=["A", "B"], facet="row")
+    assert axes is not None
+    plt.close(fig)
+
+    fig, ax = plot_peak_prof(matrix, windows_name=["Matrix"], facet="none")
+    legend = ax.get_legend()
+    assert [t.get_text() for t in legend.get_texts()] == ["Matrix"]
     plt.close(fig)
 
     with pytest.raises(ValueError, match="provide tagMatrix or peak"):

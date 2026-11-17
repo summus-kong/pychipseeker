@@ -222,6 +222,18 @@ def test_overlap_enrichment(annotation):
     assert (result["pvalue"] <= 1).all()
 
 
+def test_overlap_enrichment_pool(annotation):
+    targets = [annotation.peaks.iloc[:3], annotation.peaks.iloc[3:]]
+    separate = enrich_peak_overlap(annotation.peaks, targets, nShuffle=0, pool=False)
+    assert len(separate) == 2
+    assert list(separate["tLen"]) == [3, len(annotation.peaks) - 3]
+
+    pooled = enrich_peak_overlap(annotation.peaks, targets, nShuffle=0, pool=True)
+    assert len(pooled) == 1
+    assert pooled["tLen"].iloc[0] == len(annotation.peaks)
+    assert pooled["N_OL"].iloc[0] == len(annotation.peaks)
+
+
 def test_anno_enrichment(annotation):
     result = enrich_anno_overlap(
         annotation.peaks,

@@ -1484,15 +1484,16 @@ vennplot_peakfile(peakfiles: 'Sequence[Union[str, Path, pd.DataFrame]]', labels:
 Draw nested pies summarising ChIPseeker's genomic annotation detail.
 
 ```python
-vennpie(annotation: 'PeakAnnotation', r: 'float' = 0.2, figsize=(6.0, 5.0), ax=None)
+vennpie(annotation: 'PeakAnnotation', r: 'float' = 0.2, figsize=(6.0, 5.0), ax=None, legend: 'bool' = True)
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | **annotation** | PeakAnnotation | — | `PeakAnnotation` whose detailed labels are summarized. |
-| `r` | float | `0.2` | Inner radius of the nested pie. |
+| `r` | float | `0.2` | Base radius; the three rings use `2r`, `3r` and `4r`. |
 | `figsize` | — | `(6.0, 5.0)` | Figure size in inches, as `(width, height)`. |
 | `ax` | — | `None` | Existing matplotlib axes; a new figure is created when omitted. |
+| `legend` | bool | `True` | Draw a legend when `True`. |
 
 ### `upsetplot`
 

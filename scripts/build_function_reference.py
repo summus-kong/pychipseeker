@@ -745,7 +745,7 @@ OVERRIDES: Dict[Tuple[str, str], str] = {
     ("vennplot", "colors"): "Set colours.",
     ("vennplot_peakfile", "peakfiles"): "Peak files to compare.",
     ("vennpie", "annotation"): "`PeakAnnotation` whose detailed labels are summarized.",
-    ("vennpie", "r"): "Inner radius of the nested pie.",
+    ("vennpie", "r"): "Base radius; the three rings use `2r`, `3r` and `4r`.",
     (
         "upsetplot",
         "annotation",

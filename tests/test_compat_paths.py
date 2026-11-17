@@ -266,6 +266,15 @@ def test_vennpie_guards_and_existing_axes(annotation) -> None:
     assert returned_fig is fig and returned_ax is ax
     plt.close(fig)
 
+    fig, ax = vennpie(annotation, r=0.3, legend=False)
+    wedges = [patch for patch in ax.patches if hasattr(patch, "r")]
+    assert max(wedge.r for wedge in wedges) == pytest.approx(1.2)
+    assert ax.get_legend() is None
+    plt.close(fig)
+
+    with pytest.raises(ValueError, match="r must be positive"):
+        vennpie(annotation, r=0)
+
 
 def test_covplot_list_chrs_xlim_and_lower(annotation) -> None:
     peaks = annotation.peaks
@@ -416,6 +425,10 @@ def test_upsetplot_guards_and_options(annotation) -> None:
 
     fig, ax = upsetplot(annotation, order_by="degree")
     assert "Annotation intersections" == ax.get_title()
+    plt.close(fig)
+
+    fig, ax = upsetplot(annotation, vennpie=True)
+    assert len(fig.axes) == 4
     plt.close(fig)
 
     with pytest.raises(ValueError, match="no non-empty annotation intersections"):
