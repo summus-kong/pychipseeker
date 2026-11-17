@@ -1,4 +1,5 @@
 import math
+import warnings
 
 import pandas as pd
 import pytest
@@ -64,6 +65,19 @@ def test_unknown_chromosome_is_dropped_with_warning(examples_dir):
     with pytest.warns(RuntimeWarning, match="dropped"):
         ann = _example(examples_dir)
     assert len(ann.annotation) == 10
+
+
+def test_drop_unmapped_false_keeps_unknown_chromosome(examples_dir):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        ann = _example(examples_dir, drop_unmapped=False)
+    assert len(ann.annotation) == 11
+    df = ann.to_dataframe().set_index("peak_id")
+    row = df.loc["P_unknown_chr"]
+    assert row["annotation"] == "Unmapped"
+    assert math.isnan(row["distance_to_tss"])
+    assert pd.isna(row["gene_id"])
+    assert pd.isna(row["nearest_gene_id"])
 
 
 def test_strand_aware_distance_uses_peak_ends(examples_dir):

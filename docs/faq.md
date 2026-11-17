@@ -61,7 +61,8 @@ print(sorted(ann.gene_annotation.features("gene")["chrom"].unique())[:5])
 ```
 
 The annotation call also emits a warning when every peak on a chromosome is
-dropped.
+dropped.  Pass `drop_unmapped=False` to keep those peaks with
+`annotation="Unmapped"` and missing gene/distance fields instead.
 
 ## `pyBigWig` or `pysam` will not install on Windows
 

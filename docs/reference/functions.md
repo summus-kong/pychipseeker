@@ -104,7 +104,7 @@ annotate_peak(peaks: 'Optional[Union[str, Path, pd.DataFrame]]' = None, gtf: 'Op
 | `downstream` | Optional[int] | `None` | Convenience alias for the downstream side of `tss_region`. |
 | `promoter_bins` | Optional[Sequence[int]] | `None` | Promoter bin edges in bp; defaults to `tss_region` plus ChIPseeker's standard bins. |
 | `downstream_distance` | int | `300` | Downstream window in bp used for the `Downstream` category. |
-| `drop_unmapped` | bool | `True` | Drop peaks without a genomic annotation when `True`. |
+| `drop_unmapped` | bool | `True` | Drop peaks with no feature on their chromosome; `False` keeps them as `Unmapped`. |
 | `align_annotation_feature` | bool | `True` | Report the isoform that supplied the genomic feature (ChIPseeker fix #252). |
 | `n_jobs` | Optional[int] | `None` | `None`/`1` sequential, `-1` all cores, or an explicit worker count. |
 | `TxDb` | Optional[Union[str, Path, DataFrame, GeneAnnotation]] | `None` | Assembly name, GTF/GFF path, DataFrame or `GeneAnnotation`; mutually exclusive with `gtf`. |

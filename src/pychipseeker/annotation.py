@@ -1680,6 +1680,7 @@ def _annotate_rows(
     overlap: str,
     align_annotation_feature: bool,
     downstream_distance: int,
+    drop_unmapped: bool = True,
     verbose: bool = False,
     total: Optional[int] = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, bool]], int]:
@@ -1734,7 +1735,50 @@ def _annotate_rows(
             overlap=overlap,
         )
         if nearest_idx is None:
-            dropped += 1
+            if drop_unmapped:
+                dropped += 1
+                continue
+            records.append(
+                {
+                    "peak_id": str(row.peak_id),
+                    "chrom": chrom,
+                    "start": start,
+                    "end": end,
+                    "width": end - start,
+                    "center": (start + end) // 2,
+                    "strand": peak_strand,
+                    "annotation": "Unmapped" if assign_genomic_annotation else None,
+                    "gene_id": None,
+                    "gene_name": None,
+                    "gene_chrom": None,
+                    "gene_start": None,
+                    "gene_end": None,
+                    "gene_strand": None,
+                    "gene_length": None,
+                    "gene_type": None,
+                    "transcript_id": None,
+                    "transcript_name": None,
+                    "transcript_type": None,
+                    "distance_to_tss": float("nan"),
+                    "nearest_gene_id": None,
+                    "nearest_gene_name": None,
+                    "nearest_transcript_id": None,
+                    "nearest_distance": float("nan"),
+                }
+            )
+            details.append(
+                {
+                    "genic": False,
+                    "Intergenic": False,
+                    "Promoter": False,
+                    "fiveUTR": False,
+                    "threeUTR": False,
+                    "Exon": False,
+                    "Intron": False,
+                    "downstream": False,
+                    "distal_intergenic": False,
+                }
+            )
             continue
 
         promoter_hit = (
@@ -1957,8 +2001,9 @@ def _annotate_peaks_frame(
     """Annotate every peak, splitting large inputs across processes.
 
     Chunks are contiguous slices of the normalised peak table, so
-    concatenating the per-chunk records restores the input order even though
-    rows without a matching feature are dropped.
+    concatenating the per-chunk records restores the input order.  Rows without
+    a matching feature are dropped or labelled ``Unmapped`` depending on the
+    ``drop_unmapped`` setting.
     """
 
     workers = effective_jobs(n_jobs, tasks=len(peaks_df))
@@ -2047,6 +2092,11 @@ def annotate_peak(
 
     ``n_jobs`` annotates large peak sets in parallel processes; ``-1`` uses
     every available core and the default (``None``) stays sequential.
+
+    Peaks on chromosomes absent from the annotation are dropped with a
+    ``RuntimeWarning`` by default, matching ChIPseeker.  Set
+    ``drop_unmapped=False`` to keep them with ``annotation="Unmapped"`` and
+    missing distance/gene fields instead.
 
     ``align_annotation_feature`` follows the ChIPseeker development fix for
     issue #252: when a peak overlaps an exon/intron/UTR from one isoform but the
@@ -2190,6 +2240,7 @@ def annotate_peak(
         "overlap": overlap,
         "align_annotation_feature": align_annotation_feature,
         "downstream_distance": downstream_distance,
+        "drop_unmapped": bool(drop_unmapped),
         "verbose": verbose,
         "total": len(peaks_df),
     }

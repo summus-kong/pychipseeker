@@ -265,7 +265,10 @@ PARAM_DOCS: Dict[str, str] = {
     "ignore_upstream": "Ignore upstream features when assigning annotations.",
     "overlap": "Overlap mode: `'TSS'` (default) or `'all'` feature spans.",
     "promoter_bins": "Promoter bin edges in bp, e.g. `(1000, 2000, 3000)`.",
-    "drop_unmapped": "Drop peaks without a genomic annotation when `True`.",
+    "drop_unmapped": (
+        "Drop peaks with no feature on their chromosome; `False` keeps them as "
+        "`Unmapped`."
+    ),
     "align_annotation_feature": "Report the isoform that supplied the genomic feature (ChIPseeker fix #252).",
     "anno_db": "Gene-annotation table, mapping or path used to add gene metadata.",
     "columns": "Gene metadata columns to add; `None` keeps all available columns.",
