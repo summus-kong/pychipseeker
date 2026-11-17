@@ -21,6 +21,8 @@ All notable changes to pychipseeker are documented here.  The format follows
   artifacts are validated on every push.
 - Mypy now checks the bodies of unannotated functions and rejects unused
   `type: ignore` comments and redundant casts.
+- CI tests Python 3.14 and uses the current major versions of the checkout,
+  setup-python and GitHub Pages actions.
 
 ### Fixed
 
