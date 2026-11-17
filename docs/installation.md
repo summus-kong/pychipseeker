@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or newer
+- Python 3.9 or newer (tested on 3.9 through 3.14)
 - NumPy, pandas and matplotlib (installed automatically)
 
 The core has **no compiler requirement** and no SciPy dependency. Genome

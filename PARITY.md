@@ -113,6 +113,10 @@ Legend:
    are patched to use `_wfopen()` so UTF-8 (non-ASCII, e.g. Chinese) local
    paths work on Windows on a build matching `pyBigWig` upstream; the tests
    use upstream's own `pyBigWigTest/test.bw` file.
+9. **`drop_unmapped`**: a Python-only keyword (CLI `--keep-unmapped`) for
+   peaks on chromosomes absent from the annotation.  The default `True`
+   matches ChIPseeker and drops them with a warning; setting it to `False`
+   keeps them as `Unmapped` rows with missing gene and distance fields.
 
 ## Re-running the R comparison
 

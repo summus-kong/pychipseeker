@@ -220,6 +220,32 @@ def test_cli_annotate(tmp_path, examples_dir):
     assert (plot_dir / "distance_to_tss.png").exists()
 
 
+def test_cli_annotate_keep_unmapped(tmp_path, examples_dir):
+    out = tmp_path / "annotated.tsv"
+    rc = main(
+        [
+            "annotate",
+            "--peaks",
+            str(examples_dir / "example_peaks.bed"),
+            "--gtf",
+            str(examples_dir / "example.gtf"),
+            "--output",
+            str(out),
+            "--upstream",
+            "10",
+            "--downstream",
+            "10",
+            "--keep-unmapped",
+            "--quiet",
+        ]
+    )
+    assert rc == 0
+    df = pd.read_csv(out, sep="\t")
+    assert len(df) == 11
+    row = df.set_index("peak_id").loc["P_unknown_chr"]
+    assert row["annotation"] == "Unmapped"
+
+
 def test_cli_plot(tmp_path, examples_dir):
     annotated = tmp_path / "annotated.tsv"
     main(

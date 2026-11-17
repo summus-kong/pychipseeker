@@ -25,6 +25,9 @@ All notable changes to pychipseeker are documented here.  The format follows
   setup-python and GitHub Pages actions.
 - CI now builds the MkDocs site on every push and pull request, so
   documentation errors are caught before the Pages workflow runs.
+- The command-line reference documents `--keep-unmapped`, and `PARITY.md`
+  records `drop_unmapped` as a Python-only option (ChIPseeker always drops
+  peaks without a feature on their chromosome).
 
 ### Fixed
 

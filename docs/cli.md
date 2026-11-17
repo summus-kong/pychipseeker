@@ -35,6 +35,10 @@ local GTF/GFF file.
 `--jobs N` annotates large peak sets in parallel (`-1` = all cores); the
 default `1` keeps the run sequential.
 
+`--keep-unmapped` keeps peaks on chromosomes that are absent from the
+annotation as `annotation="Unmapped"` rows instead of dropping them, which is
+the ChIPseeker default.
+
 ## callpeak and filter
 
 ```bash
