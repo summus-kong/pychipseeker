@@ -4,6 +4,19 @@ This page walks through a complete small analysis: annotate peaks, inspect the
 result, draw figures, build a promoter matrix, summarise the peak set and write
 a PDF report.
 
+## Try it without your own data
+
+From a repository checkout, this runs the whole loop on 10 bundled peaks (no
+downloads, no bigWig needed):
+
+```bash
+python examples/run_example.py
+```
+
+It prints the annotation table and writes `examples/output/*.png` and matching
+`*.pdf` vector files.  The rest of this page explains the same steps for your
+own data.
+
 ## 1. Annotate
 
 ```python

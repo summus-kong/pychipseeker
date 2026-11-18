@@ -19,6 +19,15 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "output"
 OUT.mkdir(exist_ok=True)
 
+
+def save(fig, name: str) -> None:
+    """Write a PNG preview and the vector PDF next to it."""
+
+    fig.savefig(OUT / f"{name}.png", dpi=200, bbox_inches="tight")
+    fig.savefig(OUT / f"{name}.pdf", bbox_inches="tight")
+    fig.clf()
+
+
 ann = pcs.annotate_peak(
     peaks=HERE / "example_peaks.bed",
     gtf=HERE / "example.gtf",
@@ -35,16 +44,13 @@ print(
 )
 
 fig, _ = ann.plot_anno_pie()
-fig.savefig(OUT / "annotation_pie.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "annotation_pie")
 
 fig, _ = ann.plot_anno_bar()
-fig.savefig(OUT / "annotation_bar.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "annotation_bar")
 
 fig, _ = ann.plot_dist_to_tss()
-fig.savefig(OUT / "distance_to_tss.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "distance_to_tss")
 
 # The bedGraph/precomputed-matrix path remains available alongside pyBigWig.
 signal = pd.DataFrame(
@@ -56,22 +62,18 @@ signal = pd.DataFrame(
     }
 )
 fig, _ = ann.plot_tss_profile(signal=signal, window=100, n_bins=50)
-fig.savefig(OUT / "tss_profile.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "tss_profile")
 
 fig, _ = ann.plot_tss_heatmap(signal=signal, window=100, n_bins=50)
-fig.savefig(OUT / "tss_heatmap.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "tss_heatmap")
 
 # ChIPseeker-style peak-coverage tag matrix and profile/heatmap.
 promoters = pcs.getPromoters(TxDb=ann.gene_annotation, upstream=1000, downstream=1000)
 tag = pcs.getTagMatrix(peak=ann.peaks, windows=promoters, nbin=50)
 fig, _ = pcs.plotAvgProf(tag, conf=None)
-fig.savefig(OUT / "tag_profile.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "tag_profile")
 
 fig, _ = pcs.tagHeatmap(tag)
-fig.savefig(OUT / "tag_heatmap.png", dpi=200, bbox_inches="tight")
-fig.clf()
+save(fig, "tag_heatmap")
 
-print(f"\nSaved plots to {OUT}")
+print(f"\nSaved PNG and PDF figures to {OUT}")

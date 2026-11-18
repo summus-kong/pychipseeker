@@ -2,7 +2,8 @@
 
 `TxDb=` accepts five kinds of annotation sources:
 
-1. a prebuilt assembly name (`hg38`, `hg19`, `mm10`, `mm9`);
+1. a prebuilt assembly name (`hg38`, `hg19`, `mm10`, `mm9`) or its common
+   alias, such as `GRCh38`, `GRCh37`, `GRCm38` or `GRCm37` (case-insensitive);
 2. a downloadable assembly name (`dm6`, `danRer11`, `rn7`, `mm39`,
    `sacCer3`);
 3. a GTF/GFF path or pandas DataFrame;

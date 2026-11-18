@@ -134,42 +134,20 @@ pip install -e ".[dev,bigwig]"    # editable development install
 ```python
 import pychipseeker as pcs
 
-# ChIPseeker-style API: annotatePeak is a bare alias of annotate_peak,
-# so camelCase keywords and TxDb= work on the same function
+# annotatePeak is an alias of annotate_peak, so camelCase keywords work too.
 ann = pcs.annotatePeak(
     "peaks.bed",
-    TxDb="genes.gtf",          # a GTF/GFF path or a GeneAnnotation object
+    TxDb="genes.gtf",          # GTF/GFF path, GeneAnnotation, or an assembly
     tssRegion=(-3000, 3000),
-    level="transcript",        # ChIPseeker default
 )
 
-print(ann)
 print(ann.annoStat)            # ChIPseeker annoStat table
-print(ann.peakNum)
+df = ann.to_dataframe()        # one row per peak; ann.to_chipseeker() renames
+                               # the columns back to ChIPseeker's names
 
-# Snake_case API is also available
-ann2 = pcs.annotate_peak("peaks.bed", "genes.gtf", upstream=3000, downstream=3000)
-
-# Prebuilt genome lookup — TxDb="assembly", like ChIPseeker's TxDb= packages
-ann = pcs.annotatePeak("peaks.bed", TxDb="mm10")   # also hg38, hg19, mm9
-# On-demand assemblies download once from Ensembl and are cached:
-ann = pcs.annotatePeak("peaks.bed", TxDb="dm6")    # also danRer11, rn7, mm39, sacCer3
-# Any Ensembl/GENCODE/URL GTF works through a spec:
-ann = pcs.annotatePeak("peaks.bed", TxDb="ensembl:mouse@110")
-ann = pcs.annotatePeak("peaks.bed", TxDb="gencode:human@44")
-ann = pcs.annotatePeak("peaks.bed", TxDb="url:https://example.org/genes.gtf.gz")
-# aliases (case-insensitive) work too: "GRCh38", "GRCh37", "GRCm38", "GRCm37"
-# hg19/hg38/mm9/mm10 are prebuilt and download once from the GitHub Release;
-# other assemblies are built from Ensembl GTFs.  Everything lives in the user
-# cache and `pychipseeker cache` manages it.  See docs/genomes.md and NOTICE.md.
-
-# ChIPseeker-style column names
-chip_df = ann.to_chipseeker()
-
-# Plots
+# Plots return matplotlib (fig, ax); save any figure as vector PDF
 fig, ax = ann.plot_anno_pie()
-fig, ax = ann.plot_anno_bar()
-fig, ax = ann.plot_dist_to_tss()
+fig.savefig("annotation.pdf", bbox_inches="tight")
 
 # Tag matrix / profile / heatmap
 promoters = pcs.getPromoters(TxDb=ann.gene_annotation, upstream=3000, downstream=3000)
@@ -177,14 +155,17 @@ tag = pcs.getTagMatrix(peak=ann.peaks, windows=promoters, nbin=100)
 fig, ax = pcs.plotAvgProf(tag, conf=0.95)
 fig, ax = pcs.tagHeatmap(tag)
 
-# Or let the helper build the matrix and plot it
+# Or build the matrix and plot it in one call
 fig, ax = pcs.plotPeakProf2(
-    "peaks.bed", TxDb="genes.gtf", upstream=3000, downstream=3000, nbin=100
-)
-fig, ax = pcs.peakHeatmap(
-    "peaks.bed", TxDb="genes.gtf", upstream=3000, downstream=3000, nbin=100
+    "peaks.bed", TxDb="genes.gtf", upstream=3000, downstream=3000
 )
 ```
+
+`TxDb=` also takes a prebuilt assembly (`"mm10"`, `"hg38"`, `"hg19"`, `"mm9"`,
+downloaded once and cached), an on-demand Ensembl assembly (`"dm6"`,
+`"danRer11"`, `"rn7"`, `"mm39"`, `"sacCer3"`), an `ensembl:`/`gencode:`/`url:`
+spec, or `"auto"` to infer it from the peaks.  `pychipseeker cache` manages the
+cache; see [docs/genomes.md](docs/genomes.md).
 
 `upstream=` and `downstream=` are convenience aliases for an asymmetric
 `tss_region`.  `tss_region` controls the promoter window (default ±3 kb).
