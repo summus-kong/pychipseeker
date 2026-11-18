@@ -28,6 +28,9 @@ All notable changes to pychipseeker are documented here.  The format follows
 - The command-line reference documents `--keep-unmapped`, and `PARITY.md`
   records `drop_unmapped` as a Python-only option (ChIPseeker always drops
   peaks without a feature on their chromosome).
+- `README.md` opens with a runnable install/annotate/plot example, groups the
+  feature list by task, and keeps only the headline benchmark numbers (the
+  details stay in `docs/performance.md`).
 
 ### Fixed
 

@@ -5,12 +5,30 @@ summarization and visualization**.
 
 **Documentation:** <https://summus-kong.github.io/pychipseeker/>
 
+```bash
+pip install pychipseeker
+```
+
+```python
+import pychipseeker as pcs
+
+ann = pcs.annotate_peak("peaks.bed", TxDb="mm10")   # or a local GTF/GFF path
+print(ann.annoStat)
+
+fig, ax = ann.plot_anno_pie()
+fig.savefig("annotation.pdf")
+```
+
+That is the whole loop: annotate, inspect the table, save a vector figure.
+Tag matrices, quality control and PDF reports are one call each — see
+[Quick start](#quick-start) and the
+[figure gallery](https://summus-kong.github.io/pychipseeker/gallery/).
+
 `pychipseeker` follows the R/Bioconductor
 [ChIPseeker](https://bioconductor.org/packages/ChIPseeker/) rules for
 transcript/gene-level annotation, promoter bins, annotation priority and signed
-TSS distances.  The core annotation engine has been checked against
-**ChIPseeker 1.48.0**.  The package also provides Python equivalents for the
-common tag-matrix, profile, heatmap, overlap and summary helpers.
+TSS distances, and the core engine has been checked against
+**ChIPseeker 1.48.0**.
 
 It is **not** an official ChIPseeker port.  Bioconductor `OrgDb` classes and
 the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
@@ -21,40 +39,30 @@ the GEO database are not bundled; instead `TxDb=` accepts a GTF/GFF path, a
 
 ## Features
 
-- Annotate ChIP-seq / ATAC-seq peaks against a GTF/GFF annotation.
-- Assign promoters, 5' UTR, 3' UTR, exons, introns, downstream and distal
-  intergenic regions using ChIPseeker's default priority.
-- Compute signed distance to the nearest TSS and assign nearest gene/transcript.
-- ChIPseeker-style `annoStat`, `plotAnnoPie`, `plotAnnoBar` and
-  `plotDistToTSS`.
-- Promoter/bioregion construction (`getPromoters`, `getBioRegion`,
-  `makeBioRegionFromGranges`).
-- Peak-coverage tag matrices (`getTagMatrix`), average profiles, heatmaps and
-  multi-window profiles.
-- bigWig signal matrices and TSS profiles (optional `[bigwig]` extra), plus
-  BAM/CRAM coverage matrices (optional `[bam]` extra).
-- Peak-set overlap, true UpSet plots, coverage plots and overlap enrichment
-  tests.
-- Threshold peak calling from a bigWig (`call_peaks`), peak filtering
+- **Annotation**: ChIP-seq / ATAC-seq peaks against a GTF/GFF, `GeneAnnotation`
+  or prebuilt assembly, using ChIPseeker's promoter/UTR/exon/intron/downstream/
+  intergenic priority, signed TSS distance and nearest gene/transcript.
+- **Summaries and plots**: `annoStat`, `plotAnnoPie`, `plotAnnoBar`,
+  `plotDistToTSS`, plus plot-ready tables for gene burden, biotypes, distance
+  quantiles, signal groups and TSS enrichment by quartile.
+- **Profiles and heatmaps**: promoter/bioregion construction, coverage tag
+  matrices, average profiles, heatmaps and multi-window profiles; bigWig and
+  BAM/CRAM signal via the optional `[bigwig]` and `[bam]` extras.
+- **Comparison**: peak-set overlap, true UpSet plots, coverage plots and
+  overlap enrichment tests.
+- **Quality control**: peak widths, blacklist/mitochondrial fractions, FRiP and
+  TSS enrichment, threshold peak calling (`call_peaks`), filtering
   (`filter_peaks`) and an optional MACS2/3 wrapper.
-- **Quality control**: peak-width summaries, blacklist/mitochondrial
-  fractions, FRiP and TSS enrichment from bigWig or BAM.
-- **Input formats**: BED, narrowPeak/broadPeak/gappedPeak (including gzip),
-  TSV/CSV, bigBed (optional) and BAM/CRAM (optional).
-- **Multi-page PDF reports** (including an optional QC page) and a
-  `pychipseeker report` command.
-- **Enrichment**: Enrichr/GSEA via optional `gseapy`, plus a dependency-free
-  local over-representation analysis with odds ratios, confidence intervals
-  and BH/Bonferroni correction.
-- **Plot-ready summaries**: annotation composition, peaks per gene, top genes,
-  gene biotypes, distance quantiles, signal groups and TSS enrichment by
-  quartile.
-- **18 figure panels** with a selectable custom plate and an interactive
-  `gallery.html`; every plate and panel is exported as PDF vector.
-- **Chromosome harmonisation** between UCSC (`chr1`) and Ensembl (`1`) peak
-  and annotation files, with conservative assembly detection (`TxDb="auto"`).
-- **Genome cache**: prebuilt hg19/hg38/mm9/mm10 bundles, on-demand Ensembl
-  assemblies and arbitrary `ensembl:`/`gencode:`/`url:` GTFs.
+- **Reports and figures**: multi-page PDF reports (including an optional QC
+  page) from the `pychipseeker report` command, 18 selectable figure panels, an
+  interactive `gallery.html`, and PDF vector output for every plate and panel.
+- **Enrichment**: Enrichr/GSEA via optional `gseapy`, plus dependency-free local
+  over-representation analysis with odds ratios, confidence intervals and
+  BH/Bonferroni correction.
+- **Inputs and genomes**: BED, narrowPeak/broadPeak/gappedPeak (gzip), TSV/CSV,
+  bigBed and BAM/CRAM; `chr1`/`1` harmonisation, `TxDb="auto"` assembly
+  detection, prebuilt hg19/hg38/mm9/mm10 bundles and on-demand Ensembl
+  assemblies.
 
 ## Performance
 
@@ -69,40 +77,18 @@ Windows, Python 3.11):
 | `extract_tss_matrix`, 81,540 TSS | ~54 min | ~11 s |
 
 The TSS matrix path reproduces `pyBigWig.stats` exactly for divisible and
-odd bin counts.  Run `python scripts/bench.py --txdb mm10` to reproduce the
-annotation numbers on your machine.
-
-### Large data sets and multiprocessing
+odd bin counts.  Reproduce with `python scripts/bench.py --txdb mm10`.
 
 Pass `n_jobs` (Python) or `--jobs` (CLI) to split the heavy paths across
 processes.  `-1` uses every core, the default is sequential, small inputs stay
-in-process so the startup cost is never paid for nothing, and results are
-identical to the sequential run.
+in-process, and results are identical to the sequential run.  On 100,000 mm10
+peaks annotation takes 45.9 s sequentially, 14.9 s with four jobs and 16.2 s
+with eight; a real mm10 promoter tag matrix drops from 16.5 s to 0.84 s.
 
-| Operation | Work unit | Parallel threshold |
-|---|---|---|
-| `annotate_peak` | contiguous peak chunks | 2,000 peaks |
-| `extract_tss_matrix` / bigWig tag matrix | chromosome blocks | 4,000 regions per worker |
-| peak-coverage tag matrix | window chunks | 50,000 windows per worker (400,000 with `spawn`) |
-| BAM tag matrix / TSS enrichment | feature/window chunks | 500 regions |
-| `call_peaks` (bigWig) | one task per chromosome | 2+ chromosomes |
-
-On 100,000 mm10 peaks annotation takes 45.9 s sequentially, 14.9 s with four
-jobs and 16.2 s with eight (~3x).  The 0.7 interval indexes use binary search
-instead of whole-chromosome scans, so the sequential path is itself about twice
-as fast as 0.6.  Peak-coverage tag matrices are vectorised per chromosome in
-0.8: 100,000 synthetic 6 kb windows take 0.43 s instead of 157 s, and a real
-mm10 promoter matrix drops from 16.5 s to 0.84 s, so that path now stays
-in-process unless the window set is very large.  Annotation workers rebuild the
-genome model from its GTF or cached `.npz` instead of pickling the 280 MB
-object, so memory per worker stays flat; `n_jobs=-1` is capped at eight
-annotation processes because each worker still holds a full model.  The BAM FRiP
-calculation uses the C-level `pysam` counter (one streaming pass plus one
-indexed query per merged peak) and no longer inspects every alignment in
-Python.  See [docs/performance.md](docs/performance.md) for the benchmark
-details and the parallel bigWig/tag-matrix measurements.  On Windows, scripts
-that use `n_jobs > 1` must guard their entry point with
-`if __name__ == "__main__":`, as required by the `spawn` start method.
+Work units, parallel thresholds and benchmark methods are listed in
+[docs/performance.md](docs/performance.md).  On Windows, scripts that use
+`n_jobs > 1` must guard their entry point with `if __name__ == "__main__":`,
+as required by the `spawn` start method.
 
 ## Dependencies
 
