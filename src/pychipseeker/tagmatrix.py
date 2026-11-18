@@ -1527,20 +1527,27 @@ def plot_multi_prof(
     if not items:
         raise ValueError("tagMatrices is empty")
     if facet in {"row", "column"}:
+        if facet == "row":
+            nrows, ncols = len(items), 1
+            figsize = (6.0, max(2.0, 2.2 * len(items)))
+        else:
+            nrows, ncols = 1, len(items)
+            figsize = (max(3.0, 3.2 * len(items)), 3.0)
         fig, axes = plt.subplots(
-            len(items),
-            1 if facet == "row" else len(items),
-            figsize=(6.0, max(2.0, 2.2 * len(items))),
+            nrows,
+            ncols,
+            figsize=figsize,
             squeeze=False,
             sharex=True,
+            sharey=not free_y,
         )
         axes_flat = axes.ravel()
         for i, matrix in enumerate(items):
-            arr, upstream, downstream = _as_matrix(matrix)
             label = getattr(matrix, "label", None) or f"Set{i + 1}"
+            show_xlab = facet == "column" or i == len(items) - 1
             plot_avg_prof(
                 matrix,
-                xlab=xlab if i == len(items) - 1 else "",
+                xlab=xlab if show_xlab else "",
                 ylab=ylab,
                 conf=conf,
                 free_y=free_y,

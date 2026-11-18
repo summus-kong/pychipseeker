@@ -31,6 +31,9 @@ All notable changes to pychipseeker are documented here.  The format follows
 
 ### Fixed
 
+- `plot_multi_prof(facet="column")` now lays the panels out in a single row
+  instead of an `N x N` grid, labels the x axis on every panel, and
+  `free_y=False` shares the y axis across facets.
 - `plot_tss_heatmap(title=...)` now sets the axes title instead of ignoring it.
 - `vennpie(r=...)` uses the ChIPseeker convention of ring radii `2r`, `3r`
   and `4r`, validates `r`, and accepts `legend=False` for inset use.

@@ -663,6 +663,27 @@ def test_plot_avg_prof_uses_xlim():
     plt.close(fig)
 
 
+def test_plot_multi_prof_facets_and_shared_axes():
+    low = TagMatrix(np.full((2, 5), 1.0))
+    high = TagMatrix(np.full((2, 5), 5.0))
+
+    fig, _ = plot_multi_prof([low, high], facet="column")
+    positions = [axis.get_position() for axis in fig.axes]
+    assert len(fig.axes) == 2
+    assert len({round(pos.y0, 6) for pos in positions}) == 1
+    assert positions[0].x0 < positions[1].x0
+    assert all(axis.get_xlabel() for axis in fig.axes)
+    plt.close(fig)
+
+    fig, _ = plot_multi_prof([low, high], facet="row", free_y=True)
+    assert fig.axes[0].get_ylim() != fig.axes[1].get_ylim()
+    plt.close(fig)
+
+    fig, _ = plot_multi_prof([low, high], facet="row", free_y=False)
+    assert fig.axes[0].get_ylim() == fig.axes[1].get_ylim()
+    plt.close(fig)
+
+
 def test_plot_peak_prof_builds_from_peaks(model):
     peaks = pd.DataFrame(
         {

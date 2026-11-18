@@ -181,6 +181,12 @@ def test_plot_peak_prof_multi_windows(annotation):
         nbin=20,
     )
     assert ax is not None
+    labels = [
+        axis.get_legend().get_texts()[0].get_text()
+        for axis in fig.axes
+        if axis.get_legend() is not None
+    ]
+    assert labels == ["small", "large"]
     plt.close(fig)
 
 
