@@ -65,6 +65,10 @@ it. Later runs load the cache in about two seconds. Local GTF/GFF files, DataFra
 Ensembl/GENCODE specs and arbitrary URLs work too — see
 [Genomes and TxDb](genomes.md).
 
+Want to see the output before pointing at your own data? From a repository
+checkout, `python examples/run_example.py` runs the same loop on ten bundled
+peaks — no download — and writes PNG and PDF figures.
+
 ## Why people use it
 
 <div class="grid cards" markdown>

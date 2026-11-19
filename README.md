@@ -90,13 +90,12 @@ Work units, parallel thresholds and benchmark methods are listed in
 `n_jobs > 1` must guard their entry point with `if __name__ == "__main__":`,
 as required by the `spawn` start method.
 
-## Dependencies
+## Installation
 
-Core installation requires only:
-
-- `numpy`
-- `pandas`
-- `matplotlib`
+```bash
+pip install pychipseeker            # core: NumPy, pandas, matplotlib
+pip install "pychipseeker[all]"     # plus the optional extras below
+```
 
 Optional features are split into extras:
 
@@ -108,10 +107,7 @@ Optional features are split into extras:
 | `enrich` | `gseapy` | online Enrichr analysis |
 | `all` | all of the above | full feature set |
 | `dev` | pytest, pytest-cov, ruff, mypy | development |
-
-```bash
-pip install "pychipseeker[all]"
-```
+| `docs` | MkDocs Material | building this documentation |
 
 Core installation and `[all]` are safe on Windows: `pyBigWig` and `pysam`
 are marked non-Windows because they do not have PyPI wheels for every
@@ -120,14 +116,9 @@ support is needed (`conda install -c conda-forge pybigwig` and
 `conda install -c bioconda pysam`); everything else, including peak
 annotation, tag matrices, QC and reports, works without them.  Genome
 tables do not need `pyBigWig`; only direct signal-track access does.  R is
-not required for any Python functionality.
-
-## Installation
-
-```bash
-pip install pychipseeker          # from PyPI when published
-pip install -e ".[dev,bigwig]"    # editable development install
-```
+not required for any Python functionality.  Editable installs, local docs and
+genome downloads are covered in
+[docs/installation.md](docs/installation.md).
 
 ## Quick start
 

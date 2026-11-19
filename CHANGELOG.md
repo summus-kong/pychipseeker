@@ -29,11 +29,13 @@ All notable changes to pychipseeker are documented here.  The format follows
   records `drop_unmapped` as a Python-only option (ChIPseeker always drops
   peaks without a feature on their chromosome).
 - `README.md` opens with a runnable install/annotate/plot example, groups the
-  feature list by task, keeps only the headline benchmark numbers (the details
-  stay in `docs/performance.md`), and shows one short annotate → plot → profile
-  flow instead of every `TxDb=` variant inline.
+  feature list by task, keeps only the headline benchmark numbers (details stay
+  in `docs/performance.md`), shows one short annotate → plot → profile flow
+  instead of every `TxDb=` variant inline, and merges the separate Dependencies
+  and Installation sections into one.
 - `examples/run_example.py` writes a vector PDF next to every PNG, and the
-  quick-start page points at it as a no-download demo on the bundled peaks.
+  quick-start page and docs home both point at it as a no-download demo on the
+  bundled peaks.
 
 ### Fixed
 
