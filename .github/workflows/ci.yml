@@ -168,3 +168,13 @@ jobs:
           python -c "import importlib.metadata as m, pychipseeker as pcs;
           assert m.version('pychipseeker') == pcs.__version__;
           print(pcs.__version__)"
+      - name: Smoke test annotation
+        run: >-
+          python -c "import pychipseeker as pcs;
+          ann = pcs.annotate_peak('examples/example_peaks.bed', 'examples/example.gtf');
+          assert len(ann.peaks) == 10;
+          print(ann.annoStat.to_string(index=False))"
+      - name: Smoke test CLI
+        run: |
+          python -m pychipseeker annotate --peaks examples/example_peaks.bed --gtf examples/example.gtf --output annotated.tsv
+          python -c "import pandas as pd; df = pd.read_csv('annotated.tsv', sep='\t'); assert len(df) == 10"

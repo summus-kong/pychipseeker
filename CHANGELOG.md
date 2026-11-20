@@ -40,6 +40,9 @@ All notable changes to pychipseeker are documented here.  The format follows
   and the cached size, so `TxDb="mm10"` no longer looks frozen.  Docstrings now
   say that wheels download the prebuilt tables once instead of implying they
   always ship inside the package.
+- The wheel job now annotates the bundled example through both the Python API
+  and `pychipseeker annotate` after installing the built wheel, so a broken
+  wheel fails CI before release instead of at a user's first run.
 
 ### Fixed
 
