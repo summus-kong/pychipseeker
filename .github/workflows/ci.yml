@@ -172,7 +172,7 @@ jobs:
         run: >-
           python -c "import pychipseeker as pcs;
           ann = pcs.annotate_peak('examples/example_peaks.bed', 'examples/example.gtf');
-          assert len(ann.peaks) == 10;
+          assert len(ann.annotation) == 10;
           print(ann.annoStat.to_string(index=False))"
       - name: Smoke test CLI
         run: |
