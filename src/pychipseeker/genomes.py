@@ -5,7 +5,8 @@ pre-built Bioconductor TxDb packages (``TxDb.Hsapiens.UCSC.hg19.knownGene``,
 ``TxDb.Mmusculus.UCSC.mm10.knownGene``, ...).  ``pychipseeker`` ships compact
 bundled gene-annotation tables for the assemblies ChIPseeker users reach for
 most often, so ``TxDb="hg38"`` (or an alias such as ``"GRCh38"``) works out of
-the box, without any download or external dependency.
+the box, with no extra package to install.  A git checkout has the tables
+already; wheels download them once from the GitHub release and cache them.
 
 Supported assemblies and accepted aliases:
 
@@ -23,10 +24,12 @@ bundle          accepted names
 ``sacCer3``     sacCer3, R64-1-1
 =============  ==================================
 
-The first four ship inside the package; the rest are fetched as Ensembl GTFs
-on first use and cached as compact npz bundles.  Arbitrary annotations can be
-loaded with ``ensembl:<species>[@release]``, ``gencode:<human|mouse>[@release]``
-or ``url:<gtf>`` specs through :func:`load_annotation`.
+The first four are prebuilt: a git checkout uses the bundled tables and a
+wheel downloads them once from the GitHub release.  The rest are fetched as
+Ensembl GTFs on first use and cached as compact npz bundles.  Arbitrary
+annotations can be loaded with ``ensembl:<species>[@release]``,
+``gencode:<human|mouse>[@release]`` or ``url:<gtf>`` specs through
+:func:`load_annotation`.
 
 Matching is case-insensitive; see :func:`load_genome` and
 :func:`is_assembly_name`.  A bundle stores the six frames produced by
@@ -85,7 +88,8 @@ GENOME_ALIASES: Dict[str, str] = {
     "saccharomyces_cerevisiae": "sacCer3",
 }
 
-#: assemblies whose compact tables ship inside the wheel
+#: assemblies with prebuilt compact tables (shipped in source installs,
+#: downloaded once from the GitHub release for wheels)
 BUNDLED_GENOMES: tuple[str, ...] = ("hg38", "hg19", "mm10", "mm9")
 
 #: assemblies downloaded as a GTF and converted on first use
@@ -642,6 +646,11 @@ def _download_bundle(name: str) -> Path:
 
     dest = cache_dir() / f"genome_{name}.npz"
     json_dest = cache_dir() / f"genome_{name}.json"
+    print(
+        f"pychipseeker: downloading the {name!r} genome bundle once "
+        f"(cached in {dest.parent})",
+        file=sys.stderr,
+    )
     expected: Optional[str] = None
     last_error: Optional[Exception] = None
     for base in _bundle_bases():
@@ -668,6 +677,10 @@ def _download_bundle(name: str) -> Path:
                     f"genome bundle {dest.name} from {base} failed its sha256 check"
                 )
                 continue
+        print(
+            f"pychipseeker: cached {dest.name} ({dest.stat().st_size / 1e6:.1f} MB)",
+            file=sys.stderr,
+        )
         return dest
     raise RuntimeError(
         f"could not fetch genome bundle {name!r} from any source; download "
@@ -806,6 +819,11 @@ def _build_manifest_bundle(name: str) -> Path:
     source = GENOME_SOURCES[name]
     gtf_path = cache_dir() / f"genome_{name}{_gtf_suffix(source['url'])}"
     if not gtf_path.is_file() or gtf_path.stat().st_size == 0:
+        print(
+            f"pychipseeker: downloading the {name!r} annotation from "
+            f"{source['provider']} once (cached in {gtf_path.parent})",
+            file=sys.stderr,
+        )
         _download_file(source["url"], gtf_path)
     model = GeneAnnotation.from_gtf(gtf_path)
 
@@ -813,6 +831,11 @@ def _build_manifest_bundle(name: str) -> Path:
     tmp = npz_path.with_suffix(".npz.part")
     save_bundle(model, tmp)
     tmp.replace(npz_path)
+    print(
+        f"pychipseeker: cached {npz_path.name} "
+        f"({npz_path.stat().st_size / 1e6:.1f} MB)",
+        file=sys.stderr,
+    )
     _write_json(
         npz_path.with_suffix(".json"),
         {
@@ -874,9 +897,10 @@ def load_genome(
     """Load a bundled assembly table and return a :class:`GeneAnnotation`.
 
     The loaded model is cached in-process; pass ``refresh=True`` to rebuild
-    it.  ``hg38``/``hg19``/``mm10``/``mm9`` ship inside the package; ``dm6``,
-    ``danRer11``, ``rn7``, ``mm39`` and ``sacCer3`` download their Ensembl
-    GTF on first use and cache the parsed tables.
+    it.  ``hg38``/``hg19``/``mm10``/``mm9`` are prebuilt bundles, downloaded
+    once from the GitHub release and cached when the wheel does not already
+    carry them; ``dm6``, ``danRer11``, ``rn7``, ``mm39`` and ``sacCer3``
+    download their Ensembl GTF on first use and cache the parsed tables.
     """
 
     name = canonical_assembly(assembly)
@@ -954,8 +978,8 @@ def genome_provenance(assembly: Union[str, None]) -> dict:
 def supported_genomes() -> tuple[str, ...]:
     """Assemblies accepted by ``TxDb=``.
 
-    The first four are bundled; the remaining entries are built from a
-    download on first use.
+    The first four have prebuilt bundles; the remaining entries are built
+    from a download on first use.
     """
 
     return SUPPORTED_GENOMES

@@ -257,7 +257,7 @@ def test_download_file_retries_and_fails(
 
 
 def test_download_bundle_checks_digest_and_falls_back(
-    cache: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     payload = b"bundle-bytes"
     digest = hashlib.sha256(payload).hexdigest()
@@ -273,6 +273,9 @@ def test_download_bundle_checks_digest_and_falls_back(
     monkeypatch.setattr(genomes, "_download_file", fake_download)
     path = _download_bundle("demo")
     assert path.read_bytes() == payload
+    notice = capsys.readouterr().err
+    assert "downloading the 'demo' genome bundle" in notice
+    assert "cached genome_demo.npz" in notice
 
     def bad_download(url, dest, tries=4):
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -375,7 +378,7 @@ def test_load_annotation_refresh_reparses(
 
 
 def test_build_manifest_bundle_and_load(
-    cache: Path, monkeypatch: pytest.MonkeyPatch
+    cache: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     name = "demogenome"
     monkeypatch.setitem(genomes.GENOME_ALIASES, name, name)
@@ -399,6 +402,9 @@ def test_build_manifest_bundle_and_load(
     direct = load_genome(name)
     assert not direct.genes.empty
     assert (cache / f"genome_{name}.npz").is_file()
+    notice = capsys.readouterr().err
+    assert "downloading the 'demogenome' annotation" in notice
+    assert "cached genome_demogenome.npz" in notice
 
     npz_path = download_genome(name)
     assert npz_path.is_file()

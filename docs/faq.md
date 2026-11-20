@@ -21,7 +21,9 @@ metadata.
 ## The genome download failed, or I am offline
 
 The wheel does not embed genome tables. Prebuilt bundles are downloaded from
-the GitHub release and cached locally. Options:
+the GitHub release and cached locally, so the first `TxDb="mm10"` call prints a
+`pychipseeker: downloading ...` line to stderr and reports the cached size when
+it finishes. Options if the download fails:
 
 1. Retry with `pychipseeker cache download mm10`.
 2. Point `PYCHIPSEEKER_GENOME_BASE` at an internal HTTP or directory mirror:

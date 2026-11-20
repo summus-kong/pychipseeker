@@ -36,6 +36,10 @@ All notable changes to pychipseeker are documented here.  The format follows
 - `examples/run_example.py` writes a vector PDF next to every PNG, and the
   quick-start page and docs home both point at it as a no-download demo on the
   bundled peaks.
+- The first genome download prints a one-line notice with the cache directory
+  and the cached size, so `TxDb="mm10"` no longer looks frozen.  Docstrings now
+  say that wheels download the prebuilt tables once instead of implying they
+  always ship inside the package.
 
 ### Fixed
 

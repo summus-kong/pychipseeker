@@ -44,8 +44,8 @@ ann = pcs.annotate_peak("peaks.bed", TxDb="mm10", n_jobs=-1)
 
 ```python
 print(ann.annoStat)          # Feature / Frequency / Count
-df = ann.to_dataframe()      # one row per annotated peak
-print(df.head())
+df = ann.to_dataframe()      # one row per annotated peak (24 columns)
+print(df[["peak_id", "annotation", "gene_name", "distance_to_tss"]].head())
 ```
 
 Useful columns include `annotation`, `gene_name`, `gene_type`,
